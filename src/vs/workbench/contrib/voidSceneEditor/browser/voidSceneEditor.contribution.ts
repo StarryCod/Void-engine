@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
  *  Void Scene Editor - Contribution
- *  Toolbar with 3D/2D/Script buttons + Viewport + Inspector
+ *  Simple mode switching: 3D / 2D / Script
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
@@ -15,40 +15,27 @@ import { ThreeViewport } from './threeViewport.js';
 import { Viewport2D } from './viewport2D.js';
 import { InspectorView } from './inspectorView.js';
 import { sceneBridge } from '../common/voidSceneBridge.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
 
-// Editor modes
 type EditorMode = '3D' | '2D' | 'Script';
 
 class VoidSceneEditorContribution extends Disposable implements IWorkbenchContribution {
 	static readonly ID = 'workbench.contrib.voidSceneEditor';
 
+	private currentMode: EditorMode = 'Script';
 	private toolbar: HTMLElement | null = null;
-	private layoutContainer: HTMLElement | null = null;
-	private viewportPane: HTMLElement | null = null;
-	private inspectorPane: HTMLElement | null = null;
-	private splitter: HTMLElement | null = null;
 	
-	// Viewports - created lazily
+	// Container for viewport (3D or 2D)
+	private viewportContainer: HTMLElement | null = null;
+	private inspectorContainer: HTMLElement | null = null;
+	
+	// Viewports
 	private viewport3D: ThreeViewport | null = null;
 	private viewport2D: Viewport2D | null = null;
 	private inspector: InspectorView | null = null;
 	
-	private currentMode: EditorMode = 'Script';
-	
-	// Inspector width state
-	private inspectorWidth: number = 280;
-	private isDraggingSplitter: boolean = false;
-
 	private modelListener: IDisposable | null = null;
 	private fileWatcher: IDisposable | null = null;
 	private suppressModelUntil: number = 0;
-	
-	// Initialization state
-	private isLayoutReady: boolean = false;
-
-	private readonly _onModeChanged = this._register(new Emitter<EditorMode>());
-	public readonly onModeChanged: Event<EditorMode> = this._onModeChanged.event;
 
 	constructor(
 		@IEditorService private readonly editorService: IEditorService,
@@ -56,75 +43,66 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		@IWorkspaceContextService private readonly workspaceService: IWorkspaceContextService,
 	) {
 		super();
-
-		// Create toolbar (async, retries until editor part exists)
-		this.createToolbar();
-
-		// Bridge -> Disk (save handler)
+		
+		// Wait for DOM ready, then create toolbar
+		this.initWhenReady();
+		
+		// Bridge save handler
 		this._register(sceneBridge.onNeedsSave(e => this.saveToDisk(e.uri, e.content)));
-
+		
 		// Editor changes
-		this._register(this.editorService.onDidActiveEditorChange(() => this.onEditorChanged()));
+		this._register(this.editorService.onDidActiveEditorChange(() => this.attachModelListener()));
+		
+		// Load scene
+		this.loadScene();
+	}
 
-		// Early discovery
-		this.earlyDiscovery();
+	private initWhenReady(): void {
+		const check = () => {
+			const editorPart = document.querySelector('.part.editor');
+			if (editorPart) {
+				this.createToolbar(editorPart as HTMLElement);
+				this.createViewportContainer(editorPart as HTMLElement);
+			} else {
+				setTimeout(check, 50);
+			}
+		};
+		setTimeout(check, 100);
 	}
 
 	// ════════════════════════════════════════════════════════════════
 	// TOOLBAR
 	// ════════════════════════════════════════════════════════════════
 
-	private createToolbar(): void {
-		let attempts = 0;
-		const maxAttempts = 50;
-		
-		const checkEditorPart = () => {
-			attempts++;
-			const editorPart = document.querySelector('.part.editor');
-			if (editorPart) {
-				this.insertToolbar(editorPart as HTMLElement);
-			} else if (attempts < maxAttempts) {
-				setTimeout(checkEditorPart, 100);
-			}
-		};
-		checkEditorPart();
-	}
+	private createToolbar(editorPart: HTMLElement): void {
+		// Remove old toolbar if exists
+		const oldToolbar = editorPart.querySelector('.void-editor-toolbar');
+		if (oldToolbar) oldToolbar.remove();
 
-	private insertToolbar(editorPart: HTMLElement): void {
-		// Prevent duplicate toolbar
-		if (this.toolbar && this.toolbar.parentElement) return;
-		
-		// Toolbar container
 		this.toolbar = document.createElement('div');
 		this.toolbar.className = 'void-editor-toolbar';
 		this.toolbar.style.cssText = `
-			position: absolute;
-			top: 0;
-			left: 0;
-			right: 0;
-			height: 32px;
-			background: #222225;
-			border-bottom: 1px solid #2a2a2e;
-			display: flex;
-			align-items: center;
-			padding: 0 8px;
-			gap: 2px;
-			z-index: 100;
-			font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
-			font-size: 12px;
+			position: absolute; top: 0; left: 0; right: 0; height: 32px;
+			background: #222225; border-bottom: 1px solid #2a2a2e;
+			display: flex; align-items: center; padding: 0 8px; gap: 2px;
+			z-index: 100; font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 12px;
 		`;
 
-		// Button group
-		const buttonGroup = document.createElement('div');
-		buttonGroup.style.cssText = 'display: flex; gap: 1px;';
-
+		// Create buttons
 		const modes: EditorMode[] = ['3D', '2D', 'Script'];
-		for (const mode of modes) {
-			const btn = this.createModeButton(mode);
-			buttonGroup.appendChild(btn);
-		}
+		modes.forEach(mode => {
+			const btn = document.createElement('button');
+			btn.textContent = mode;
+			btn.dataset.mode = mode;
+			this.updateButtonStyle(btn, mode === this.currentMode);
+			btn.onclick = (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				this.switchMode(mode);
+			};
+			this.toolbar!.appendChild(btn);
+		});
 
-		this.toolbar.appendChild(buttonGroup);
 		editorPart.insertBefore(this.toolbar, editorPart.firstChild);
 
 		// Adjust editor container
@@ -134,12 +112,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		}
 	}
 
-	private createModeButton(mode: EditorMode): HTMLButtonElement {
-		const btn = document.createElement('button');
-		btn.textContent = mode;
-		btn.dataset.mode = mode;
-
-		const isActive = this.currentMode === mode;
+	private updateButtonStyle(btn: HTMLButtonElement, isActive: boolean): void {
 		btn.style.cssText = `
 			padding: 3px 14px;
 			border: 1px solid ${isActive ? '#E67E22' : 'transparent'};
@@ -152,392 +125,200 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			transition: all 0.1s ease;
 			outline: none;
 		`;
-
-		btn.addEventListener('mouseenter', () => {
-			if (this.currentMode !== mode) {
-				btn.style.background = '#2d2d32';
-				btn.style.color = '#E67E22';
-			}
-		});
-
-		btn.addEventListener('mouseleave', () => {
-			if (this.currentMode !== mode) {
-				btn.style.background = 'transparent';
-				btn.style.color = '#777';
-			}
-		});
-
-		btn.addEventListener('click', (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-			this.switchMode(mode);
-		});
-
-		return btn;
 	}
 
+	// ════════════════════════════════════════════════════════════════
+	// VIEWPORT CONTAINER
+	// ════════════════════════════════════════════════════════════════
+
+	private createViewportContainer(editorPart: HTMLElement): void {
+		const editorContainer = editorPart.querySelector('.editor-container');
+		if (!editorContainer) return;
+
+		// Create main container (hidden by default)
+		this.viewportContainer = document.createElement('div');
+		this.viewportContainer.className = 'void-viewport-wrapper';
+		this.viewportContainer.style.cssText = `
+			position: absolute;
+			top: 32px; left: 0; right: 0; bottom: 0;
+			display: none;
+			background: #1a1a1e;
+			z-index: 50;
+		`;
+
+		// Create viewport pane (left)
+		const viewportPane = document.createElement('div');
+		viewportPane.className = 'void-viewport-pane';
+		viewportPane.style.cssText = `
+			position: absolute;
+			top: 0; left: 0; right: 280px; bottom: 0;
+			background: #1a1a1e;
+		`;
+		viewportPane.id = 'void-viewport-pane';
+		this.viewportContainer.appendChild(viewportPane);
+
+		// Create inspector pane (right)
+		this.inspectorContainer = document.createElement('div');
+		this.inspectorContainer.className = 'void-inspector-pane';
+		this.inspectorContainer.style.cssText = `
+			position: absolute;
+			top: 0; right: 0; width: 280px; bottom: 0;
+			background: #1e1e1e;
+			border-left: 1px solid #2a2a2e;
+		`;
+		this.viewportContainer.appendChild(this.inspectorContainer);
+
+		editorContainer.appendChild(this.viewportContainer);
+	}
+
+	// ════════════════════════════════════════════════════════════════
+	// MODE SWITCHING - SIMPLE IF LOGIC
+	// ════════════════════════════════════════════════════════════════
+
 	private switchMode(mode: EditorMode): void {
-		if (this.currentMode === mode) return;
 		this.currentMode = mode;
 
-		// Update button states
+		// Update toolbar buttons
 		if (this.toolbar) {
-			const buttons = this.toolbar.querySelectorAll('button');
-			buttons.forEach(btn => {
+			this.toolbar.querySelectorAll('button').forEach(btn => {
 				const btnMode = (btn as HTMLButtonElement).dataset.mode as EditorMode;
-				if (btnMode === mode) {
-					btn.style.background = '#E67E22';
-					btn.style.color = '#fff';
-					btn.style.borderColor = '#D35400';
-					btn.style.fontWeight = '600';
-				} else {
-					btn.style.background = 'transparent';
-					btn.style.color = '#777';
-					btn.style.borderColor = 'transparent';
-					btn.style.fontWeight = '500';
-				}
+				this.updateButtonStyle(btn as HTMLButtonElement, btnMode === mode);
 			});
 		}
 
-		// Handle mode switch
-		const editorPart = document.querySelector('.part.editor') as HTMLElement | null;
-		if (!editorPart) return;
-
-		const monacoEditor = editorPart.querySelector('.monaco-editor') as HTMLElement | null;
-		const editorContainer = editorPart.querySelector('.editor-container') as HTMLElement | null;
-
-		// Hide all first
-		if (monacoEditor) monacoEditor.style.display = 'none';
-		if (this.layoutContainer) this.layoutContainer.style.display = 'none';
+		// Get editor elements
+		const editorPart = document.querySelector('.part.editor');
+		const monacoEditor = editorPart?.querySelector('.monaco-editor') as HTMLElement;
 
 		// Stop all viewports
 		if (this.viewport3D) this.viewport3D.stopRendering();
 		if (this.viewport2D) this.viewport2D.stopRendering();
 
+		// === SCRIPT MODE ===
 		if (mode === 'Script') {
+			// Show Monaco editor
 			if (monacoEditor) monacoEditor.style.display = '';
-		} else {
-			this.activateViewport(editorContainer, mode);
-		}
-
-		this._onModeChanged.fire(mode);
-	}
-
-	private activateViewport(editorContainer: HTMLElement | null, mode: '3D' | '2D'): void {
-		if (!editorContainer) {
-			console.warn('[VoidSceneEditor] No editorContainer for viewport');
+			// Hide viewport container
+			if (this.viewportContainer) this.viewportContainer.style.display = 'none';
 			return;
 		}
 
-		// Ensure scene is loaded
-		this.ensureSceneLoaded();
-
-		// Create layout if needed (synchronous)
-		if (!this.isLayoutReady || !this.layoutContainer) {
-			this.createLayout(editorContainer);
-		}
-
-		// Show layout
-		if (this.layoutContainer) {
-			this.layoutContainer.style.display = 'flex';
-		}
-
-		// Wait for DOM to settle, then activate viewport
-		requestAnimationFrame(() => {
-			if (mode === '3D') {
-				this.activate3DViewport();
-			} else {
-				this.activate2DViewport();
-			}
-		});
-	}
-
-	// ════════════════════════════════════════════════════════════════
-	// LAYOUT (Create once, reuse always)
-	// ════════════════════════════════════════════════════════════════
-
-	private createLayout(editorContainer: HTMLElement): void {
-		// Prevent duplicate layout
-		if (this.isLayoutReady && this.layoutContainer) return;
-
-		// Main layout container
-		this.layoutContainer = DOM.append(editorContainer, DOM.$('.void-scene-layout'));
-		this.layoutContainer.style.cssText = `
-			position: absolute;
-			top: 32px;
-			left: 0;
-			right: 0;
-			bottom: 0;
-			background: #1e1e1e;
-			z-index: 50;
-			display: none;
-			flex-direction: row;
-			overflow: hidden;
-		`;
-
-		// Viewport pane (left side)
-		this.viewportPane = DOM.append(this.layoutContainer, DOM.$('.void-viewport-pane'));
-		this.viewportPane.style.cssText = `
-			flex: 1;
-			position: relative;
-			min-width: 200px;
-			background: #1a1a1e;
-		`;
-
-		// Splitter (resizable divider)
-		this.splitter = DOM.append(this.layoutContainer, DOM.$('.void-splitter'));
-		this.splitter.style.cssText = `
-			width: 4px;
-			background: #3c3c3c;
-			cursor: col-resize;
-			flex-shrink: 0;
-			transition: background 0.15s;
-		`;
-		
-		// Splitter drag handlers
-		this.splitter.addEventListener('mousedown', (e) => {
-			e.preventDefault();
-			this.isDraggingSplitter = true;
-			this.splitter!.style.background = '#E67E22';
-			document.body.style.cursor = 'col-resize';
-		});
-
-		const onMouseMove = (e: MouseEvent) => {
-			if (!this.isDraggingSplitter || !this.layoutContainer) return;
+		// === 3D MODE ===
+		if (mode === '3D') {
+			// Hide Monaco editor
+			if (monacoEditor) monacoEditor.style.display = 'none';
+			// Show viewport container
+			if (this.viewportContainer) this.viewportContainer.style.display = 'block';
 			
-			const containerRect = this.layoutContainer.getBoundingClientRect();
-			const newWidth = containerRect.right - e.clientX;
-			
-			if (newWidth >= 200 && newWidth <= containerRect.width - 200) {
-				this.inspectorWidth = newWidth;
-				if (this.inspectorPane) {
-					this.inspectorPane.style.width = `${newWidth}px`;
-				}
-				if (this.viewport2D) {
-					this.viewport2D.resize();
-				}
-			}
-		};
-
-		const onMouseUp = () => {
-			if (this.isDraggingSplitter) {
-				this.isDraggingSplitter = false;
-				if (this.splitter) {
-					this.splitter.style.background = '#3c3c3c';
-				}
-				document.body.style.cursor = '';
-			}
-		};
-
-		document.addEventListener('mousemove', onMouseMove);
-		document.addEventListener('mouseup', onMouseUp);
-
-		// Inspector pane (right side)
-		this.inspectorPane = DOM.append(this.layoutContainer, DOM.$('.void-inspector-pane'));
-		this.inspectorPane.style.cssText = `
-			width: ${this.inspectorWidth}px;
-			min-width: 200px;
-			max-width: 500px;
-			background: #1e1e1e;
-			border-left: 1px solid #2a2a2e;
-			display: flex;
-			flex-direction: column;
-		`;
-
-		// Create inspector immediately
-		this.inspector = new InspectorView(this.inspectorPane);
-		this._register(this.inspector);
-
-		// Wire up scene updates
-		this._register(sceneBridge.onSceneUpdated(u => {
-			if (u.source !== 'viewport') {
-				if (this.viewport3D && this.currentMode === '3D') {
-					this.viewport3D.updateScene(u.raw);
-				}
-				if (this.viewport2D && this.currentMode === '2D') {
-					this.update2DEntities();
-				}
-			}
-		}));
-
-		this._register(sceneBridge.onEntitySelected(id => {
-			if (this.viewport3D && this.currentMode === '3D') {
-				this.viewport3D.selectEntityById(id);
-			}
-			if (this.viewport2D && this.currentMode === '2D') {
-				this.viewport2D.selectEntity(id);
-			}
-		}));
-
-		this.isLayoutReady = true;
-	}
-
-	// ════════════════════════════════════════════════════════════════
-	// VIEWPORT MANAGEMENT
-	// ════════════════════════════════════════════════════════════════
-
-	private activate3DViewport(): void {
-		if (!this.viewportPane) {
-			console.warn('[VoidSceneEditor] viewportPane not ready for 3D');
-			return;
-		}
-
-		// Stop 2D viewport
-		if (this.viewport2D) {
-			this.viewport2D.stopRendering();
-		}
-
-		// Create 3D viewport if needed
-		if (!this.viewport3D) {
-			try {
-				const content = sceneBridge.getRaw() || '';
-				this.viewport3D = new ThreeViewport(this.viewportPane, content);
+			// Create 3D viewport if not exists
+			const pane = document.getElementById('void-viewport-pane');
+			if (pane && !this.viewport3D) {
+				// Clear pane
+				pane.innerHTML = '';
+				this.viewport3D = new ThreeViewport(pane, sceneBridge.getRaw() || '');
 				this._register(this.viewport3D);
-
-				this._register(this.viewport3D.onTransformEditedTRS(e => {
+				
+				this.viewport3D.onTransformEditedTRS(e => {
 					sceneBridge.updateTransform({
 						entityId: e.entityId,
 						translation: e.translation,
 						rotation: e.rotation,
 						scale: e.scale,
 					});
-				}));
-
-				this._register(this.viewport3D.onEntityPicked(id => {
+				});
+				
+				this.viewport3D.onEntityPicked(id => {
 					sceneBridge.selectEntity(id);
-				}));
-			} catch (err) {
-				console.error('[VoidSceneEditor] Failed to create 3D viewport:', err);
-				return;
+				});
 			}
-		}
-
-		// Update scene data
-		const raw = sceneBridge.getRaw();
-		if (raw && this.viewport3D) {
-			this.viewport3D.updateScene(raw);
-		}
-	}
-
-	private activate2DViewport(): void {
-		if (!this.viewportPane) {
-			console.warn('[VoidSceneEditor] viewportPane not ready for 2D');
+			
+			// Create inspector if not exists
+			if (this.inspectorContainer && !this.inspector) {
+				this.inspectorContainer.innerHTML = '';
+				this.inspector = new InspectorView(this.inspectorContainer);
+				this._register(this.inspector);
+			}
+			
+			// Update scene
+			if (this.viewport3D) {
+				this.viewport3D.updateScene(sceneBridge.getRaw() || '');
+			}
 			return;
 		}
 
-		// Stop 3D viewport
-		if (this.viewport3D) {
-			this.viewport3D.stopRendering();
-		}
-
-		// Create 2D viewport if needed
-		if (!this.viewport2D) {
-			try {
-				this.viewport2D = new Viewport2D(this.viewportPane);
+		// === 2D MODE ===
+		if (mode === '2D') {
+			// Hide Monaco editor
+			if (monacoEditor) monacoEditor.style.display = 'none';
+			// Show viewport container
+			if (this.viewportContainer) this.viewportContainer.style.display = 'block';
+			
+			// Create 2D viewport if not exists
+			const pane = document.getElementById('void-viewport-pane');
+			if (pane && !this.viewport2D) {
+				// Clear pane
+				pane.innerHTML = '';
+				this.viewport2D = new Viewport2D(pane);
 				this._register(this.viewport2D);
-
-				this._register(this.viewport2D.onEntitySelected(id => {
+				
+				this.viewport2D.onEntitySelected(id => {
 					sceneBridge.selectEntity(id);
-				}));
-
-				this._register(this.viewport2D.onTransformChanged(e => {
-					sceneBridge.updateTransform({
-						entityId: e.id,
-						translation: [e.transform.position[0], e.transform.position[1], 0],
-						rotation: [0, 0, e.transform.rotation / 180 * Math.PI, 1],
-						scale: [e.transform.scale[0], e.transform.scale[1], 1],
-					});
-				}));
-			} catch (err) {
-				console.error('[VoidSceneEditor] Failed to create 2D viewport:', err);
-				return;
+				});
 			}
-		}
-
-		// Load entities
-		this.update2DEntities();
-		
-		// Ensure resize
-		requestAnimationFrame(() => {
+			
+			// Create inspector if not exists
+			if (this.inspectorContainer && !this.inspector) {
+				this.inspectorContainer.innerHTML = '';
+				this.inspector = new InspectorView(this.inspectorContainer);
+				this._register(this.inspector);
+			}
+			
+			// Update entities
 			if (this.viewport2D) {
+				this.viewport2D.loadScene(this.convertEntities());
 				this.viewport2D.resize();
 			}
-		});
-	}
-
-	private update2DEntities(): void {
-		if (!this.viewport2D) return;
-		
-		const entities = sceneBridge.getEntities();
-		const entities2D = entities.map(e => ({
-			id: e.id,
-			name: e.name,
-			transform: {
-				position: [0, 0] as [number, number],
-				rotation: 0,
-				scale: [1, 1] as [number, number],
-			},
-			visible: e.visible ?? true,
-			...this.extract2DData(e),
-		}));
-		this.viewport2D.loadScene(entities2D);
-	}
-
-	private extract2DData(entity: any): any {
-		const result: any = {};
-		
-		for (const comp of entity.components || []) {
-			if (comp.type === 'Transform2D') {
-				result.transform = {
-					position: comp.position || [0, 0],
-					rotation: comp.rotation || 0,
-					scale: comp.scale || [1, 1],
-				};
-			} else if (comp.type === 'Transform') {
-				result.transform = {
-					position: [comp.translation?.[0] || 0, comp.translation?.[1] || 0],
-					rotation: 0,
-					scale: [comp.scale?.[0] || 1, comp.scale?.[1] || 1],
-				};
-			} else if (comp.type === 'Sprite2D') {
-				result.sprite = {
-					texture: comp.texture,
-					size: [100, 100],
-					offset: comp.offset || [0, 0],
-				};
-			} else if (comp.type === 'CollisionShape2D') {
-				result.collider = {
-					type: comp.shape?.type?.toLowerCase() || 'box',
-					size: comp.shape?.size || [50, 50],
-					radius: comp.shape?.radius,
-				};
-			}
+			return;
 		}
+	}
 
-		return result;
+	private convertEntities(): any[] {
+		const entities = sceneBridge.getEntities();
+		return entities.map(e => {
+			const result: any = {
+				id: e.id,
+				name: e.name,
+				transform: { position: [0, 0] as [number, number], rotation: 0, scale: [1, 1] as [number, number] },
+				visible: e.visible ?? true,
+			};
+			
+			for (const comp of e.components || []) {
+				if (comp.type === 'Transform') {
+					result.transform.position = [comp.translation?.[0] || 0, comp.translation?.[1] || 0];
+					result.transform.scale = [comp.scale?.[0] || 1, comp.scale?.[1] || 1];
+				} else if (comp.type === 'Transform2D') {
+					result.transform = {
+						position: comp.position || [0, 0],
+						rotation: comp.rotation || 0,
+						scale: comp.scale || [1, 1],
+					};
+				} else if (comp.type === 'Sprite2D') {
+					result.sprite = { size: [100, 100] };
+				} else if (comp.type === 'CollisionShape2D') {
+					result.collider = { type: comp.shape?.type || 'box', size: comp.shape?.size || [50, 50] };
+				}
+			}
+			return result;
+		});
 	}
 
 	// ════════════════════════════════════════════════════════════════
 	// SCENE LOADING
 	// ════════════════════════════════════════════════════════════════
 
-	private ensureSceneLoaded(): void {
-		if (sceneBridge.hasScene()) return;
-
-		this.findVecnUri().then(uri => {
-			if (uri) {
-				this.fileService.readFile(uri).then(file => {
-					sceneBridge.setUri(uri);
-					sceneBridge.loadFromText(file.value.toString(), 'init');
-					this.setupFileWatcher(uri);
-				}).catch(() => {});
-			}
-		});
-	}
-
-	private async earlyDiscovery(): Promise<void> {
-		const delays = [100, 300, 600, 1000, 2000, 3000];
-
+	private async loadScene(): Promise<void> {
+		const delays = [100, 300, 600, 1000, 2000];
+		
 		for (const delay of delays) {
 			await new Promise(r => setTimeout(r, delay));
 			if (sceneBridge.hasScene()) return;
@@ -551,20 +332,13 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 				if (!content.trim()) continue;
 
 				sceneBridge.setUri(uri);
-				const success = sceneBridge.loadFromText(content, 'init');
-				if (success) {
+				if (sceneBridge.loadFromText(content, 'init')) {
 					this.setupFileWatcher(uri);
 					return;
 				}
-			} catch {
-				// ignore
-			}
+			} catch { /* ignore */ }
 		}
 	}
-
-	// ════════════════════════════════════════════════════════════════
-	// FILE UTILITIES
-	// ════════════════════════════════════════════════════════════════
 
 	private async findVecnUri(): Promise<URI | null> {
 		const active = this.editorService.activeEditor;
@@ -589,23 +363,17 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			const stat = await this.fileService.resolve(uri);
 			if (!stat.children) return null;
 			const skip = new Set(['node_modules', '.git', '.vscode', 'out', 'dist', 'build', '.void']);
-			for (const c of stat.children)
+			for (const c of stat.children) {
 				if (!c.isDirectory && c.name.endsWith('.vecn')) return c.resource;
-			for (const c of stat.children)
+			}
+			for (const c of stat.children) {
 				if (c.isDirectory && !skip.has(c.name)) {
 					const f = await this.searchFolder(c.resource, depth + 1);
 					if (f) return f;
 				}
+			}
 		} catch { /* ignore */ }
 		return null;
-	}
-
-	// ════════════════════════════════════════════════════════════════
-	// EDITOR MODEL LISTENER
-	// ════════════════════════════════════════════════════════════════
-
-	private onEditorChanged(): void {
-		this.attachModelListener();
 	}
 
 	private attachModelListener(): void {
@@ -640,15 +408,17 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	}
 
 	private disposeModelListener(): void {
-		if (this.modelListener) { this.modelListener.dispose(); this.modelListener = null; }
+		if (this.modelListener) {
+			this.modelListener.dispose();
+			this.modelListener = null;
+		}
 	}
 
-	// ════════════════════════════════════════════════════════════════
-	// FILE WATCHER
-	// ════════════════════════════════════════════════════════════════
-
 	private setupFileWatcher(uri: URI): void {
-		if (this.fileWatcher) { this.fileWatcher.dispose(); this.fileWatcher = null; }
+		if (this.fileWatcher) {
+			this.fileWatcher.dispose();
+			this.fileWatcher = null;
+		}
 
 		const w = this.fileService.watch(uri);
 		const l = this.fileService.onDidFilesChange(async e => {
@@ -662,10 +432,6 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		this.fileWatcher = { dispose: () => { w.dispose(); l.dispose(); } };
 	}
 
-	// ════════════════════════════════════════════════════════════════
-	// SAVE TO DISK
-	// ════════════════════════════════════════════════════════════════
-
 	private async saveToDisk(uri: URI, content: string): Promise<void> {
 		this.suppressModelUntil = Date.now() + 300;
 
@@ -678,19 +444,17 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 
 		try {
 			await this.fileService.writeFile(uri, VSBuffer.fromString(content));
-		} catch {
-			// ignore
-		}
+		} catch { /* ignore */ }
 	}
-
-	// ════════════════════════════════════════════════════════════════
 
 	override dispose(): void {
 		this.disposeModelListener();
-		if (this.fileWatcher) { this.fileWatcher.dispose(); this.fileWatcher = null; }
-		if (this.toolbar && this.toolbar.parentElement) {
-			this.toolbar.parentElement.removeChild(this.toolbar);
+		if (this.fileWatcher) {
+			this.fileWatcher.dispose();
+			this.fileWatcher = null;
 		}
+		if (this.toolbar) this.toolbar.remove();
+		if (this.viewportContainer) this.viewportContainer.remove();
 		super.dispose();
 	}
 }
@@ -701,5 +465,4 @@ registerWorkbenchContribution2(
 	WorkbenchPhase.BlockRestore
 );
 
-// Register scene context menu actions
 import './sceneActions.js';
