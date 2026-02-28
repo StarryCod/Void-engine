@@ -558,12 +558,10 @@ export class SceneTreePanel extends Disposable {
         
         private filterTree(filter: string): void {
                 // TODO: Implement filtering
-                console.log('Filter:', filter);
         }
         
         private showAddNodeMenu(): void {
                 // TODO: Show context menu with node types
-                console.log('Show add node menu');
         }
         
         public expandAll(): void {
