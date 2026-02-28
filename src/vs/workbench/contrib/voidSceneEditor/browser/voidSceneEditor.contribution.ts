@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
  *  Void Scene Editor - Contribution
- *  Toolbar with 3D/2D/Script buttons + Viewport
+ *  Toolbar with 3D/2D/Script buttons + Viewport + Inspector
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
@@ -12,6 +12,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import * as DOM from '../../../../base/browser/dom.js';
 import { ThreeViewport } from './threeViewport.js';
+import { InspectorView } from './inspectorView.js';
 import { sceneBridge } from '../common/voidSceneBridge.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 
@@ -22,9 +23,17 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	static readonly ID = 'workbench.contrib.voidSceneEditor';
 
 	private toolbar: HTMLElement | null = null;
-	private viewportContainer: HTMLElement | null = null;
+	private layoutContainer: HTMLElement | null = null;
+	private viewportPane: HTMLElement | null = null;
+	private inspectorPane: HTMLElement | null = null;
+	private splitter: HTMLElement | null = null;
 	private viewport: ThreeViewport | null = null;
+	private inspector: InspectorView | null = null;
 	private currentMode: EditorMode = 'Script';
+	
+	// Inspector width state
+	private inspectorWidth: number = 280;
+	private isDragging: boolean = false;
 
 	private modelListener: IDisposable | null = null;
 	private fileWatcher: IDisposable | null = null;
@@ -184,7 +193,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 
 		// Hide all first
 		if (monacoEditor) monacoEditor.style.display = 'none';
-		if (this.viewportContainer) this.viewportContainer.style.display = 'none';
+		if (this.layoutContainer) this.layoutContainer.style.display = 'none';
 
 		if (mode === 'Script') {
 			if (monacoEditor) monacoEditor.style.display = '';
@@ -202,52 +211,130 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		// Ensure scene is loaded
 		this.ensureSceneLoaded();
 
-		// Create viewport container if not exists
-		if (!this.viewportContainer) {
-			this.viewportContainer = DOM.append(editorContainer, DOM.$('.void-viewport-container'));
-			this.viewportContainer.style.cssText = `
-				position: absolute;
-				top: 32px;
-				left: 0;
-				right: 0;
-				bottom: 0;
-				background: #1e1e1e;
-				z-index: 50;
-			`;
-
-			// Create viewport
-			const content = sceneBridge.getRaw() || '';
-			this.viewport = new ThreeViewport(this.viewportContainer, content);
-			this._register(this.viewport);
-
-			// Wire up events
-			this._register(this.viewport.onTransformEditedTRS(e => {
-				sceneBridge.updateTransform({
-					entityId: e.entityId,
-					translation: e.translation,
-					rotation: e.rotation,
-					scale: e.scale,
-				});
-			}));
-
-			this._register(this.viewport.onEntityPicked(id => {
-				sceneBridge.selectEntity(id);
-			}));
-
-			this._register(sceneBridge.onSceneUpdated(u => {
-				if (u.source !== 'viewport' && this.viewport) {
-					this.viewport.updateScene(u.raw);
-				}
-			}));
-
-			this._register(sceneBridge.onEntitySelected(id => {
-				if (this.viewport) {
-					this.viewport.selectEntityById(id);
-				}
-			}));
+		// Create layout container if not exists
+		if (!this.layoutContainer) {
+			this.createLayout(editorContainer);
 		}
 
-		this.viewportContainer.style.display = 'block';
+		this.layoutContainer!.style.display = 'flex';
+	}
+
+	// ════════════════════════════════════════════════════════════════
+	// LAYOUT: Viewport (left) | Splitter | Inspector (right)
+	// ════════════════════════════════════════════════════════════════
+
+	private createLayout(editorContainer: HTMLElement): void {
+		// Main layout container
+		this.layoutContainer = DOM.append(editorContainer, DOM.$('.void-scene-layout'));
+		this.layoutContainer.style.cssText = `
+			position: absolute;
+			top: 32px;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			background: #1e1e1e;
+			z-index: 50;
+			display: flex;
+			flex-direction: row;
+			overflow: hidden;
+		`;
+
+		// Viewport pane (left side)
+		this.viewportPane = DOM.append(this.layoutContainer, DOM.$('.void-viewport-pane'));
+		this.viewportPane.style.cssText = `
+			flex: 1;
+			position: relative;
+			min-width: 200px;
+			background: #1e1e1e;
+		`;
+
+		// Splitter (resizable divider)
+		this.splitter = DOM.append(this.layoutContainer, DOM.$('.void-splitter'));
+		this.splitter.style.cssText = `
+			width: 4px;
+			background: #3c3c3c;
+			cursor: col-resize;
+			flex-shrink: 0;
+			transition: background 0.15s;
+		`;
+		
+		// Splitter drag handlers
+		this.splitter.addEventListener('mousedown', (e) => {
+			e.preventDefault();
+			this.isDragging = true;
+			this.splitter!.style.background = '#E67E22';
+			document.body.style.cursor = 'col-resize';
+		});
+
+		document.addEventListener('mousemove', (e) => {
+			if (!this.isDragging || !this.layoutContainer) return;
+			
+			const containerRect = this.layoutContainer.getBoundingClientRect();
+			const newWidth = containerRect.right - e.clientX;
+			
+			// Clamp width
+			if (newWidth >= 200 && newWidth <= containerRect.width - 200) {
+				this.inspectorWidth = newWidth;
+				this.inspectorPane!.style.width = `${newWidth}px`;
+			}
+		});
+
+		document.addEventListener('mouseup', () => {
+			if (this.isDragging) {
+				this.isDragging = false;
+				if (this.splitter) {
+					this.splitter.style.background = '#3c3c3c';
+				}
+				document.body.style.cursor = '';
+			}
+		});
+
+		// Inspector pane (right side)
+		this.inspectorPane = DOM.append(this.layoutContainer, DOM.$('.void-inspector-pane'));
+		this.inspectorPane.style.cssText = `
+			width: ${this.inspectorWidth}px;
+			min-width: 200px;
+			max-width: 500px;
+			background: #1e1e1e;
+			border-left: 1px solid #2a2a2e;
+			display: flex;
+			flex-direction: column;
+		`;
+
+		// Create viewport
+		const content = sceneBridge.getRaw() || '';
+		this.viewport = new ThreeViewport(this.viewportPane, content);
+		this._register(this.viewport);
+
+		// Create inspector
+		this.inspector = new InspectorView(this.inspectorPane);
+		this._register(this.inspector);
+
+		// Wire up viewport events
+		this._register(this.viewport.onTransformEditedTRS(e => {
+			sceneBridge.updateTransform({
+				entityId: e.entityId,
+				translation: e.translation,
+				rotation: e.rotation,
+				scale: e.scale,
+			});
+		}));
+
+		this._register(this.viewport.onEntityPicked(id => {
+			sceneBridge.selectEntity(id);
+		}));
+
+		this._register(sceneBridge.onSceneUpdated(u => {
+			if (u.source !== 'viewport' && this.viewport) {
+				this.viewport.updateScene(u.raw);
+			}
+		}));
+
+		this._register(sceneBridge.onEntitySelected(id => {
+			if (this.viewport) {
+				this.viewport.selectEntityById(id);
+			}
+		}));
 	}
 
 	private ensureSceneLoaded(): void {
