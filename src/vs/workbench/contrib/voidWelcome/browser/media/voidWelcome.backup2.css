@@ -1,0 +1,531 @@
+/*---------------------------------------------------------------------------------------------
+ *  Void Engine IDE - Welcome Screen Styles
+ *  Clean minimal design
+ *--------------------------------------------------------------------------------------------*/
+
+/* Скрываем всё при загрузке пока не показан Welcome Screen */
+body:not(.void-welcome-closed) {
+	background: #1e1e1e !important;
+}
+
+body:not(.void-welcome-closed) .monaco-workbench,
+body:not(.void-welcome-closed) .part:not(.titlebar),
+body:not(.void-welcome-closed) .editor-container,
+body:not(.void-welcome-closed) .sidebar,
+body:not(.void-welcome-closed) .panel,
+body:not(.void-welcome-closed) .statusbar,
+body:not(.void-welcome-closed) .activitybar {
+	display: none !important;
+}
+
+/* Welcome Screen overlay */
+body:not(.void-welcome-closed) #void-welcome-overlay {
+	position: fixed !important;
+	top: 0 !important;
+	left: 0 !important;
+	width: 100vw !important;
+	height: 100vh !important;
+	background: #1e1e1e !important;
+	z-index: 9999999 !important;
+	overflow: hidden !important;
+}
+
+body.void-welcome-closed #void-welcome-overlay {
+	display: none !important;
+}
+
+/* Main Welcome Screen */
+.void-welcome-screen {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	background: #1e1e1e;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Main container - full height */
+.void-main-container {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+/* Toolbar */
+.void-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 20px;
+	background: #1a1a1a;
+	border-bottom: 1px solid #3a3a3a;
+	flex-shrink: 0;
+}
+
+.void-toolbar-left,
+.void-toolbar-right {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.void-toolbar-button {
+	padding: 8px 16px;
+	background: #2a2a2a;
+	border: 1px solid #3a3a3a;
+	border-radius: 6px;
+	color: #ececec;
+	font-size: 13px;
+	cursor: pointer;
+	transition: all 0.15s;
+}
+
+.void-toolbar-button:hover {
+	background: #333;
+	border-color: #fff;
+	color: #fff;
+}
+
+.void-toolbar-search {
+	flex: 1;
+	max-width: 400px;
+	margin: 0 20px;
+}
+
+.void-search-input {
+	width: 100%;
+	padding: 8px 12px;
+	background: #2a2a2a;
+	border: 1px solid #3a3a3a;
+	border-radius: 6px;
+	color: #ececec;
+	font-size: 13px;
+	outline: none;
+}
+
+.void-search-input:focus {
+	border-color: #fff;
+}
+
+.void-search-input::placeholder {
+	color: #757575;
+}
+
+/* Content Area */
+.void-content-area {
+	display: flex;
+	flex: 1;
+	overflow: hidden;
+	flex-direction: row;
+}
+
+/* Projects Area */
+.void-projects-area {
+	flex: 1;
+	background: #1e1e1e;
+	overflow-y: auto;
+	min-width: 0;
+}
+
+.void-projects-list {
+	padding: 20px;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+	gap: 16px;
+}
+
+/* Sidebar */
+.void-sidebar {
+	width: 180px;
+	background: #1a1a1a;
+	border-left: 1px solid #3a3a3a;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	flex-shrink: 0;
+	overflow-y: auto;
+}
+
+/* Project Card */
+.void-project-card {
+	padding: 20px;
+	background: #1a1a1a;
+	border: 1px solid #3a3a3a;
+	border-radius: 8px;
+	cursor: pointer;
+	transition: all 0.15s;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.void-project-card:hover {
+	border-color: #fff;
+	background: #222;
+	transform: translateY(-2px);
+}
+
+.void-project-icon {
+	font-size: 48px;
+	color: #ececec;
+	opacity: 0.8;
+}
+
+.void-project-card:hover .void-project-icon {
+	opacity: 1;
+}
+
+.void-project-name {
+	font-size: 16px;
+	font-weight: 600;
+	color: #ececec;
+	word-break: break-word;
+}
+
+.void-project-card:hover .void-project-name {
+	color: #fff;
+}
+
+.void-project-path {
+	font-size: 11px;
+	color: #757575;
+	font-family: 'Consolas', monospace;
+	word-break: break-all;
+}
+
+.void-project-card:hover .void-project-path {
+	color: #b0b0b0;
+}
+
+/* Empty State */
+.void-empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 24px;
+	padding: 60px 20px;
+	text-align: center;
+}
+
+.void-empty-message {
+	font-size: 20px;
+	font-weight: 600;
+	color: #ececec;
+}
+
+.void-empty-hint {
+	font-size: 14px;
+	color: #b0b0b0;
+	max-width: 500px;
+	line-height: 1.6;
+}
+
+.void-empty-buttons {
+	display: flex;
+	gap: 12px;
+	margin-top: 12px;
+}
+
+.void-empty-button {
+	padding: 14px 32px;
+	background: #2a2a2a;
+	border: 1px solid #3a3a3a;
+	border-radius: 6px;
+	color: #ececec;
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.15s;
+}
+
+.void-empty-button:hover {
+	background: #333;
+	border-color: #fff;
+	color: #fff;
+}
+
+/* Sidebar styles */
+.void-sidebar-title {
+	font-size: 11px;
+	font-weight: 700;
+	color: #757575;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid #3a3a3a;
+	margin-bottom: 8px;
+}
+
+.void-sidebar-button {
+	padding: 10px 14px;
+	background: #2a2a2a;
+	border: 1px solid #3a3a3a;
+	border-radius: 6px;
+	color: #ececec;
+	font-size: 13px;
+	text-align: center;
+	cursor: pointer;
+	transition: all 0.15s;
+}
+
+.void-sidebar-button:hover {
+	background: #333;
+	border-color: #fff;
+	color: #fff;
+}
+
+.void-sidebar-button.disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* Dialog Overlay */
+body:not(.void-welcome-closed) .void-create-dialog-overlay {
+	position: fixed !important;
+	top: 0 !important;
+	left: 0 !important;
+	width: 100vw !important;
+	height: 100vh !important;
+	background: rgba(0, 0, 0, 0.75) !important;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	z-index: 10000000 !important;
+}
+
+body.void-welcome-closed .void-create-dialog-overlay {
+	display: none !important;
+}
+
+/* Dialog */
+.void-create-dialog {
+	background: #1a1a1a;
+	border: 1px solid #3a3a3a;
+	border-radius: 10px;
+	width: 90%;
+	max-width: 500px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.void-dialog-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 18px 20px;
+	border-bottom: 1px solid #3a3a3a;
+	background: #222;
+	border-radius: 10px 10px 0 0;
+}
+
+.void-dialog-title {
+	font-size: 15px;
+	font-weight: 600;
+	color: #ececec;
+}
+
+.void-dialog-close {
+	width: 30px;
+	height: 30px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: transparent;
+	border: none;
+	border-radius: 5px;
+	color: #757575;
+	font-size: 20px;
+	cursor: pointer;
+}
+
+.void-dialog-close:hover {
+	background: rgba(255, 107, 107, 0.1);
+	color: #ff6b6b;
+}
+
+.void-dialog-content {
+	padding: 20px;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+.void-dialog-error {
+	display: none;
+	padding: 12px;
+	background: rgba(255, 107, 107, 0.1);
+	border: 1px solid rgba(255, 107, 107, 0.3);
+	border-radius: 6px;
+	color: #ff6b6b;
+	font-size: 13px;
+}
+
+.void-form-group {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.void-form-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: #ececec;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.void-form-input,
+.void-form-select {
+	padding: 10px 12px;
+	background: #2a2a2a;
+	border: 1px solid #3a3a3a;
+	border-radius: 6px;
+	color: #ececec;
+	font-size: 13px;
+	outline: none;
+}
+
+.void-form-input:focus,
+.void-form-select:focus {
+	border-color: #fff;
+}
+
+.void-form-input::placeholder {
+	color: #757575;
+}
+
+.void-form-select {
+	cursor: pointer;
+	appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23757575' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 12px center;
+	padding-right: 36px;
+}
+
+.void-template-grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 10px;
+}
+
+.void-template-card {
+	padding: 16px 12px;
+	background: #2a2a2a;
+	border: 2px solid #3a3a3a;
+	border-radius: 6px;
+	cursor: pointer;
+	transition: all 0.15s;
+	text-align: center;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+}
+
+.void-template-card:hover {
+	border-color: #b0b0b0;
+	background: #333;
+}
+
+.void-template-card.selected {
+	border-color: #fff;
+	background: #333;
+}
+
+.void-template-icon {
+	font-size: 32px;
+	color: #ececec;
+}
+
+.void-template-name {
+	font-size: 13px;
+	font-weight: 500;
+	color: #ececec;
+}
+
+.void-template-card:hover .void-template-name,
+.void-template-card.selected .void-template-name {
+	color: #fff;
+}
+
+.void-template-desc {
+	font-size: 11px;
+	color: #757575;
+}
+
+.void-dialog-actions {
+	display: flex;
+	gap: 10px;
+	padding: 16px 20px;
+	border-top: 1px solid #3a3a3a;
+	justify-content: flex-end;
+	background: #222;
+	border-radius: 0 0 10px 10px;
+}
+
+.void-dialog-button {
+	padding: 10px 20px;
+	border-radius: 6px;
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	border: 1px solid #3a3a3a;
+}
+
+.void-button-secondary {
+	background: transparent;
+	color: #b0b0b0;
+}
+
+.void-button-secondary:hover {
+	background: #333;
+	color: #ececec;
+}
+
+.void-button-primary {
+	background: #fff;
+	color: #000;
+	border-color: #fff;
+	font-weight: 600;
+}
+
+.void-button-primary:hover {
+	background: #e0e0e0;
+	border-color: #e0e0e0;
+}
+
+/* Notifications */
+.void-notification {
+	position: fixed;
+	top: 20px;
+	right: 20px;
+	padding: 14px 20px;
+	border-radius: 6px;
+	font-size: 13px;
+	font-weight: 500;
+	z-index: 10000001;
+	opacity: 0;
+	transform: translateX(400px);
+	transition: all 0.3s ease;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.void-notification-show {
+	opacity: 1;
+	transform: translateX(0);
+}
+
+.void-notification-success {
+	background: rgba(100, 255, 150, 0.15);
+	border: 1px solid rgba(100, 255, 150, 0.4);
+	color: rgba(100, 255, 150, 0.95);
+}
+
+.void-notification-error {
+	background: rgba(255, 107, 107, 0.15);
+	border: 1px solid rgba(255, 107, 107, 0.4);
+	color: #ff6b6b;
+}

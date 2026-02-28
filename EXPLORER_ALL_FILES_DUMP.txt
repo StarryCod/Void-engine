@@ -1,0 +1,4983 @@
+﻿=== EXPLORER FILES DUMP ===
+
+========================================
+FILE: vscode/src/vs/workbench/contrib/files/browser/views/explorerView.ts
+========================================
+
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import './explorerViewSplit.css';
+import * as nls from '../../../../../nls.js';
+import { URI } from '../../../../../base/common/uri.js';
+import * as perf from '../../../../../base/common/performance.js';
+import { WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification } from '../../../../../base/common/actions.js';
+import { memoize } from '../../../../../base/common/decorators.js';
+import { IFilesConfiguration, ExplorerFolderContext, FilesExplorerFocusedContext, ExplorerFocusedContext, ExplorerRootContext, ExplorerResourceReadonlyContext, ExplorerResourceCut, ExplorerResourceMoveableToTrash, ExplorerCompressedFocusContext, ExplorerCompressedFirstFocusContext, ExplorerCompressedLastFocusContext, ExplorerResourceAvailableEditorIdsContext, VIEW_ID, ExplorerResourceWritableContext, ViewHasSomeCollapsibleRootItemContext, FoldersViewVisibleContext, ExplorerResourceParentReadOnlyContext, ExplorerFindProviderActive } from '../../common/files.js';
+import { FileCopiedContext, NEW_FILE_COMMAND_ID, NEW_FOLDER_COMMAND_ID } from '../fileActions.js';
+import * as DOM from '../../../../../base/browser/dom.js';
+import { IWorkbenchLayoutService } from '../../../../services/layout/browser/layoutService.js';
+import { ExplorerDecorationsProvider } from './explorerDecorationsProvider.js';
+import { IWorkspaceContextService, WorkbenchState } from '../../../../../platform/workspace/common/workspace.js';
+import { IConfigurationService, IConfigurationChangeEvent } from '../../../../../platform/configuration/common/configuration.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IProgressService, ProgressLocation } from '../../../../../platform/progress/common/progress.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IContextKeyService, IContextKey, ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
+import { ResourceContextKey } from '../../../../common/contextkeys.js';
+import { IDecorationsService } from '../../../../services/decorations/common/decorations.js';
+import { WorkbenchCompressibleAsyncDataTree } from '../../../../../platform/list/browser/listService.js';
+import { DelayedDragHandler } from '../../../../../base/browser/dnd.js';
+import { IEditorService, SIDE_GROUP, ACTIVE_GROUP } from '../../../../services/editor/common/editorService.js';
+import { IViewPaneOptions, ViewPane } from '../../../../browser/parts/views/viewPane.js';
+import { ILabelService } from '../../../../../platform/label/common/label.js';
+import { ExplorerDelegate, ExplorerDataSource, FilesRenderer, ICompressedNavigationController, FilesFilter, FileSorter, FileDragAndDrop, ExplorerCompressionDelegate, isCompressedFolderName, ExplorerFindProvider } from './explorerViewer.js';
+import { IThemeService, IFileIconTheme } from '../../../../../platform/theme/common/themeService.js';
+import { IWorkbenchThemeService } from '../../../../services/themes/common/workbenchThemeService.js';
+import { ITreeContextMenuEvent, TreeVisibility } from '../../../../../base/browser/ui/tree/tree.js';
+import { MenuId, Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
+import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
+import { ExplorerItem, NewExplorerItem } from '../../common/explorerModel.js';
+import { ResourceLabels } from '../../../../browser/labels.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { IAsyncDataTreeViewState } from '../../../../../base/browser/ui/tree/asyncDataTree.js';
+import { FuzzyScore } from '../../../../../base/common/filters.js';
+import { IClipboardService } from '../../../../../platform/clipboard/common/clipboardService.js';
+import { IFileService, FileSystemProviderCapabilities } from '../../../../../platform/files/common/files.js';
+import { IDisposable } from '../../../../../base/common/lifecycle.js';
+import { Event } from '../../../../../base/common/event.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
+import { IViewsService } from '../../../../services/views/common/viewsService.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
+import { EditorResourceAccessor, SideBySideEditor } from '../../../../common/editor.js';
+import { IExplorerService, IExplorerView } from '../files.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { IEditorResolverService } from '../../../../services/editor/common/editorResolverService.js';
+import { EditorOpenSource } from '../../../../../platform/editor/common/editor.js';
+import { ResourceMap } from '../../../../../base/common/map.js';
+import { AbstractTreePart } from '../../../../../base/browser/ui/tree/abstractTree.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { SplitView, Sizing } from '../../../../../base/browser/ui/splitview/splitview.js';
+import { Emitter } from '../../../../../base/common/event.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
+import { SceneManager, SceneEntity, SceneComponent } from '../sceneManager.js';
+import { IAction } from '../../../../../base/common/actions.js';
+import { AddObjectDialog, ObjectDefinition } from '../../../voidSceneEditor/browser/addObjectDialog.js';
+
+
+function hasExpandedRootChild(tree: WorkbenchCompressibleAsyncDataTree<ExplorerItem | ExplorerItem[], ExplorerItem, FuzzyScore>, treeInput: ExplorerItem[]): boolean {
+	for (const folder of treeInput) {
+		if (tree.hasNode(folder) && !tree.isCollapsed(folder)) {
+			for (const [, child] of folder.children.entries()) {
+				if (tree.hasNode(child) && tree.isCollapsible(child) && !tree.isCollapsed(child)) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+/**
+ * Whether or not any of the nodes in the tree are expanded
+ */
+function hasExpandedNode(tree: WorkbenchCompressibleAsyncDataTree<ExplorerItem | ExplorerItem[], ExplorerItem, FuzzyScore>, treeInput: ExplorerItem[]): boolean {
+	for (const folder of treeInput) {
+		if (tree.hasNode(folder) && !tree.isCollapsed(folder)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+const identityProvider = {
+	getId: (stat: ExplorerItem) => {
+		if (stat instanceof NewExplorerItem) {
+			return `new:${stat.getId()}`;
+		}
+
+		return stat.getId();
+	}
+};
+
+export function getContext(focus: ExplorerItem[], selection: ExplorerItem[], respectMultiSelection: boolean,
+	compressedNavigationControllerProvider: { getCompressedNavigationController(stat: ExplorerItem): ICompressedNavigationController[] | undefined }): ExplorerItem[] {
+
+	let focusedStat: ExplorerItem | undefined;
+	focusedStat = focus.length ? focus[0] : undefined;
+
+	// If we are respecting multi-select and we have a multi-selection we ignore focus as we want to act on the selection
+	if (respectMultiSelection && selection.length > 1) {
+		focusedStat = undefined;
+	}
+
+	const compressedNavigationControllers = focusedStat && compressedNavigationControllerProvider.getCompressedNavigationController(focusedStat);
+	const compressedNavigationController = compressedNavigationControllers?.length ? compressedNavigationControllers[0] : undefined;
+	focusedStat = compressedNavigationController ? compressedNavigationController.current : focusedStat;
+
+	const selectedStats: ExplorerItem[] = [];
+
+	for (const stat of selection) {
+		const controllers = compressedNavigationControllerProvider.getCompressedNavigationController(stat);
+		const controller = controllers?.at(0);
+		if (controller && focusedStat && controller === compressedNavigationController) {
+			if (stat === focusedStat) {
+				selectedStats.push(stat);
+			}
+			// Ignore stats which are selected but are part of the same compact node as the focused stat
+			continue;
+		}
+
+		if (controller) {
+			selectedStats.push(...controller.items);
+		} else {
+			selectedStats.push(stat);
+		}
+	}
+	if (!focusedStat) {
+		if (respectMultiSelection) {
+			return selectedStats;
+		} else {
+			return [];
+		}
+	}
+
+	if (respectMultiSelection && selectedStats.indexOf(focusedStat) >= 0) {
+		return selectedStats;
+	}
+
+	return [focusedStat];
+}
+
+export interface IExplorerViewContainerDelegate {
+	willOpenElement(event?: UIEvent): void;
+	didOpenElement(event?: UIEvent): void;
+}
+
+export interface IExplorerViewPaneOptions extends IViewPaneOptions {
+	delegate: IExplorerViewContainerDelegate;
+}
+
+export class ExplorerView extends ViewPane implements IExplorerView {
+	static readonly TREE_VIEW_STATE_STORAGE_KEY: string = 'workbench.explorer.treeViewState';
+
+	private tree!: WorkbenchCompressibleAsyncDataTree<ExplorerItem | ExplorerItem[], ExplorerItem, FuzzyScore>;
+	private filter!: FilesFilter;
+	private findProvider!: ExplorerFindProvider;
+
+	private resourceContext: ResourceContextKey;
+	private folderContext: IContextKey<boolean>;
+	private parentReadonlyContext: IContextKey<boolean>;
+	private readonlyContext: IContextKey<boolean>;
+	private availableEditorIdsContext: IContextKey<string>;
+
+	private rootContext: IContextKey<boolean>;
+	private resourceMoveableToTrash: IContextKey<boolean>;
+
+	private renderer!: FilesRenderer;
+
+	private treeContainer!: HTMLElement;
+	private container!: HTMLElement;
+	private compressedFocusContext: IContextKey<boolean>;
+	private compressedFocusFirstContext: IContextKey<boolean>;
+	private compressedFocusLastContext: IContextKey<boolean>;
+
+	private viewHasSomeCollapsibleRootItem: IContextKey<boolean>;
+	private viewVisibleContextKey: IContextKey<boolean>;
+
+	private setTreeInputPromise: Promise<void> | undefined;
+	private horizontalScrolling: boolean | undefined;
+
+	private dragHandler!: DelayedDragHandler;
+	private _autoReveal: boolean | 'force' | 'focusNoScroll' = false;
+	private decorationsProvider: ExplorerDecorationsProvider | undefined;
+	private readonly delegate: IExplorerViewContainerDelegate | undefined;
+
+	// Split view for Scene Hierarchy + Project Files
+	private splitView!: SplitView;
+	private sceneHierarchyContainer!: HTMLElement;
+	private projectFilesContainer!: HTMLElement;
+	
+	// Scene management
+	private sceneManager!: SceneManager;
+	private expandedEntities: Set<string> = new Set();
+	private selectedEntityId: string | null = null;
+	private renamingEntityId: string | null = null;
+	private draggedEntityId: string | null = null;
+	private currentDropTarget: { entityId: string; position: 'above' | 'into' | 'below' } | null = null;
+
+	override get singleViewPaneContainerTitle(): string {
+		return this.name;
+	}
+
+	constructor(
+		options: IExplorerViewPaneOptions,
+		@IContextMenuService contextMenuService: IContextMenuService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
+		@IProgressService private readonly progressService: IProgressService,
+		@IEditorService private readonly editorService: IEditorService,
+		@IEditorResolverService private readonly editorResolverService: IEditorResolverService,
+		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IConfigurationService configurationService: IConfigurationService,
+		@IDecorationsService private readonly decorationService: IDecorationsService,
+		@ILabelService private readonly labelService: ILabelService,
+		@IThemeService themeService: IWorkbenchThemeService,
+		@ITelemetryService private readonly telemetryService: ITelemetryService,
+		@IHoverService hoverService: IHoverService,
+		@IExplorerService private readonly explorerService: IExplorerService,
+		@IStorageService private readonly storageService: IStorageService,
+		@IClipboardService private clipboardService: IClipboardService,
+		@IFileService private readonly fileService: IFileService,
+		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
+		@ICommandService private readonly commandService: ICommandService,
+		@IOpenerService openerService: IOpenerService
+	) {
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
+
+		this.delegate = options.delegate;
+		this.resourceContext = instantiationService.createInstance(ResourceContextKey);
+		this._register(this.resourceContext);
+
+		this.parentReadonlyContext = ExplorerResourceParentReadOnlyContext.bindTo(contextKeyService);
+		this.folderContext = ExplorerFolderContext.bindTo(contextKeyService);
+		this.readonlyContext = ExplorerResourceReadonlyContext.bindTo(contextKeyService);
+		this.availableEditorIdsContext = ExplorerResourceAvailableEditorIdsContext.bindTo(contextKeyService);
+		this.rootContext = ExplorerRootContext.bindTo(contextKeyService);
+		this.resourceMoveableToTrash = ExplorerResourceMoveableToTrash.bindTo(contextKeyService);
+		this.compressedFocusContext = ExplorerCompressedFocusContext.bindTo(contextKeyService);
+		this.compressedFocusFirstContext = ExplorerCompressedFirstFocusContext.bindTo(contextKeyService);
+		this.compressedFocusLastContext = ExplorerCompressedLastFocusContext.bindTo(contextKeyService);
+		this.viewHasSomeCollapsibleRootItem = ViewHasSomeCollapsibleRootItemContext.bindTo(contextKeyService);
+		this.viewVisibleContextKey = FoldersViewVisibleContext.bindTo(contextKeyService);
+
+		// Initialize scene manager
+		this.sceneManager = this._register(instantiationService.createInstance(SceneManager));
+		this._register(this.sceneManager.onDidChangeScene(() => {
+			this.refreshSceneHierarchy();
+		}));
+
+		this.explorerService.registerView(this);
+	}
+
+	get autoReveal() {
+		return this._autoReveal;
+	}
+
+	set autoReveal(autoReveal: boolean | 'force' | 'focusNoScroll') {
+		this._autoReveal = autoReveal;
+	}
+
+	get name(): string {
+		return this.labelService.getWorkspaceLabel(this.contextService.getWorkspace());
+	}
+
+	override get title(): string {
+		return this.name;
+	}
+
+	override set title(_: string) {
+		// noop
+	}
+
+	override setVisible(visible: boolean): void {
+		this.viewVisibleContextKey.set(visible);
+		super.setVisible(visible);
+	}
+
+	@memoize private get fileCopiedContextKey(): IContextKey<boolean> {
+		return FileCopiedContext.bindTo(this.contextKeyService);
+	}
+
+	@memoize private get resourceCutContextKey(): IContextKey<boolean> {
+		return ExplorerResourceCut.bindTo(this.contextKeyService);
+	}
+
+	// Split view methods
+
+	protected override renderHeader(container: HTMLElement): void {
+		super.renderHeader(container);
+
+		// Expand on drag over
+		this.dragHandler = new DelayedDragHandler(container, () => this.setExpanded(true));
+
+		// eslint-disable-next-line no-restricted-syntax
+		const titleElement = container.querySelector('.title') as HTMLElement;
+		const setHeader = () => {
+			titleElement.textContent = this.name;
+			this.updateTitle(this.name);
+			this.ariaHeaderLabel = nls.localize('explorerSection', "Explorer Section: {0}", this.name);
+			titleElement.setAttribute('aria-label', this.ariaHeaderLabel);
+		};
+
+		this._register(this.contextService.onDidChangeWorkspaceName(setHeader));
+		this._register(this.labelService.onDidChangeFormatters(setHeader));
+		setHeader();
+	}
+
+	protected override layoutBody(height: number, width: number): void {
+		super.layoutBody(height, width);
+		if (this.splitView) {
+			this.splitView.layout(height);
+		}
+	}
+
+	private async refreshSceneHierarchy(): Promise<void> {
+		if (!this.sceneHierarchyContainer) {
+			return;
+		}
+
+		const content = this.sceneHierarchyContainer.querySelector('.scene-hierarchy-content') as HTMLElement | null;
+		if (!content) {
+			return;
+		}
+
+		DOM.clearNode(content);
+
+		// Если сцена уже загружена в менеджере — используем её.
+		// Если нет — пробуем найти и загрузить.
+		let scene = this.sceneManager.scene;
+		if (!scene) {
+			scene = await this.sceneManager.findAndLoadScene();
+		}
+
+		if (!scene) {
+			this.renderEmptySceneState(content);
+			return;
+		}
+
+		for (const entity of scene.entities) {
+			this.renderEntity(content, entity, 0, null);
+		}
+
+		this.setupContentFocus(content);
+	}
+
+	private setupContentFocus(content: HTMLElement): void {
+		const onDown = DOM.addDisposableListener(content, DOM.EventType.MOUSE_DOWN, () => {
+			content.classList.add('focused');
+		});
+		this._register(onDown);
+
+		const onFocusOut = DOM.addDisposableListener(content, DOM.EventType.FOCUS_OUT, (e: FocusEvent) => {
+			const related = e.relatedTarget as HTMLElement | null;
+			if (!related || !content.contains(related)) {
+				content.classList.remove('focused');
+			}
+		});
+		this._register(onFocusOut);
+	}
+	
+	private renderEmptySceneState(container: HTMLElement): void {
+		DOM.clearNode(container);
+
+		const emptyState = DOM.append(container, DOM.$('.scene-hierarchy-empty'));
+
+		const message = DOM.append(emptyState, DOM.$('.empty-message'));
+		message.textContent = 'No scene loaded';
+
+		const createBtn = DOM.append(emptyState, DOM.$('button.create-scene-btn'));
+		createBtn.textContent = 'Create Main Scene';
+
+		this._register(DOM.addDisposableListener(createBtn, DOM.EventType.CLICK, async () => {
+			await this.sceneManager.createDefaultScene();
+		}));
+	}
+	
+	private renderEntity(parent: HTMLElement, entity: SceneEntity, depth: number, parentEntity: SceneEntity | null): void {
+		const isExpanded = this.expandedEntities.has(entity.id);
+		const hasExpandableContent = entity.children.length > 0 || entity.components.length > 0;
+
+		const row = this.renderTreeNode(parent, {
+			icon: this.getEntityIcon(entity),
+			iconClass: this.getEntityIconClass(entity),
+			label: entity.name,
+			depth,
+			expanded: hasExpandableContent ? isExpanded : undefined,
+			entityId: entity.id,
+			parentEntityId: parentEntity?.id ?? null,
+			isComponent: false,
+			visible: entity.visible,
+		});
+
+		// Draggable
+		row.setAttribute('draggable', 'true');
+
+		this._register(DOM.addDisposableListener(row, 'dragstart', (e: DragEvent) => {
+			this.draggedEntityId = entity.id;
+			row.classList.add('dragging');
+			if (e.dataTransfer) {
+				e.dataTransfer.effectAllowed = 'move';
+				e.dataTransfer.setData('text/plain', entity.id);
+			}
+		}));
+
+		this._register(DOM.addDisposableListener(row, 'dragend', () => {
+			this.draggedEntityId = null;
+			row.classList.remove('dragging');
+			this.clearDropIndicators();
+		}));
+
+		this._register(DOM.addDisposableListener(row, 'dragover', (e: DragEvent) => {
+			if (!this.draggedEntityId || this.draggedEntityId === entity.id) return;
+			e.preventDefault();
+			e.stopPropagation();
+			if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+			const rect = row.getBoundingClientRect();
+			const y = e.clientY - rect.top;
+			const quarter = rect.height / 4;
+			let pos: 'above' | 'into' | 'below';
+			if (y < quarter) pos = 'above';
+			else if (y > rect.height - quarter) pos = 'below';
+			else pos = 'into';
+
+			this.clearDropIndicators();
+			row.classList.add(`drag-over-${pos}`);
+			this.currentDropTarget = { entityId: entity.id, position: pos };
+		}));
+
+		this._register(DOM.addDisposableListener(row, 'dragleave', (e: DragEvent) => {
+			const related = e.relatedTarget as HTMLElement | null;
+			if (!related || !row.contains(related)) {
+				row.classList.remove('drag-over-above', 'drag-over-into', 'drag-over-below');
+				if (this.currentDropTarget?.entityId === entity.id) {
+					this.currentDropTarget = null;
+				}
+			}
+		}));
+
+		this._register(DOM.addDisposableListener(row, 'drop', async (e: DragEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			this.clearDropIndicators();
+
+			if (!this.draggedEntityId || !this.currentDropTarget) return;
+			const sourceId = this.draggedEntityId;
+			const targetId = this.currentDropTarget.entityId;
+			const position = this.currentDropTarget.position;
+			this.draggedEntityId = null;
+			this.currentDropTarget = null;
+
+			if (sourceId === targetId) return;
+
+			if (position === 'into') {
+				this.expandedEntities.add(targetId);
+			}
+
+			await this.sceneManager.moveEntity(sourceId, targetId, position);
+		}));
+
+		// Right-click context menu
+		this._register(DOM.addDisposableListener(row, DOM.EventType.CONTEXT_MENU, (e: MouseEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			this.showEntityContextMenu(entity, parentEntity, e);
+		}));
+
+		// Double-click to rename
+		this._register(DOM.addDisposableListener(row, 'dblclick', (e: MouseEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			this.renamingEntityId = entity.id;
+			this.refreshSceneHierarchy();
+		}));
+
+		// Render children when expanded
+		if (isExpanded) {
+			for (const comp of entity.components) {
+				this.renderComponent(parent, comp, depth + 1, entity.id);
+			}
+			for (const child of entity.children) {
+				this.renderEntity(parent, child, depth + 1, entity);
+			}
+		}
+	}
+
+	private renderComponent(parent: HTMLElement, component: SceneComponent, depth: number, ownerEntityId: string): void {
+		this.renderTreeNode(parent, {
+			icon: this.getComponentIcon(component),
+			iconClass: this.getComponentIconClass(component),
+			label: component.type,
+			depth,
+			isComponent: true,
+			subtitle: this.getComponentSubtitle(component),
+			ownerEntityId,
+			componentType: component.type,
+		});
+	}
+	
+	private getEntityIcon(entity: SceneEntity): ThemeIcon {
+		for (const c of entity.components) {
+			if (c.type === 'PointLight') return Codicon.lightbulb;
+			if (c.type === 'Camera') return Codicon.deviceCamera;
+			if (c.type === 'Mesh') return Codicon.symbolClass;
+		}
+		return Codicon.symbolClass;
+	}
+
+	private getEntityIconClass(entity: SceneEntity): string {
+		for (const c of entity.components) {
+			if (c.type === 'PointLight') return 'icon-light';
+			if (c.type === 'Camera') return 'icon-camera';
+			if (c.type === 'Mesh') return 'icon-mesh';
+		}
+		return '';
+	}
+
+	private getComponentIcon(component: SceneComponent): ThemeIcon {
+		switch (component.type) {
+			case 'Transform': return Codicon.move;
+			case 'Mesh': return Codicon.symbolStruct;
+			case 'Material': return Codicon.paintcan;
+			case 'PointLight': return Codicon.lightbulb;
+			case 'Camera': return Codicon.deviceCamera;
+			default: return Codicon.gear;
+		}
+	}
+
+	private getComponentIconClass(component: SceneComponent): string {
+		switch (component.type) {
+			case 'Transform': return 'comp-transform';
+			case 'Mesh': return 'comp-mesh';
+			case 'Material': return 'comp-material';
+			case 'PointLight': return 'comp-light';
+			case 'Camera': return 'comp-camera';
+			default: return '';
+		}
+	}
+
+	private getComponentSubtitle(component: SceneComponent): string | undefined {
+		switch (component.type) {
+			case 'Material': return 'PBR';
+			case 'PointLight': return `${component.intensity}`;
+			case 'Mesh': return component.shape?.type;
+			case 'Camera': return `FOV ${component.fov ?? 45}`;
+			default: return undefined;
+		}
+	}
+
+	// ============================================================
+	// Context menu
+	// ============================================================
+
+	private showEntityContextMenu(entity: SceneEntity, parentEntity: SceneEntity | null, event: MouseEvent): void {
+		const actions: IAction[] = [
+			{
+				id: 'ctx-add-child',
+				label: 'Add Child Node',
+				tooltip: '',
+				class: undefined,
+				enabled: true,
+				run: async () => {
+					// Show add object dialog
+					const dialog = new AddObjectDialog(document.body);
+					dialog.show(async (def: ObjectDefinition) => {
+						this.expandedEntities.add(entity.id);
+						
+						// ПРЯМО ПЕРЕДАЕМ ID. SceneManager сам разберется.
+						// def.id = 'sphere' -> SceneManager создаст сферу.
+						// def.id = 'cube' -> SceneManager создаст куб.
+						console.log('[ExplorerView] Creating child entity:', def.name, 'Type ID:', def.id);
+						
+						const child = await this.sceneManager.addEntity(def.name, def.id, entity.id);
+						if (child) {
+							this.renamingEntityId = child.id;
+						}
+						dialog.dispose();
+					});
+				}
+			},
+			{
+				id: 'ctx-rename',
+				label: 'Rename',
+				tooltip: '',
+				class: undefined,
+				enabled: true,
+				run: async () => {
+					this.renamingEntityId = entity.id;
+					await this.refreshSceneHierarchy();
+				}
+			},
+			{
+				id: 'ctx-duplicate',
+				label: 'Duplicate',
+				tooltip: '',
+				class: undefined,
+				enabled: true,
+				run: async () => {
+					await this.sceneManager.duplicateEntity(entity.id);
+				}
+			},
+			{
+				id: 'ctx-delete',
+				label: 'Delete',
+				tooltip: '',
+				class: undefined,
+				enabled: true,
+				run: async () => {
+					if (this.selectedEntityId === entity.id) this.selectedEntityId = null;
+					await this.sceneManager.removeEntity(entity.id);
+				}
+			}
+		];
+
+		this.contextMenuService.showContextMenu({
+			getAnchor: () => ({ x: event.clientX, y: event.clientY }),
+			getActions: () => actions,
+		});
+	}
+
+	// ============================================================
+	// Drop indicator cleanup
+	// ============================================================
+
+	private clearDropIndicators(): void {
+		if (!this.sceneHierarchyContainer) return;
+		this.sceneHierarchyContainer.querySelectorAll('.scene-tree-row').forEach(r => {
+			r.classList.remove('drag-over-above', 'drag-over-into', 'drag-over-below');
+		});
+	}
+
+	private renderSceneHierarchy(container: HTMLElement): void {
+		container.classList.add('scene-hierarchy-view');
+
+		const titleSection = DOM.append(container, DOM.$('.scene-hierarchy-title-section'));
+		const title = DOM.append(titleSection, DOM.$('.scene-hierarchy-title'));
+		title.textContent = 'Scene Hierarchy';
+
+		const toolbar = DOM.append(titleSection, DOM.$('.scene-hierarchy-toolbar'));
+		const addBtn = DOM.append(toolbar, DOM.$('.scene-hierarchy-action'));
+		DOM.append(addBtn, DOM.$(ThemeIcon.asCSSSelector(Codicon.add)));
+		addBtn.title = 'Add Entity';
+
+		this._register(DOM.addDisposableListener(addBtn, DOM.EventType.CLICK, async () => {
+			// Show add object dialog
+			const dialog = new AddObjectDialog(document.body);
+			dialog.show(async (def: ObjectDefinition) => {
+				// НИКАКИХ IF/ELSE! Просто передаем ID.
+				// def.id = 'sphere' -> SceneManager создаст сферу.
+				// def.id = 'cube' -> SceneManager создаст куб.
+				console.log('[ExplorerView] Creating entity:', def.name, 'Type ID:', def.id);
+				
+				await this.sceneManager.addEntity(def.name, def.id);
+				dialog.dispose();
+			});
+		}));
+
+		DOM.append(container, DOM.$('.scene-hierarchy-content'));
+
+		this.refreshSceneHierarchy();
+	}
+	
+	private renderTreeNode(parent: HTMLElement, options: {
+		icon: ThemeIcon;
+		iconClass: string;
+		label: string;
+		depth: number;
+		isComponent?: boolean;
+		expanded?: boolean;
+		entityId?: string;
+		parentEntityId?: string | null;
+		subtitle?: string;
+		visible?: boolean;
+		ownerEntityId?: string;
+		componentType?: string;
+	}): HTMLElement {
+		const row = DOM.append(parent, DOM.$('.scene-tree-row'));
+		row.tabIndex = -1;
+
+		if (options.entityId) row.dataset.entityId = options.entityId;
+		if (options.isComponent) row.classList.add('component-row');
+		if (options.entityId && options.entityId === this.selectedEntityId) row.classList.add('selected');
+
+		// Indent + guides
+		const indentW = options.depth * 16;
+		const indent = DOM.append(row, DOM.$('.scene-tree-indent'));
+		indent.style.width = `${indentW}px`;
+		for (let i = 0; i < options.depth; i++) {
+			const guide = DOM.append(indent, DOM.$('.scene-tree-indent-guide'));
+			guide.style.left = `${i * 16 + 8}px`;
+		}
+
+		// Twistie
+		const twistie = DOM.append(row, DOM.$('.scene-tree-twistie'));
+		if (options.expanded !== undefined) {
+			twistie.classList.add('has-children');
+			DOM.append(twistie, DOM.$(ThemeIcon.asCSSSelector(
+				options.expanded ? Codicon.chevronDown : Codicon.chevronRight
+			)));
+
+			if (options.entityId) {
+				const eid = options.entityId;
+				this._register(DOM.addDisposableListener(twistie, DOM.EventType.CLICK, (e) => {
+					e.stopPropagation();
+					if (this.expandedEntities.has(eid)) {
+						this.expandedEntities.delete(eid);
+					} else {
+						this.expandedEntities.add(eid);
+					}
+					this.refreshSceneHierarchy();
+				}));
+			}
+		}
+
+		// Icon
+		const iconEl = DOM.append(row, DOM.$('.scene-tree-icon'));
+		if (options.iconClass) iconEl.classList.add(options.iconClass);
+		DOM.append(iconEl, DOM.$(ThemeIcon.asCSSSelector(options.icon)));
+		if (options.isComponent) iconEl.classList.add('component-icon');
+
+		// Dimmed if not visible
+		if (options.visible === false) {
+			row.style.opacity = '0.4';
+		}
+
+		// Label or rename input
+		const labelContainer = DOM.append(row, DOM.$('.scene-tree-label'));
+
+		if (options.entityId && options.entityId === this.renamingEntityId) {
+			const input = DOM.append(labelContainer, DOM.$('input.scene-tree-rename-input')) as HTMLInputElement;
+			input.type = 'text';
+			input.value = options.label;
+			input.spellcheck = false;
+
+			setTimeout(() => { input.focus(); input.select(); }, 0);
+
+			let committed = false;
+
+			const commit = async () => {
+				if (committed) return;
+				committed = true;
+				const newName = input.value.trim();
+				const entityId = options.entityId!;
+				this.renamingEntityId = null;
+
+				if (newName && newName !== options.label) {
+					await this.sceneManager.renameEntity(entityId, newName);
+				} else {
+					await this.refreshSceneHierarchy();
+				}
+			};
+
+			const cancel = async () => {
+				if (committed) return;
+				committed = true;
+				this.renamingEntityId = null;
+				await this.refreshSceneHierarchy();
+			};
+
+			this._register(DOM.addDisposableListener(input, 'keydown', (e: KeyboardEvent) => {
+				e.stopPropagation();
+				if (e.key === 'Enter') { e.preventDefault(); commit(); }
+				else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+			}));
+			this._register(DOM.addDisposableListener(input, 'blur', () => { commit(); }));
+			this._register(DOM.addDisposableListener(input, DOM.EventType.CLICK, (e) => { e.stopPropagation(); }));
+			this._register(DOM.addDisposableListener(input, 'dblclick', (e) => { e.stopPropagation(); }));
+		} else {
+			const labelText = DOM.append(labelContainer, DOM.$('.scene-tree-label-text'));
+			labelText.textContent = options.label;
+			if (options.subtitle) {
+				const sub = DOM.append(labelContainer, DOM.$('.scene-tree-label-subtitle'));
+				sub.textContent = options.subtitle;
+			}
+		}
+
+		// Actions
+		const actions = DOM.append(row, DOM.$('.scene-tree-actions'));
+
+		if (!options.isComponent && options.entityId) {
+			// Eye toggle
+			const visBtn = DOM.append(actions, DOM.$('.scene-tree-action'));
+			const isVisible = options.visible !== false;
+			DOM.append(visBtn, DOM.$(ThemeIcon.asCSSSelector(isVisible ? Codicon.eye : Codicon.eyeClosed)));
+			visBtn.title = isVisible ? 'Hide' : 'Show';
+			const eid = options.entityId;
+			this._register(DOM.addDisposableListener(visBtn, DOM.EventType.CLICK, async (e) => {
+				e.stopPropagation();
+				await this.sceneManager.setEntityVisibility(eid, !isVisible);
+			}));
+
+			// Delete
+			const delBtn = DOM.append(actions, DOM.$('.scene-tree-action'));
+			DOM.append(delBtn, DOM.$(ThemeIcon.asCSSSelector(Codicon.trash)));
+			delBtn.title = 'Delete';
+			this._register(DOM.addDisposableListener(delBtn, DOM.EventType.CLICK, async (e) => {
+				e.stopPropagation();
+				await this.sceneManager.removeEntity(eid);
+			}));
+		}
+
+		if (options.isComponent && options.ownerEntityId && options.componentType) {
+			// Remove component
+			const ownerId = options.ownerEntityId;
+			const compType = options.componentType;
+			const removeBtn = DOM.append(actions, DOM.$('.scene-tree-action'));
+			DOM.append(removeBtn, DOM.$(ThemeIcon.asCSSSelector(Codicon.close)));
+			removeBtn.title = 'Remove Component';
+			this._register(DOM.addDisposableListener(removeBtn, DOM.EventType.CLICK, async (e) => {
+				e.stopPropagation();
+				await this.sceneManager.removeComponent(ownerId, compType);
+			}));
+		}
+
+		// Hover
+		this._register(DOM.addDisposableListener(row, DOM.EventType.MOUSE_ENTER, () => { row.classList.add('hovered'); }));
+		this._register(DOM.addDisposableListener(row, DOM.EventType.MOUSE_LEAVE, () => { row.classList.remove('hovered'); }));
+
+		// Selection
+		this._register(DOM.addDisposableListener(row, DOM.EventType.CLICK, () => {
+			if (this.renamingEntityId) return;
+			const contentEl = parent.closest('.scene-hierarchy-content') ?? parent;
+			contentEl.querySelectorAll('.scene-tree-row.selected').forEach(r => r.classList.remove('selected'));
+			row.classList.add('selected');
+			this.selectedEntityId = options.entityId ?? null;
+		}));
+
+		return row;
+	}
+
+	protected override renderBody(container: HTMLElement): void {
+		super.renderBody(container);
+
+		this.container = container;
+		this.container.classList.add('explorer-view-with-split');
+		
+		// Create split view container
+		const splitContainer = DOM.append(container, DOM.$('.explorer-split-container'));
+		
+		// Initialize SplitView (vertical orientation) with proportional layout
+		this.splitView = new SplitView(splitContainer, {
+			orientation: 0, // 0 = Vertical (top/bottom)
+			proportionalLayout: true // Use proportional sizing
+		});
+		
+		// Create Scene Hierarchy container (top 60%)
+		this.sceneHierarchyContainer = DOM.$('.scene-hierarchy-container');
+		this.renderSceneHierarchy(this.sceneHierarchyContainer);
+		
+		// Create Project Files container (bottom 30%) with title
+		this.projectFilesContainer = DOM.$('.project-files-container');
+		
+		// Add title for project files section
+		const projectFilesTitle = DOM.append(this.projectFilesContainer, DOM.$('.project-files-title-section'));
+		const projectTitle = DOM.append(projectFilesTitle, DOM.$('.project-files-title'));
+		projectTitle.textContent = 'PROJECT FILES';
+		
+		// Add tree container
+		this.treeContainer = DOM.append(this.projectFilesContainer, DOM.$('.explorer-folders-view'));
+
+		// Add Scene Hierarchy view to split (75%)
+		const sceneEmitter = new Emitter<number | undefined>();
+		this.splitView.addView({
+			element: this.sceneHierarchyContainer,
+			layout: (size: number) => {
+				this.sceneHierarchyContainer.style.height = `${size}px`;
+			},
+			minimumSize: 150,
+			maximumSize: Number.POSITIVE_INFINITY,
+			onDidChange: sceneEmitter.event
+		}, Sizing.Distribute);
+		
+		// Add Project Files view to split (25%)
+		const filesEmitter = new Emitter<number | undefined>();
+		this.splitView.addView({
+			element: this.projectFilesContainer,
+			layout: (size: number) => {
+				this.projectFilesContainer.style.height = `${size}px`;
+				const treeHeight = size - 32;
+				if (this.tree && treeHeight > 0) {
+					this.tree.layout(treeHeight, this.projectFilesContainer.clientWidth);
+				}
+			},
+			minimumSize: 60,
+			maximumSize: Number.POSITIVE_INFINITY,
+			onDidChange: filesEmitter.event
+		}, Sizing.Distribute);
+		
+		// Set initial sizes: 75% for scene hierarchy, 25% for project files
+		this.splitView.resizeView(0, 0.75);
+		this.splitView.resizeView(1, 0.25);
+
+		this.createTree(this.treeContainer);
+
+		this._register(this.labelService.onDidChangeFormatters(() => {
+			this._onDidChangeTitleArea.fire();
+		}));
+
+		// Update configuration
+		this.onConfigurationUpdated(undefined);
+
+		// When the explorer viewer is loaded, listen to changes to the editor input
+		this._register(this.editorService.onDidActiveEditorChange(() => {
+			this.selectActiveFile();
+		}));
+
+		// Also handle configuration updates
+		this._register(this.configurationService.onDidChangeConfiguration(e => this.onConfigurationUpdated(e)));
+
+		this._register(this.onDidChangeBodyVisibility(async visible => {
+			if (visible) {
+				// Always refresh explorer when it becomes visible to compensate for missing file events #126817
+				await this.setTreeInput();
+				// Update the collapse / expand  button state
+				this.updateAnyCollapsedContext();
+				// Find resource to focus from active editor input if set
+				this.selectActiveFile(true);
+			}
+		}));
+
+		// Support for paste of files into explorer
+		this._register(DOM.addDisposableListener(DOM.getWindow(this.container), DOM.EventType.PASTE, async event => {
+			if (!this.hasFocus() || this.readonlyContext.get()) {
+				return;
+			}
+			if (event.clipboardData?.files?.length) {
+				await this.commandService.executeCommand('filesExplorer.paste', event.clipboardData?.files);
+			}
+		}));
+	}
+
+	override focus(): void {
+		super.focus();
+		this.tree.domFocus();
+
+		if (this.tree.getFocusedPart() === AbstractTreePart.Tree) {
+			const focused = this.tree.getFocus();
+			if (focused.length === 1 && this._autoReveal) {
+				this.tree.reveal(focused[0], 0.5);
+			}
+		}
+	}
+
+	hasFocus(): boolean {
+		return DOM.isAncestorOfActiveElement(this.container);
+	}
+
+	getFocus(): ExplorerItem[] {
+		return this.tree.getFocus();
+	}
+
+	focusNext(): void {
+		this.tree.focusNext();
+	}
+
+	focusLast(): void {
+		this.tree.focusLast();
+	}
+
+	getContext(respectMultiSelection: boolean): ExplorerItem[] {
+		const focusedItems = this.tree.getFocusedPart() === AbstractTreePart.StickyScroll ?
+			this.tree.getStickyScrollFocus() :
+			this.tree.getFocus();
+		return getContext(focusedItems, this.tree.getSelection(), respectMultiSelection, this.renderer);
+	}
+
+	isItemVisible(item: ExplorerItem): boolean {
+		// If filter is undefined it means the tree hasn't been rendered yet, so nothing is visible
+		if (!this.filter) {
+			return false;
+		}
+		return this.filter.filter(item, TreeVisibility.Visible);
+	}
+
+	isItemCollapsed(item: ExplorerItem): boolean {
+		return this.tree.isCollapsed(item);
+	}
+
+	async setEditable(stat: ExplorerItem, isEditing: boolean): Promise<void> {
+		if (isEditing) {
+			this.horizontalScrolling = this.tree.options.horizontalScrolling;
+
+			if (this.horizontalScrolling) {
+				this.tree.updateOptions({ horizontalScrolling: false });
+			}
+
+			await this.tree.expand(stat.parent!);
+		} else {
+			if (this.horizontalScrolling !== undefined) {
+				this.tree.updateOptions({ horizontalScrolling: this.horizontalScrolling });
+			}
+
+			this.horizontalScrolling = undefined;
+			this.treeContainer.classList.remove('highlight');
+		}
+
+		await this.refresh(false, stat.parent, false);
+
+		if (isEditing) {
+			this.treeContainer.classList.add('highlight');
+			this.tree.reveal(stat);
+		} else {
+			this.tree.domFocus();
+		}
+	}
+
+	private async selectActiveFile(reveal = this._autoReveal): Promise<void> {
+		if (this._autoReveal) {
+			const activeFile = EditorResourceAccessor.getCanonicalUri(this.editorService.activeEditor, { supportSideBySide: SideBySideEditor.PRIMARY });
+
+			if (activeFile) {
+				const focus = this.tree.getFocus();
+				const selection = this.tree.getSelection();
+				if (focus.length === 1 && this.uriIdentityService.extUri.isEqual(focus[0].resource, activeFile) && selection.length === 1 && this.uriIdentityService.extUri.isEqual(selection[0].resource, activeFile)) {
+					// No action needed, active file is already focused and selected
+					return;
+				}
+				return this.explorerService.select(activeFile, reveal);
+			}
+		}
+	}
+
+	private createTree(container: HTMLElement): void {
+		this.filter = this.instantiationService.createInstance(FilesFilter);
+		this._register(this.filter);
+		this._register(this.filter.onDidChange(() => this.refresh(true)));
+		const explorerLabels = this.instantiationService.createInstance(ResourceLabels, { onDidChangeVisibility: this.onDidChangeBodyVisibility });
+		this._register(explorerLabels);
+
+		this.findProvider = this.instantiationService.createInstance(ExplorerFindProvider, this.filter, () => this.tree);
+
+		const updateWidth = (stat: ExplorerItem) => this.tree.updateWidth(stat);
+		this.renderer = this.instantiationService.createInstance(FilesRenderer, container, explorerLabels, this.findProvider.highlightTree, updateWidth);
+		this._register(this.renderer);
+
+		this._register(createFileIconThemableTreeContainerScope(container, this.themeService));
+
+		const isCompressionEnabled = () => this.configurationService.getValue<boolean>('explorer.compactFolders');
+
+		const getFileNestingSettings = (item?: ExplorerItem) => this.configurationService.getValue<IFilesConfiguration>({ resource: item?.root.resource }).explorer.fileNesting;
+
+		this.tree = this.instantiationService.createInstance(WorkbenchCompressibleAsyncDataTree<ExplorerItem | ExplorerItem[], ExplorerItem, FuzzyScore>, 'FileExplorer', container, new ExplorerDelegate(), new ExplorerCompressionDelegate(), [this.renderer],
+			this.instantiationService.createInstance(ExplorerDataSource, this.filter, this.findProvider), {
+			compressionEnabled: isCompressionEnabled(),
+			accessibilityProvider: this.renderer,
+			identityProvider,
+			keyboardNavigationLabelProvider: {
+				getKeyboardNavigationLabel: (stat: ExplorerItem) => {
+					if (this.explorerService.isEditable(stat)) {
+						return undefined;
+					}
+
+					return stat.name;
+				},
+				getCompressedNodeKeyboardNavigationLabel: (stats: ExplorerItem[]) => {
+					if (stats.some(stat => this.explorerService.isEditable(stat))) {
+						return undefined;
+					}
+
+					return stats.map(stat => stat.name).join('/');
+				}
+			},
+			multipleSelectionSupport: true,
+			filter: this.filter,
+			sorter: this.instantiationService.createInstance(FileSorter),
+			dnd: this.instantiationService.createInstance(FileDragAndDrop, (item) => this.isItemCollapsed(item)),
+			collapseByDefault: (e) => {
+				if (e instanceof ExplorerItem) {
+					if (e.hasNests && getFileNestingSettings(e).expand) {
+						return false;
+					}
+					if (this.findProvider.isShowingFilterResults()) {
+						return false;
+					}
+				}
+				return true;
+			},
+			autoExpandSingleChildren: true,
+			expandOnlyOnTwistieClick: (e: unknown) => {
+				if (e instanceof ExplorerItem) {
+					if (e.hasNests) {
+						return true;
+					}
+					else if (this.configurationService.getValue<'singleClick' | 'doubleClick'>('workbench.tree.expandMode') === 'doubleClick') {
+						return true;
+					}
+				}
+				return false;
+			},
+			paddingBottom: ExplorerDelegate.ITEM_HEIGHT,
+			overrideStyles: this.getLocationBasedColors().listOverrideStyles,
+			findProvider: this.findProvider,
+		});
+		this._register(this.tree);
+		this._register(this.themeService.onDidColorThemeChange(() => this.tree.rerender()));
+
+		// Bind configuration
+		const onDidChangeCompressionConfiguration = Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration('explorer.compactFolders'));
+		this._register(onDidChangeCompressionConfiguration(_ => this.tree.updateOptions({ compressionEnabled: isCompressionEnabled() })));
+
+		// Bind context keys
+		FilesExplorerFocusedContext.bindTo(this.tree.contextKeyService);
+		ExplorerFocusedContext.bindTo(this.tree.contextKeyService);
+
+		// Update resource context based on focused element
+		this._register(this.tree.onDidChangeFocus(e => this.onFocusChanged(e.elements)));
+		this.onFocusChanged([]);
+		// Open when selecting via keyboard
+		this._register(this.tree.onDidOpen(async e => {
+			const element = e.element;
+			if (!element) {
+				return;
+			}
+			// Do not react if the user is expanding selection via keyboard.
+			// Check if the item was previously also selected, if yes the user is simply expanding / collapsing current selection #66589.
+			const shiftDown = DOM.isKeyboardEvent(e.browserEvent) && e.browserEvent.shiftKey;
+			if (!shiftDown) {
+				if (element.isDirectory || this.explorerService.isEditable(undefined)) {
+					// Do not react if user is clicking on explorer items while some are being edited #70276
+					// Do not react if clicking on directories
+					return;
+				}
+				this.telemetryService.publicLog2<WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification>('workbenchActionExecuted', { id: 'workbench.files.openFile', from: 'explorer' });
+				try {
+					this.delegate?.willOpenElement(e.browserEvent);
+					await this.editorService.openEditor({ resource: element.resource, options: { preserveFocus: e.editorOptions.preserveFocus, pinned: e.editorOptions.pinned, source: EditorOpenSource.USER } }, e.sideBySide ? SIDE_GROUP : ACTIVE_GROUP);
+				} finally {
+					this.delegate?.didOpenElement();
+				}
+			}
+		}));
+
+		this._register(this.tree.onContextMenu(e => this.onContextMenu(e)));
+
+		this._register(this.tree.onDidScroll(async e => {
+			const editable = this.explorerService.getEditable();
+			if (e.scrollTopChanged && editable && this.tree.getRelativeTop(editable.stat) === null) {
+				await editable.data.onFinish('', false);
+			}
+		}));
+
+		this._register(this.tree.onDidChangeCollapseState(e => {
+			const element = e.node.element?.element;
+			if (element) {
+				const navigationControllers = this.renderer.getCompressedNavigationController(Array.isArray(element) ? element[0] : element);
+				navigationControllers?.forEach(controller => controller.updateCollapsed(e.node.collapsed));
+			}
+			// Update showing expand / collapse button
+			this.updateAnyCollapsedContext();
+		}));
+
+		this.updateAnyCollapsedContext();
+
+		this._register(this.tree.onMouseDblClick(e => {
+			// If empty space is clicked, and not scrolling by page enabled #173261
+			const scrollingByPage = this.configurationService.getValue<boolean>('workbench.list.scrollByPage');
+			if (e.element === null && !scrollingByPage) {
+				// click in empty area -> create a new file #116676
+				this.commandService.executeCommand(NEW_FILE_COMMAND_ID);
+			}
+		}));
+
+		// save view state
+		this._register(this.storageService.onWillSaveState(() => {
+			this.storeTreeViewState();
+		}));
+	}
+
+	// React on events
+
+	private onConfigurationUpdated(event: IConfigurationChangeEvent | undefined): void {
+		if (!event || event.affectsConfiguration('explorer.autoReveal')) {
+			const configuration = this.configurationService.getValue<IFilesConfiguration>();
+			this._autoReveal = configuration?.explorer?.autoReveal;
+		}
+
+		// Push down config updates to components of viewer
+		if (event && (event.affectsConfiguration('explorer.decorations.colors') || event.affectsConfiguration('explorer.decorations.badges'))) {
+			this.refresh(true);
+		}
+	}
+
+	private storeTreeViewState() {
+		this.storageService.store(ExplorerView.TREE_VIEW_STATE_STORAGE_KEY, JSON.stringify(this.tree.getViewState()), StorageScope.WORKSPACE, StorageTarget.MACHINE);
+	}
+
+	private setContextKeys(stat: ExplorerItem | null | undefined): void {
+		const folders = this.contextService.getWorkspace().folders;
+		const resource = stat ? stat.resource : folders[folders.length - 1].uri;
+		stat = stat || this.explorerService.findClosest(resource);
+		this.resourceContext.set(resource);
+		this.folderContext.set(!!stat && stat.isDirectory);
+		this.readonlyContext.set(!!stat && !!stat.isReadonly);
+		this.parentReadonlyContext.set(Boolean(stat?.parent?.isReadonly));
+		this.rootContext.set(!!stat && stat.isRoot);
+
+		if (resource) {
+			const overrides = resource ? this.editorResolverService.getEditors(resource).map(editor => editor.id) : [];
+			this.availableEditorIdsContext.set(overrides.join(','));
+		} else {
+			this.availableEditorIdsContext.reset();
+		}
+	}
+
+	private async onContextMenu(e: ITreeContextMenuEvent<ExplorerItem>): Promise<void> {
+		if (DOM.isEditableElement(e.browserEvent.target as HTMLElement)) {
+			return;
+		}
+
+		const stat = e.element;
+		let anchor = e.anchor;
+
+		// Adjust for compressed folders (except when mouse is used)
+		if (DOM.isHTMLElement(anchor)) {
+			if (stat) {
+				const controllers = this.renderer.getCompressedNavigationController(stat);
+
+				if (controllers && controllers.length > 0) {
+					if (DOM.isKeyboardEvent(e.browserEvent) || isCompressedFolderName(e.browserEvent.target)) {
+						anchor = controllers[0].labels[controllers[0].index];
+					} else {
+						controllers.forEach(controller => controller.last());
+					}
+				}
+			}
+		}
+
+		// update dynamic contexts
+		this.fileCopiedContextKey.set(await this.clipboardService.hasResources());
+		this.setContextKeys(stat);
+
+		const selection = this.tree.getSelection();
+
+		const roots = this.explorerService.roots; // If the click is outside of the elements pass the root resource if there is only one root. If there are multiple roots pass empty object.
+		let arg: URI | {};
+		if (stat instanceof ExplorerItem) {
+			const compressedControllers = this.renderer.getCompressedNavigationController(stat);
+			arg = compressedControllers?.length ? compressedControllers[0].current.resource : stat.resource;
+		} else {
+			arg = roots.length === 1 ? roots[0].resource : {};
+		}
+
+		this.contextMenuService.showContextMenu({
+			menuId: MenuId.ExplorerContext,
+			menuActionOptions: { arg, shouldForwardArgs: true },
+			contextKeyService: this.tree.contextKeyService,
+			getAnchor: () => anchor,
+			onHide: (wasCancelled?: boolean) => {
+				if (wasCancelled) {
+					this.tree.domFocus();
+				}
+			},
+			getActionsContext: () => stat && selection && selection.indexOf(stat) >= 0
+				? selection.map((fs: ExplorerItem) => fs.resource)
+				: stat instanceof ExplorerItem ? [stat.resource] : []
+		});
+	}
+
+	private onFocusChanged(elements: readonly ExplorerItem[]): void {
+		const stat = elements.at(0);
+		this.setContextKeys(stat);
+
+		if (stat) {
+			const enableTrash = Boolean(this.configurationService.getValue<IFilesConfiguration>().files?.enableTrash);
+			const hasCapability = this.fileService.hasCapability(stat.resource, FileSystemProviderCapabilities.Trash);
+			this.resourceMoveableToTrash.set(enableTrash && hasCapability);
+		} else {
+			this.resourceMoveableToTrash.reset();
+		}
+
+		const compressedNavigationControllers = stat && this.renderer.getCompressedNavigationController(stat);
+
+		if (!compressedNavigationControllers) {
+			this.compressedFocusContext.set(false);
+			return;
+		}
+
+		this.compressedFocusContext.set(true);
+		compressedNavigationControllers.forEach(controller => {
+			this.updateCompressedNavigationContextKeys(controller);
+		});
+	}
+
+	// General methods
+
+	/**
+	 * Refresh the contents of the explorer to get up to date data from the disk about the file structure.
+	 * If the item is passed we refresh only that level of the tree, otherwise we do a full refresh.
+	 */
+	refresh(recursive: boolean, item?: ExplorerItem, cancelEditing: boolean = true): Promise<void> {
+		if (!this.tree || !this.isBodyVisible() || (item && !this.tree.hasNode(item)) || (this.findProvider?.isShowingFilterResults() && recursive)) {
+			// Tree node doesn't exist yet, when it becomes visible we will refresh
+			return Promise.resolve(undefined);
+		}
+
+		if (cancelEditing && this.explorerService.isEditable(undefined)) {
+			this.tree.domFocus();
+		}
+
+		const toRefresh = item || this.tree.getInput();
+		return this.tree.updateChildren(toRefresh, recursive, !!item);
+	}
+
+	override getOptimalWidth(): number {
+		const parentNode = this.tree.getHTMLElement();
+		// eslint-disable-next-line no-restricted-syntax
+		const childNodes = ([] as HTMLElement[]).slice.call(parentNode.querySelectorAll('.explorer-item .label-name')); // select all file labels
+
+		return DOM.getLargestChildWidth(parentNode, childNodes);
+	}
+
+	async setTreeInput(): Promise<void> {
+		if (!this.isBodyVisible()) {
+			return Promise.resolve(undefined);
+		}
+
+		// Wait for the last execution to complete before executing
+		if (this.setTreeInputPromise) {
+			await this.setTreeInputPromise;
+		}
+
+		const initialInputSetup = !this.tree.getInput();
+		if (initialInputSetup) {
+			perf.mark('code/willResolveExplorer');
+		}
+		const roots = this.explorerService.roots;
+		let input: ExplorerItem | ExplorerItem[] = roots[0];
+		if (this.contextService.getWorkbenchState() !== WorkbenchState.FOLDER || roots[0].error) {
+			// Display roots only when multi folder workspace
+			input = roots;
+		}
+
+		let viewState: IAsyncDataTreeViewState | undefined;
+		if (this.tree?.getInput()) {
+			viewState = this.tree.getViewState();
+		} else {
+			const rawViewState = this.storageService.get(ExplorerView.TREE_VIEW_STATE_STORAGE_KEY, StorageScope.WORKSPACE);
+			if (rawViewState) {
+				viewState = JSON.parse(rawViewState);
+			}
+		}
+
+		const previousInput = this.tree.getInput();
+		const promise = this.setTreeInputPromise = this.tree.setInput(input, viewState).then(async () => {
+			if (Array.isArray(input)) {
+				if (!viewState || previousInput instanceof ExplorerItem) {
+					// There is no view state for this workspace (we transitioned from a folder workspace?), expand up to five roots.
+					// If there are many roots in a workspace, expanding them all would can cause performance issues #176226
+					for (let i = 0; i < Math.min(input.length, 5); i++) {
+						try {
+							await this.tree.expand(input[i]);
+						} catch (e) { }
+					}
+				}
+				// Reloaded or transitioned from an empty workspace, but only have a single folder in the workspace.
+				if (!previousInput && input.length === 1 && this.configurationService.getValue<IFilesConfiguration>().explorer.expandSingleFolderWorkspaces) {
+					await this.tree.expand(input[0]).catch(() => { });
+				}
+				if (Array.isArray(previousInput)) {
+					const previousRoots = new ResourceMap<true>();
+					previousInput.forEach(previousRoot => previousRoots.set(previousRoot.resource, true));
+
+					// Roots added to the explorer -> expand them.
+					await Promise.all(input.map(async item => {
+						if (!previousRoots.has(item.resource)) {
+							try {
+								await this.tree.expand(item);
+							} catch (e) { }
+						}
+					}));
+				}
+			}
+			if (initialInputSetup) {
+				perf.mark('code/didResolveExplorer');
+			}
+		});
+
+		this.progressService.withProgress({
+			location: ProgressLocation.Explorer,
+			delay: this.layoutService.isRestored() ? 800 : 1500 // reduce progress visibility when still restoring
+		}, _progress => promise);
+
+		await promise;
+		if (!this.decorationsProvider) {
+			this.decorationsProvider = new ExplorerDecorationsProvider(this.explorerService, this.contextService);
+			this._register(this.decorationService.registerDecorationsProvider(this.decorationsProvider));
+		}
+	}
+
+	public async selectResource(resource: URI | undefined, reveal = this._autoReveal, retry = 0): Promise<void> {
+		// do no retry more than once to prevent infinite loops in cases of inconsistent model
+		if (retry === 2) {
+			return;
+		}
+
+		if (!resource || !this.isBodyVisible()) {
+			return;
+		}
+
+		// If something is refreshing the explorer, we must await it or else a selection race condition can occur
+		if (this.setTreeInputPromise) {
+			await this.setTreeInputPromise;
+		}
+
+		// Expand all stats in the parent chain.
+		let item: ExplorerItem | null = this.explorerService.findClosestRoot(resource);
+
+		while (item && item.resource.toString() !== resource.toString()) {
+			try {
+				await this.tree.expand(item);
+			} catch (e) {
+				return this.selectResource(resource, reveal, retry + 1);
+			}
+			if (!item.children.size) {
+				item = null;
+			} else {
+				for (const child of item.children.values()) {
+					if (this.uriIdentityService.extUri.isEqualOrParent(resource, child.resource)) {
+						item = child;
+						break;
+					}
+					item = null;
+				}
+			}
+		}
+
+		if (item) {
+			if (item === this.tree.getInput()) {
+				this.tree.setFocus([]);
+				this.tree.setSelection([]);
+				return;
+			}
+
+			try {
+				// We must expand the nest to have it be populated in the tree
+				if (item.nestedParent) {
+					await this.tree.expand(item.nestedParent);
+				}
+
+				if ((reveal === true || reveal === 'force') && this.tree.getRelativeTop(item) === null) {
+					// Don't scroll to the item if it's already visible, or if set not to.
+					this.tree.reveal(item, 0.5);
+				}
+
+				this.tree.setFocus([item]);
+				this.tree.setSelection([item]);
+			} catch (e) {
+				// Element might not be in the tree, try again and silently fail
+				return this.selectResource(resource, reveal, retry + 1);
+			}
+		}
+	}
+
+	itemsCopied(stats: ExplorerItem[], cut: boolean, previousCut: ExplorerItem[] | undefined): void {
+		this.fileCopiedContextKey.set(stats.length > 0);
+		this.resourceCutContextKey.set(cut && stats.length > 0);
+		previousCut?.forEach(item => this.tree.rerender(item));
+		if (cut) {
+			stats.forEach(s => this.tree.rerender(s));
+		}
+	}
+
+	expandAll(): void {
+		if (this.explorerService.isEditable(undefined)) {
+			this.tree.domFocus();
+		}
+
+		this.tree.expandAll();
+	}
+
+	collapseAll(): void {
+		if (this.explorerService.isEditable(undefined)) {
+			this.tree.domFocus();
+		}
+
+		const treeInput = this.tree.getInput();
+		if (Array.isArray(treeInput)) {
+			if (hasExpandedRootChild(this.tree, treeInput)) {
+				treeInput.forEach(folder => {
+					folder.children.forEach(child => this.tree.hasNode(child) && this.tree.collapse(child, true));
+				});
+
+				return;
+			}
+		}
+
+		this.tree.collapseAll();
+	}
+
+	previousCompressedStat(): void {
+		const focused = this.tree.getFocus();
+		if (!focused.length) {
+			return;
+		}
+
+		const compressedNavigationControllers = this.renderer.getCompressedNavigationController(focused[0])!;
+		compressedNavigationControllers.forEach(controller => {
+			controller.previous();
+			this.updateCompressedNavigationContextKeys(controller);
+		});
+	}
+
+	nextCompressedStat(): void {
+		const focused = this.tree.getFocus();
+		if (!focused.length) {
+			return;
+		}
+
+		const compressedNavigationControllers = this.renderer.getCompressedNavigationController(focused[0])!;
+		compressedNavigationControllers.forEach(controller => {
+			controller.next();
+			this.updateCompressedNavigationContextKeys(controller);
+		});
+	}
+
+	firstCompressedStat(): void {
+		const focused = this.tree.getFocus();
+		if (!focused.length) {
+			return;
+		}
+
+		const compressedNavigationControllers = this.renderer.getCompressedNavigationController(focused[0])!;
+		compressedNavigationControllers.forEach(controller => {
+			controller.first();
+			this.updateCompressedNavigationContextKeys(controller);
+		});
+	}
+
+	lastCompressedStat(): void {
+		const focused = this.tree.getFocus();
+		if (!focused.length) {
+			return;
+		}
+
+		const compressedNavigationControllers = this.renderer.getCompressedNavigationController(focused[0])!;
+		compressedNavigationControllers.forEach(controller => {
+			controller.last();
+			this.updateCompressedNavigationContextKeys(controller);
+		});
+	}
+
+	private updateCompressedNavigationContextKeys(controller: ICompressedNavigationController): void {
+		this.compressedFocusFirstContext.set(controller.index === 0);
+		this.compressedFocusLastContext.set(controller.index === controller.count - 1);
+	}
+
+	private updateAnyCollapsedContext(): void {
+		const treeInput = this.tree.getInput();
+		if (treeInput === undefined) {
+			return;
+		}
+		const treeInputArray = Array.isArray(treeInput) ? treeInput : Array.from(treeInput.children.values());
+		// Has collapsible root when anything is expanded
+		this.viewHasSomeCollapsibleRootItem.set(hasExpandedNode(this.tree, treeInputArray));
+		// synchronize state to cache
+		this.storeTreeViewState();
+	}
+
+	hasPhantomElements(): boolean {
+		return !!this.findProvider?.isShowingFilterResults();
+	}
+
+	override dispose(): void {
+		this.dragHandler?.dispose();
+		this.splitView?.dispose();
+		super.dispose();
+	}
+}
+
+export function createFileIconThemableTreeContainerScope(container: HTMLElement, themeService: IThemeService): IDisposable {
+	container.classList.add('file-icon-themable-tree');
+	container.classList.add('show-file-icons');
+
+	const onDidChangeFileIconTheme = (theme: IFileIconTheme) => {
+		container.classList.toggle('align-icons-and-twisties', theme.hasFileIcons && !theme.hasFolderIcons);
+		container.classList.toggle('hide-arrows', theme.hidesExplorerArrows === true);
+	};
+
+	onDidChangeFileIconTheme(themeService.getFileIconTheme());
+	return themeService.onDidFileIconThemeChange(onDidChangeFileIconTheme);
+}
+
+const CanCreateContext = ContextKeyExpr.or(
+	// Folder: can create unless readonly
+	ContextKeyExpr.and(ExplorerFolderContext, ExplorerResourceWritableContext),
+	// File: can create unless parent is readonly
+	ContextKeyExpr.and(ExplorerFolderContext.toNegated(), ExplorerResourceParentReadOnlyContext.toNegated())
+);
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.files.action.createFileFromExplorer',
+			title: nls.localize('createNewFile', "New File..."),
+			f1: false,
+			icon: Codicon.newFile,
+			precondition: CanCreateContext,
+			menu: {
+				id: MenuId.ViewTitle,
+				group: 'navigation',
+				when: ContextKeyExpr.equals('view', VIEW_ID),
+				order: 10
+			}
+		});
+	}
+
+	run(accessor: ServicesAccessor): void {
+		const commandService = accessor.get(ICommandService);
+		commandService.executeCommand(NEW_FILE_COMMAND_ID);
+	}
+});
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.files.action.createFolderFromExplorer',
+			title: nls.localize('createNewFolder', "New Folder..."),
+			f1: false,
+			icon: Codicon.newFolder,
+			precondition: CanCreateContext,
+			menu: {
+				id: MenuId.ViewTitle,
+				group: 'navigation',
+				when: ContextKeyExpr.equals('view', VIEW_ID),
+				order: 20
+			}
+		});
+	}
+
+	run(accessor: ServicesAccessor): void {
+		const commandService = accessor.get(ICommandService);
+		commandService.executeCommand(NEW_FOLDER_COMMAND_ID);
+	}
+});
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.files.action.refreshFilesExplorer',
+			title: nls.localize2('refreshExplorer', "Refresh Explorer"),
+			f1: true,
+			icon: Codicon.refresh,
+			menu: {
+				id: MenuId.ViewTitle,
+				group: 'navigation',
+				when: ContextKeyExpr.equals('view', VIEW_ID),
+				order: 30,
+			},
+			metadata: {
+				description: nls.localize2('refreshExplorerMetadata', "Forces a refresh of the Explorer.")
+			},
+			precondition: ExplorerFindProviderActive.negate()
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const viewsService = accessor.get(IViewsService);
+		const explorerService = accessor.get(IExplorerService);
+		await viewsService.openView(VIEW_ID);
+		await explorerService.refresh();
+	}
+});
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.files.action.collapseExplorerFolders',
+			title: nls.localize2('collapseExplorerFolders', "Collapse Folders in Explorer"),
+			f1: true,
+			icon: Codicon.collapseAll,
+			menu: {
+				id: MenuId.ViewTitle,
+				group: 'navigation',
+				when: ContextKeyExpr.equals('view', VIEW_ID),
+				order: 40
+			},
+			metadata: {
+				description: nls.localize2('collapseExplorerFoldersMetadata', "Folds all folders in the Explorer.")
+			}
+		});
+	}
+
+	run(accessor: ServicesAccessor) {
+		const viewsService = accessor.get(IViewsService);
+		const view = viewsService.getViewWithId(VIEW_ID);
+		if (view !== null) {
+			const explorerView = view as ExplorerView;
+			explorerView.collapseAll();
+		}
+	}
+});
+
+
+========================================
+FILE: vscode/src/vs/workbench/contrib/files/browser/views/explorerViewer.ts
+========================================
+
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import { IListAccessibilityProvider } from '../../../../../base/browser/ui/list/listWidget.js';
+import * as DOM from '../../../../../base/browser/dom.js';
+import * as glob from '../../../../../base/common/glob.js';
+import { IListVirtualDelegate, ListDragOverEffectPosition, ListDragOverEffectType } from '../../../../../base/browser/ui/list/list.js';
+import { IProgressService, ProgressLocation, } from '../../../../../platform/progress/common/progress.js';
+import { INotificationService, Severity } from '../../../../../platform/notification/common/notification.js';
+import { IFileService, FileKind, FileOperationError, FileOperationResult, FileChangeType } from '../../../../../platform/files/common/files.js';
+import { IWorkbenchLayoutService } from '../../../../services/layout/browser/layoutService.js';
+import { isTemporaryWorkspace, IWorkspaceContextService, WorkbenchState } from '../../../../../platform/workspace/common/workspace.js';
+import { IDisposable, Disposable, dispose, toDisposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { KeyCode } from '../../../../../base/common/keyCodes.js';
+import { IFileLabelOptions, IResourceLabel, ResourceLabels } from '../../../../browser/labels.js';
+import { ITreeNode, ITreeFilter, TreeVisibility, IAsyncDataSource, ITreeSorter, ITreeDragAndDrop, ITreeDragOverReaction, TreeDragOverBubble } from '../../../../../base/browser/ui/tree/tree.js';
+import { IContextMenuService, IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IConfigurationChangeEvent, IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { ExplorerFindProviderActive, IFilesConfiguration, UndoConfirmLevel } from '../../common/files.js';
+import { dirname, joinPath, distinctParents, relativePath } from '../../../../../base/common/resources.js';
+import { InputBox, MessageType } from '../../../../../base/browser/ui/inputbox/inputBox.js';
+import { localize } from '../../../../../nls.js';
+import { createSingleCallFunction } from '../../../../../base/common/functional.js';
+import { IKeyboardEvent } from '../../../../../base/browser/keyboardEvent.js';
+import { equals, deepClone } from '../../../../../base/common/objects.js';
+import * as path from '../../../../../base/common/path.js';
+import { ExplorerItem, NewExplorerItem } from '../../common/explorerModel.js';
+import { compareFileExtensionsDefault, compareFileNamesDefault, compareFileNamesUpper, compareFileExtensionsUpper, compareFileNamesLower, compareFileExtensionsLower, compareFileNamesUnicode, compareFileExtensionsUnicode } from '../../../../../base/common/comparers.js';
+import { CodeDataTransfers, containsDragType } from '../../../../../platform/dnd/browser/dnd.js';
+import { fillEditorsDragData } from '../../../../browser/dnd.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IDragAndDropData, DataTransfers } from '../../../../../base/browser/dnd.js';
+import { Schemas } from '../../../../../base/common/network.js';
+import { NativeDragAndDropData, ExternalElementsDragAndDropData, ElementsDragAndDropData, ListViewTargetSector } from '../../../../../base/browser/ui/list/listView.js';
+import { isMacintosh, isWeb } from '../../../../../base/common/platform.js';
+import { IDialogService, getFileNamesMessage } from '../../../../../platform/dialogs/common/dialogs.js';
+import { IWorkspaceEditingService } from '../../../../services/workspaces/common/workspaceEditing.js';
+import { URI } from '../../../../../base/common/uri.js';
+import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { IWorkspaceFolderCreationData } from '../../../../../platform/workspaces/common/workspaces.js';
+import { findValidPasteFileTarget } from '../fileActions.js';
+import { FuzzyScore, createMatches } from '../../../../../base/common/filters.js';
+import { Emitter, Event, EventMultiplexer } from '../../../../../base/common/event.js';
+import { IAsyncDataTreeViewState, IAsyncFindProvider, IAsyncFindResult, IAsyncFindToggles, ITreeCompressionDelegate } from '../../../../../base/browser/ui/tree/asyncDataTree.js';
+import { ICompressibleTreeRenderer } from '../../../../../base/browser/ui/tree/objectTree.js';
+import { ICompressedTreeNode } from '../../../../../base/browser/ui/tree/compressedObjectTreeModel.js';
+import { ILabelService } from '../../../../../platform/label/common/label.js';
+import { isNumber } from '../../../../../base/common/types.js';
+import { IEditableData } from '../../../../common/views.js';
+import { EditorInput } from '../../../../common/editor/editorInput.js';
+import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
+import { ResourceFileEdit } from '../../../../../editor/browser/services/bulkEditService.js';
+import { IExplorerService } from '../files.js';
+import { BrowserFileUpload, ExternalFileImport, getMultipleFilesOverwriteConfirm } from '../fileImportExport.js';
+import { toErrorMessage } from '../../../../../base/common/errorMessage.js';
+import { WebFileSystemAccess } from '../../../../../platform/files/browser/webFileSystemAccess.js';
+import { IgnoreFile } from '../../../../services/search/common/ignoreFile.js';
+import { ResourceSet } from '../../../../../base/common/map.js';
+import { TernarySearchTree } from '../../../../../base/common/ternarySearchTree.js';
+import { defaultCountBadgeStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
+import { timeout } from '../../../../../base/common/async.js';
+import { IFilesConfigurationService } from '../../../../services/filesConfiguration/common/filesConfigurationService.js';
+import { mainWindow } from '../../../../../base/browser/window.js';
+import { IExplorerFileContribution, explorerFileContribRegistry } from '../explorerFileContrib.js';
+import { WorkbenchCompressibleAsyncDataTree } from '../../../../../platform/list/browser/listService.js';
+import { ISearchService, QueryType, getExcludes, ISearchConfiguration, ISearchComplete, IFileQuery } from '../../../../services/search/common/search.js';
+import { CancellationToken } from '../../../../../base/common/cancellation.js';
+import { TreeFindMatchType, TreeFindMode } from '../../../../../base/browser/ui/tree/abstractTree.js';
+import { isCancellationError } from '../../../../../base/common/errors.js';
+import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { CountBadge } from '../../../../../base/browser/ui/countBadge/countBadge.js';
+import { listFilterMatchHighlight, listFilterMatchHighlightBorder } from '../../../../../platform/theme/common/colorRegistry.js';
+import { asCssVariable } from '../../../../../platform/theme/common/colorUtils.js';
+
+export class ExplorerDelegate implements IListVirtualDelegate<ExplorerItem> {
+
+	static readonly ITEM_HEIGHT = 22;
+
+	getHeight(element: ExplorerItem): number {
+		return ExplorerDelegate.ITEM_HEIGHT;
+	}
+
+	getTemplateId(element: ExplorerItem): string {
+		return FilesRenderer.ID;
+	}
+}
+
+export const explorerRootErrorEmitter = new Emitter<URI>();
+export class ExplorerDataSource implements IAsyncDataSource<ExplorerItem | ExplorerItem[], ExplorerItem> {
+
+	constructor(
+		private readonly fileFilter: FilesFilter,
+		private readonly findProvider: ExplorerFindProvider,
+		@IProgressService private readonly progressService: IProgressService,
+		@IConfigurationService private readonly configService: IConfigurationService,
+		@INotificationService private readonly notificationService: INotificationService,
+		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
+		@IFileService private readonly fileService: IFileService,
+		@IExplorerService private readonly explorerService: IExplorerService,
+		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
+		@IFilesConfigurationService private readonly filesConfigService: IFilesConfigurationService
+	) { }
+
+	getParent(element: ExplorerItem): ExplorerItem {
+		if (element.parent) {
+			return element.parent;
+		}
+
+		throw new Error('getParent only supported for cached parents');
+	}
+
+	hasChildren(element: ExplorerItem | ExplorerItem[]): boolean {
+		// don't render nest parents as containing children when all the children are filtered out
+		return Array.isArray(element) || element.hasChildren((stat) => this.fileFilter.filter(stat, TreeVisibility.Visible));
+	}
+
+	getChildren(element: ExplorerItem | ExplorerItem[]): ExplorerItem[] | Promise<ExplorerItem[]> {
+		if (Array.isArray(element)) {
+			return element;
+		}
+
+		if (this.findProvider.isShowingFilterResults()) {
+			return Array.from(element.children.values());
+		}
+
+		const hasError = element.error;
+		const sortOrder = this.explorerService.sortOrderConfiguration.sortOrder;
+		const children = element.fetchChildren(sortOrder);
+		if (Array.isArray(children)) {
+			// fast path when children are known sync (i.e. nested children)
+			return children;
+		}
+		const promise = children.then(
+			children => {
+				// Clear previous error decoration on root folder
+				if (element instanceof ExplorerItem && element.isRoot && !element.error && hasError && this.contextService.getWorkbenchState() !== WorkbenchState.FOLDER) {
+					explorerRootErrorEmitter.fire(element.resource);
+				}
+				return children;
+			}
+			, e => {
+
+				if (element instanceof ExplorerItem && element.isRoot) {
+					if (this.contextService.getWorkbenchState() === WorkbenchState.FOLDER) {
+						// Single folder create a dummy explorer item to show error
+						const placeholder = new ExplorerItem(element.resource, this.fileService, this.configService, this.filesConfigService, undefined, undefined, false);
+						placeholder.error = e;
+						return [placeholder];
+					} else {
+						explorerRootErrorEmitter.fire(element.resource);
+					}
+				} else {
+					// Do not show error for roots since we already use an explorer decoration to notify user
+					this.notificationService.error(e);
+				}
+
+				return []; // we could not resolve any children because of an error
+			});
+
+		this.progressService.withProgress({
+			location: ProgressLocation.Explorer,
+			delay: this.layoutService.isRestored() ? 800 : 1500 // reduce progress visibility when still restoring
+		}, _progress => promise);
+
+		return promise;
+	}
+}
+
+export class PhantomExplorerItem extends ExplorerItem {
+
+}
+
+interface FindHighlightLayer {
+	childMatches: number;
+	isMatch: boolean;
+	stats: {
+		[statName: string]: FindHighlightLayer;
+	};
+}
+
+interface IExplorerFindHighlightTree {
+	get(item: ExplorerItem): number;
+	isMatch(item: ExplorerItem): boolean;
+}
+
+class ExplorerFindHighlightTree implements IExplorerFindHighlightTree {
+
+	private readonly _tree = new Map<string, FindHighlightLayer>();
+	private readonly _highlightedItems = new Map<string, ExplorerItem>();
+	get highlightedItems(): ExplorerItem[] {
+		return Array.from(this._highlightedItems.values());
+	}
+
+	get(item: ExplorerItem): number {
+		const result = this.find(item);
+		if (result === undefined) {
+			return 0;
+		}
+
+		const { treeLayer, relPath } = result;
+		this._highlightedItems.set(relPath, item);
+
+		return treeLayer.childMatches;
+	}
+
+	private find(item: ExplorerItem): { treeLayer: FindHighlightLayer; relPath: string } | undefined {
+		const rootLayer = this._tree.get(item.root.name);
+		if (rootLayer === undefined) {
+			return undefined;
+		}
+
+		const relPath = relativePath(item.root.resource, item.resource);
+		if (relPath === undefined || relPath.startsWith('..')) {
+			throw new Error('Resource is not a child of the root');
+		}
+
+		if (relPath === '') {
+			return { treeLayer: rootLayer, relPath };
+		}
+
+		let treeLayer = rootLayer;
+		for (const segment of relPath.split('/')) {
+			if (!treeLayer.stats[segment]) {
+				return undefined;
+			}
+
+			treeLayer = treeLayer.stats[segment];
+		}
+
+		return { treeLayer, relPath };
+	}
+
+	add(resource: URI, root: ExplorerItem): void {
+		const relPath = relativePath(root.resource, resource);
+		if (relPath === undefined || relPath.startsWith('..')) {
+			throw new Error('Resource is not a child of the root');
+		}
+
+		let rootLayer = this._tree.get(root.name);
+		if (!rootLayer) {
+			rootLayer = { childMatches: 0, stats: {}, isMatch: false };
+			this._tree.set(root.name, rootLayer);
+		}
+		rootLayer.childMatches++;
+
+		let treeLayer = rootLayer;
+		for (const stat of relPath.split('/')) {
+			if (!treeLayer.stats[stat]) {
+				treeLayer.stats[stat] = { childMatches: 0, stats: {}, isMatch: false };
+			}
+
+			treeLayer = treeLayer.stats[stat];
+			treeLayer.childMatches++;
+		}
+
+		treeLayer.childMatches--; // the last segment is the file itself
+		treeLayer.isMatch = true;
+	}
+
+	isMatch(item: ExplorerItem): boolean {
+		const result = this.find(item);
+		if (result === undefined) {
+			return false;
+		}
+
+		const { treeLayer } = result;
+		return treeLayer.isMatch;
+	}
+
+	clear(): void {
+		this._tree.clear();
+	}
+
+}
+
+export class ExplorerFindProvider implements IAsyncFindProvider<ExplorerItem> {
+
+	private sessionId: number = 0;
+	private filterSessionStartState: { viewState: IAsyncDataTreeViewState; input: ExplorerItem[] | ExplorerItem; rootsWithProviders: Set<ExplorerItem> } | undefined;
+	private highlightSessionStartState: { rootsWithProviders: Set<ExplorerItem> } | undefined;
+	private explorerFindActiveContextKey: IContextKey<boolean>;
+	private phantomParents = new Set<ExplorerItem>();
+	private findHighlightTree = new ExplorerFindHighlightTree();
+	get highlightTree(): IExplorerFindHighlightTree {
+		return this.findHighlightTree;
+	}
+
+	constructor(
+		private readonly filesFilter: FilesFilter,
+		private readonly treeProvider: () => WorkbenchCompressibleAsyncDataTree<ExplorerItem | ExplorerItem[], ExplorerItem, FuzzyScore>,
+		@ISearchService private readonly searchService: ISearchService,
+		@IFileService private readonly fileService: IFileService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IFilesConfigurationService private readonly filesConfigService: IFilesConfigurationService,
+		@IProgressService private readonly progressService: IProgressService,
+		@IExplorerService private readonly explorerService: IExplorerService,
+		@IContextKeyService contextKeyService: IContextKeyService
+	) {
+		this.explorerFindActiveContextKey = ExplorerFindProviderActive.bindTo(contextKeyService);
+	}
+
+	isShowingFilterResults(): boolean {
+		return !!this.filterSessionStartState;
+	}
+
+	isVisible(element: ExplorerItem): boolean {
+		if (!this.filterSessionStartState) {
+			return true;
+		}
+
+		if (this.explorerService.isEditable(element)) {
+			return true;
+		}
+
+		return this.filterSessionStartState.rootsWithProviders.has(element.root) ? element.isMarkedAsFiltered() : true;
+	}
+
+	startSession(): void {
+		this.sessionId++;
+	}
+
+	async endSession(): Promise<void> {
+		// Restore view state
+		if (this.filterSessionStartState) {
+			await this.endFilterSession();
+		}
+
+		if (this.highlightSessionStartState) {
+			this.endHighlightSession();
+		}
+	}
+
+	async find(pattern: string, toggles: IAsyncFindToggles, token: CancellationToken): Promise<IAsyncFindResult<ExplorerItem> | undefined> {
+		const promise = this.doFind(pattern, toggles, token);
+
+		return await this.progressService.withProgress({
+			location: ProgressLocation.Explorer,
+			delay: 750,
+		}, _progress => promise);
+	}
+
+	async doFind(pattern: string, toggles: IAsyncFindToggles, token: CancellationToken): Promise<IAsyncFindResult<ExplorerItem> | undefined> {
+		if (toggles.findMode === TreeFindMode.Highlight) {
+			if (this.filterSessionStartState) {
+				await this.endFilterSession();
+			}
+
+			if (!this.highlightSessionStartState) {
+				this.startHighlightSession();
+			}
+
+			return await this.doHighlightFind(pattern, toggles.matchType, token);
+		}
+
+		if (this.highlightSessionStartState) {
+			this.endHighlightSession();
+		}
+
+		if (!this.filterSessionStartState) {
+			this.startFilterSession();
+		}
+
+		return await this.doFilterFind(pattern, toggles.matchType, token);
+	}
+
+	// Filter
+
+	private startFilterSession(): void {
+		const tree = this.treeProvider();
+		const input = tree.getInput();
+		if (!input) {
+			return;
+		}
+
+		const roots = this.explorerService.roots.filter(root => this.searchSupportsScheme(root.resource.scheme));
+		this.filterSessionStartState = { viewState: tree.getViewState(), input, rootsWithProviders: new Set(roots) };
+
+		this.explorerFindActiveContextKey.set(true);
+	}
+
+	async doFilterFind(pattern: string, matchType: TreeFindMatchType, token: CancellationToken): Promise<IAsyncFindResult<ExplorerItem> | undefined> {
+		if (!this.filterSessionStartState) {
+			throw new Error('ExplorerFindProvider: no session state');
+		}
+
+		const roots = Array.from(this.filterSessionStartState.rootsWithProviders);
+		const searchResults = await this.getSearchResults(pattern, roots, matchType, token);
+
+		if (token.isCancellationRequested) {
+			return undefined;
+		}
+
+		this.clearPhantomElements();
+		for (const { explorerRoot, files, directories } of searchResults) {
+			this.addWorkspaceFilterResults(explorerRoot, files, directories);
+		}
+
+		const tree = this.treeProvider();
+		await tree.setInput(this.filterSessionStartState.input);
+
+		const hitMaxResults = searchResults.some(({ hitMaxResults }) => hitMaxResults);
+		return {
+			isMatch: (item: ExplorerItem) => item.isMarkedAsFiltered(),
+			matchCount: searchResults.reduce((acc, { files, directories }) => acc + files.length + directories.length, 0),
+			warningMessage: hitMaxResults ? localize('searchMaxResultsWarning', "The result set only contains a subset of all matches. Be more specific in your search to narrow down the results.") : undefined
+		};
+	}
+
+	private addWorkspaceFilterResults(root: ExplorerItem, files: URI[], directories: URI[]): void {
+		const results = [
+			...files.map(file => ({ resource: file, isDirectory: false })),
+			...directories.map(directory => ({ resource: directory, isDirectory: true }))
+		];
+
+		for (const { resource, isDirectory } of results) {
+			const element = root.find(resource);
+			if (element && element.root === root) {
+				// File is already in the model
+				element.markItemAndParentsAsFiltered();
+				continue;
+			}
+
+			// File is not in the model, create phantom items for the file and it's parents
+			const phantomElements = this.createPhantomItems(resource, root, isDirectory);
+			if (phantomElements.length === 0) {
+				throw new Error('Phantom item was not created even though it is not in the model');
+			}
+
+			// Store the first ancestor of the file which is already present in the model
+			const firstPhantomParent = phantomElements[0].parent!;
+			if (!(firstPhantomParent instanceof PhantomExplorerItem)) {
+				this.phantomParents.add(firstPhantomParent);
+			}
+
+			const phantomFileElement = phantomElements[phantomElements.length - 1];
+			phantomFileElement.markItemAndParentsAsFiltered();
+		}
+	}
+
+	private createPhantomItems(resource: URI, root: ExplorerItem, resourceIsDirectory: boolean): PhantomExplorerItem[] {
+		const relativePathToRoot = relativePath(root.resource, resource);
+		if (!relativePathToRoot) {
+			throw new Error('Resource is not a child of the root');
+		}
+
+		const phantomElements: PhantomExplorerItem[] = [];
+
+		let currentItem = root;
+		let currentResource = root.resource;
+		const pathSegments = relativePathToRoot.split('/');
+		for (const stat of pathSegments) {
+			currentResource = currentResource.with({ path: `${currentResource.path}/${stat}` });
+
+			let child = currentItem.getChild(stat);
+			if (!child) {
+				const isDirectory = pathSegments[pathSegments.length - 1] === stat ? resourceIsDirectory : true;
+				child = new PhantomExplorerItem(currentResource, this.fileService, this.configurationService, this.filesConfigService, currentItem, isDirectory);
+				currentItem.addChild(child);
+				phantomElements.push(child as PhantomExplorerItem);
+			}
+
+			currentItem = child;
+		}
+
+		return phantomElements;
+	}
+
+	async endFilterSession(): Promise<void> {
+		this.clearPhantomElements();
+
+		this.explorerFindActiveContextKey.set(false);
+
+		// Restore view state
+		if (!this.filterSessionStartState) {
+			throw new Error('ExplorerFindProvider: no session state to restore');
+		}
+
+		const tree = this.treeProvider();
+		await tree.setInput(this.filterSessionStartState.input, this.filterSessionStartState.viewState);
+
+		this.filterSessionStartState = undefined;
+		this.explorerService.refresh();
+	}
+
+	private clearPhantomElements(): void {
+		for (const phantomParent of this.phantomParents) {
+			// Clear phantom nodes from model
+			phantomParent.forgetChildren();
+		}
+		this.phantomParents.clear();
+		this.explorerService.roots.forEach(root => root.unmarkItemAndChildren());
+	}
+
+	// Highlight
+
+	private startHighlightSession(): void {
+		const roots = this.explorerService.roots.filter(root => this.searchSupportsScheme(root.resource.scheme));
+		this.highlightSessionStartState = { rootsWithProviders: new Set(roots) };
+	}
+
+	async doHighlightFind(pattern: string, matchType: TreeFindMatchType, token: CancellationToken): Promise<IAsyncFindResult<ExplorerItem> | undefined> {
+		if (!this.highlightSessionStartState) {
+			throw new Error('ExplorerFindProvider: no highlight session state');
+		}
+
+		const roots = Array.from(this.highlightSessionStartState.rootsWithProviders);
+		const searchResults = await this.getSearchResults(pattern, roots, matchType, token);
+
+		if (token.isCancellationRequested) {
+			return undefined;
+		}
+
+		this.clearHighlights();
+		for (const { explorerRoot, files, directories } of searchResults) {
+			this.addWorkspaceHighlightResults(explorerRoot, files.concat(directories));
+		}
+
+		const hitMaxResults = searchResults.some(({ hitMaxResults }) => hitMaxResults);
+		return {
+			isMatch: (item: ExplorerItem) => this.findHighlightTree.isMatch(item) || (this.findHighlightTree.get(item) > 0 && this.treeProvider().isCollapsed(item)),
+			matchCount: searchResults.reduce((acc, { files, directories }) => acc + files.length + directories.length, 0),
+			warningMessage: hitMaxResults ? localize('searchMaxResultsWarning', "The result set only contains a subset of all matches. Be more specific in your search to narrow down the results.") : undefined
+		};
+	}
+
+	private addWorkspaceHighlightResults(root: ExplorerItem, resources: URI[]): void {
+		const highlightedDirectories = new Set<ExplorerItem>();
+		const storeDirectories = (item: ExplorerItem | undefined) => {
+			while (item) {
+				highlightedDirectories.add(item);
+				item = item.parent;
+			}
+		};
+
+		for (const resource of resources) {
+			const element = root.find(resource);
+			if (element && element.root === root) {
+				// File is already in the model
+				this.findHighlightTree.add(resource, root);
+				storeDirectories(element.parent);
+				continue;
+			}
+
+			const firstParent = findFirstParent(resource, root);
+			if (firstParent) {
+				this.findHighlightTree.add(resource, root);
+				storeDirectories(firstParent.parent);
+			}
+		}
+
+		const tree = this.treeProvider();
+		for (const directory of highlightedDirectories) {
+			if (tree.hasNode(directory)) {
+				tree.rerender(directory);
+			}
+		}
+	}
+
+	private endHighlightSession(): void {
+		this.highlightSessionStartState = undefined;
+		this.clearHighlights();
+	}
+
+	private clearHighlights(): void {
+		const tree = this.treeProvider();
+		for (const item of this.findHighlightTree.highlightedItems) {
+			if (tree.hasNode(item)) {
+				tree.rerender(item);
+			}
+		}
+		this.findHighlightTree.clear();
+	}
+
+	// Search
+
+	private searchSupportsScheme(scheme: string): boolean {
+		// Limited by the search API
+		if (scheme !== Schemas.file && scheme !== Schemas.vscodeRemote) {
+			return false;
+		}
+		return this.searchService.schemeHasFileSearchProvider(scheme);
+	}
+
+	private async getSearchResults(pattern: string, roots: ExplorerItem[], matchType: TreeFindMatchType, token: CancellationToken): Promise<{ explorerRoot: ExplorerItem; files: URI[]; directories: URI[]; hitMaxResults: boolean }[]> {
+		const patternLowercase = pattern.toLowerCase();
+		const isFuzzyMatch = matchType === TreeFindMatchType.Fuzzy;
+		return await Promise.all(roots.map((root, index) => this.searchInWorkspace(patternLowercase, root, index, isFuzzyMatch, token)));
+	}
+
+	private async searchInWorkspace(patternLowercase: string, root: ExplorerItem, rootIndex: number, isFuzzyMatch: boolean, token: CancellationToken): Promise<{ explorerRoot: ExplorerItem; files: URI[]; directories: URI[]; hitMaxResults: boolean }> {
+		const segmentMatchPattern = caseInsensitiveGlobPattern(isFuzzyMatch ? fuzzyMatchingGlobPattern(patternLowercase) : continousMatchingGlobPattern(patternLowercase));
+
+		const searchExcludePattern = getExcludes(this.configurationService.getValue<ISearchConfiguration>({ resource: root.resource })) || {};
+		const searchOptions: IFileQuery = {
+			folderQueries: [{
+				folder: root.resource,
+				disregardIgnoreFiles: !this.configurationService.getValue<boolean>('explorer.excludeGitIgnore'),
+			}],
+			type: QueryType.File,
+			shouldGlobMatchFilePattern: true,
+			cacheKey: `explorerfindprovider:${root.name}:${rootIndex}:${this.sessionId}`,
+			excludePattern: searchExcludePattern,
+		};
+
+		let fileResults: ISearchComplete | undefined;
+		let folderResults: ISearchComplete | undefined;
+		try {
+			[fileResults, folderResults] = await Promise.all([
+				this.searchService.fileSearch({ ...searchOptions, filePattern: `**/${segmentMatchPattern}`, maxResults: 512 }, token),
+				this.searchService.fileSearch({ ...searchOptions, filePattern: `**/${segmentMatchPattern}/**` }, token)
+			]);
+		} catch (e) {
+			if (!isCancellationError(e)) {
+				throw e;
+			}
+		}
+
+		if (!fileResults || !folderResults || token.isCancellationRequested) {
+			return { explorerRoot: root, files: [], directories: [], hitMaxResults: false };
+		}
+
+		const fileResultResources = fileResults.results.map(result => result.resource);
+		const directoryResources = getMatchingDirectoriesFromFiles(folderResults.results.map(result => result.resource), root, segmentMatchPattern);
+
+		const filteredFileResources = fileResultResources.filter(resource => !this.filesFilter.isIgnored(resource, root.resource, false));
+		const filteredDirectoryResources = directoryResources.filter(resource => !this.filesFilter.isIgnored(resource, root.resource, true));
+
+		return { explorerRoot: root, files: filteredFileResources, directories: filteredDirectoryResources, hitMaxResults: !!fileResults.limitHit || !!folderResults.limitHit };
+	}
+}
+
+function getMatchingDirectoriesFromFiles(resources: URI[], root: ExplorerItem, segmentMatchPattern: string): URI[] {
+	const uniqueDirectories = new ResourceSet();
+	for (const resource of resources) {
+		const relativePathToRoot = relativePath(root.resource, resource);
+		if (!relativePathToRoot) {
+			throw new Error('Resource is not a child of the root');
+		}
+
+		let dirResource = root.resource;
+		const stats = relativePathToRoot.split('/').slice(0, -1);
+		for (const stat of stats) {
+			dirResource = dirResource.with({ path: `${dirResource.path}/${stat}` });
+			uniqueDirectories.add(dirResource);
+		}
+	}
+
+	const matchingDirectories: URI[] = [];
+	for (const dirResource of uniqueDirectories) {
+		const stats = dirResource.path.split('/');
+		const dirStat = stats[stats.length - 1];
+		if (!dirStat || !glob.match(segmentMatchPattern, dirStat)) {
+			continue;
+		}
+
+		matchingDirectories.push(dirResource);
+	}
+
+	return matchingDirectories;
+}
+
+function findFirstParent(resource: URI, root: ExplorerItem): ExplorerItem | undefined {
+	const relativePathToRoot = relativePath(root.resource, resource);
+	if (!relativePathToRoot) {
+		throw new Error('Resource is not a child of the root');
+	}
+
+	let currentItem = root;
+	let currentResource = root.resource;
+	const pathSegments = relativePathToRoot.split('/');
+	for (const stat of pathSegments) {
+		currentResource = currentResource.with({ path: `${currentResource.path}/${stat}` });
+		const child = currentItem.getChild(stat);
+		if (!child) {
+			return currentItem;
+		}
+
+		currentItem = child;
+	}
+
+	return undefined;
+}
+
+function fuzzyMatchingGlobPattern(pattern: string): string {
+	if (!pattern) {
+		return '*';
+	}
+	return '*' + pattern.split('').join('*') + '*';
+}
+
+function continousMatchingGlobPattern(pattern: string): string {
+	if (!pattern) {
+		return '*';
+	}
+	return '*' + pattern + '*';
+}
+
+function caseInsensitiveGlobPattern(pattern: string): string {
+	let caseInsensitiveFilePattern = '';
+	for (let i = 0; i < pattern.length; i++) {
+		const char = pattern[i];
+		if (/[a-zA-Z]/.test(char)) {
+			caseInsensitiveFilePattern += `[${char.toLowerCase()}${char.toUpperCase()}]`;
+		} else {
+			caseInsensitiveFilePattern += char;
+		}
+	}
+	return caseInsensitiveFilePattern;
+}
+
+export interface ICompressedNavigationController {
+	readonly current: ExplorerItem;
+	readonly currentId: string;
+	readonly items: ExplorerItem[];
+	readonly labels: HTMLElement[];
+	readonly index: number;
+	readonly count: number;
+	readonly onDidChange: Event<void>;
+	previous(): void;
+	next(): void;
+	first(): void;
+	last(): void;
+	setIndex(index: number): void;
+	updateCollapsed(collapsed: boolean): void;
+}
+
+export class CompressedNavigationController implements ICompressedNavigationController, IDisposable {
+
+	static ID = 0;
+
+	private _index: number;
+	private _labels!: HTMLElement[];
+	private _updateLabelDisposable: IDisposable;
+
+	get index(): number { return this._index; }
+	get count(): number { return this.items.length; }
+	get current(): ExplorerItem { return this.items[this._index]; }
+	get currentId(): string { return `${this.id}_${this.index}`; }
+	get labels(): HTMLElement[] { return this._labels; }
+
+	private _onDidChange = new Emitter<void>();
+	readonly onDidChange = this._onDidChange.event;
+
+	constructor(private id: string, readonly items: ExplorerItem[], templateData: IFileTemplateData, private depth: number, private collapsed: boolean) {
+		this._index = items.length - 1;
+
+		this.updateLabels(templateData);
+		this._updateLabelDisposable = templateData.label.onDidRender(() => this.updateLabels(templateData));
+	}
+
+	private updateLabels(templateData: IFileTemplateData): void {
+		// eslint-disable-next-line no-restricted-syntax
+		this._labels = Array.from(templateData.container.querySelectorAll('.label-name'));
+		let parents = '';
+		for (let i = 0; i < this.labels.length; i++) {
+			const ariaLabel = parents.length ? `${this.items[i].name}, compact, ${parents}` : this.items[i].name;
+			this.labels[i].setAttribute('aria-label', ariaLabel);
+			this.labels[i].setAttribute('aria-level', `${this.depth + i}`);
+			parents = parents.length ? `${this.items[i].name} ${parents}` : this.items[i].name;
+		}
+		this.updateCollapsed(this.collapsed);
+
+		if (this._index < this.labels.length) {
+			this.labels[this._index].classList.add('active');
+		}
+	}
+
+	previous(): void {
+		if (this._index <= 0) {
+			return;
+		}
+
+		this.setIndex(this._index - 1);
+	}
+
+	next(): void {
+		if (this._index >= this.items.length - 1) {
+			return;
+		}
+
+		this.setIndex(this._index + 1);
+	}
+
+	first(): void {
+		if (this._index === 0) {
+			return;
+		}
+
+		this.setIndex(0);
+	}
+
+	last(): void {
+		if (this._index === this.items.length - 1) {
+			return;
+		}
+
+		this.setIndex(this.items.length - 1);
+	}
+
+	setIndex(index: number): void {
+		if (index < 0 || index >= this.items.length) {
+			return;
+		}
+
+		this.labels[this._index].classList.remove('active');
+		this._index = index;
+		this.labels[this._index].classList.add('active');
+
+		this._onDidChange.fire();
+	}
+
+	updateCollapsed(collapsed: boolean): void {
+		this.collapsed = collapsed;
+		for (let i = 0; i < this.labels.length; i++) {
+			this.labels[i].setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+		}
+	}
+
+	dispose(): void {
+		this._onDidChange.dispose();
+		this._updateLabelDisposable.dispose();
+	}
+}
+
+export interface IFileTemplateData {
+	readonly templateDisposables: DisposableStore;
+	readonly elementDisposables: DisposableStore;
+	readonly label: IResourceLabel;
+	readonly container: HTMLElement;
+	readonly contribs: IExplorerFileContribution[];
+	currentContext?: ExplorerItem;
+}
+
+export class FilesRenderer implements ICompressibleTreeRenderer<ExplorerItem, FuzzyScore, IFileTemplateData>, IListAccessibilityProvider<ExplorerItem>, IDisposable {
+	static readonly ID = 'file';
+
+	private config: IFilesConfiguration;
+	private configListener: IDisposable;
+	private compressedNavigationControllers = new Map<ExplorerItem, CompressedNavigationController[]>();
+
+	private _onDidChangeActiveDescendant = new EventMultiplexer<void>();
+	readonly onDidChangeActiveDescendant = this._onDidChangeActiveDescendant.event;
+
+	constructor(
+		container: HTMLElement,
+		private labels: ResourceLabels,
+		private highlightTree: IExplorerFindHighlightTree,
+		private updateWidth: (stat: ExplorerItem) => void,
+		@IContextViewService private readonly contextViewService: IContextViewService,
+		@IThemeService private readonly themeService: IThemeService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IExplorerService private readonly explorerService: IExplorerService,
+		@ILabelService private readonly labelService: ILabelService,
+		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService
+	) {
+		this.config = this.configurationService.getValue<IFilesConfiguration>();
+
+		const updateOffsetStyles = () => {
+			const indent = this.configurationService.getValue<number>('workbench.tree.indent');
+			const offset = Math.max(22 - indent, 0); // derived via inspection
+			container.style.setProperty(`--vscode-explorer-align-offset-margin-left`, `${offset}px`);
+		};
+
+		this.configListener = this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('explorer')) {
+				this.config = this.configurationService.getValue();
+			}
+			if (e.affectsConfiguration('workbench.tree.indent')) {
+				updateOffsetStyles();
+			}
+		});
+
+		updateOffsetStyles();
+	}
+
+	getWidgetAriaLabel(): string {
+		return localize('treeAriaLabel', "Files Explorer");
+	}
+
+	get templateId(): string {
+		return FilesRenderer.ID;
+	}
+
+	renderTemplate(container: HTMLElement): IFileTemplateData {
+		const templateDisposables = new DisposableStore();
+		const label = templateDisposables.add(this.labels.create(container, { supportHighlights: true }));
+		templateDisposables.add(label.onDidRender(() => {
+			// schedule this on the next animation frame to avoid rendering reentry
+			DOM.scheduleAtNextAnimationFrame(DOM.getWindow(templateData.container), () => {
+				try {
+					if (templateData.currentContext) {
+						this.updateWidth(templateData.currentContext);
+					}
+				} catch (e) {
+					// noop since the element might no longer be in the tree, no update of width necessary
+				}
+			});
+		}));
+
+		const contribs = explorerFileContribRegistry.create(this.instantiationService, container, templateDisposables);
+		templateDisposables.add(explorerFileContribRegistry.onDidRegisterDescriptor(d => {
+			const contr = d.create(this.instantiationService, container);
+			contribs.push(templateDisposables.add(contr));
+			contr.setResource(templateData.currentContext?.resource);
+		}));
+
+		const templateData: IFileTemplateData = { templateDisposables, elementDisposables: templateDisposables.add(new DisposableStore()), label, container, contribs };
+		return templateData;
+	}
+
+	renderElement(node: ITreeNode<ExplorerItem, FuzzyScore>, index: number, templateData: IFileTemplateData): void {
+		const stat = node.element;
+		templateData.currentContext = stat;
+
+		const editableData = this.explorerService.getEditableData(stat);
+
+		templateData.label.element.classList.remove('compressed');
+
+		// File Label
+		if (!editableData) {
+			templateData.label.element.style.display = 'flex';
+			this.renderStat(stat, stat.name, undefined, node.filterData, templateData);
+		}
+
+		// Input Box
+		else {
+			templateData.label.element.style.display = 'none';
+			templateData.contribs.forEach(c => c.setResource(undefined));
+			templateData.elementDisposables.add(this.renderInputBox(templateData.container, stat, editableData));
+		}
+	}
+
+	renderCompressedElements(node: ITreeNode<ICompressedTreeNode<ExplorerItem>, FuzzyScore>, index: number, templateData: IFileTemplateData): void {
+		const stat = node.element.elements[node.element.elements.length - 1];
+		templateData.currentContext = stat;
+
+		const editable = node.element.elements.filter(e => this.explorerService.isEditable(e));
+		const editableData = editable.length === 0 ? undefined : this.explorerService.getEditableData(editable[0]);
+
+		// File Label
+		if (!editableData) {
+			templateData.label.element.classList.add('compressed');
+			templateData.label.element.style.display = 'flex';
+
+			const id = `compressed-explorer_${CompressedNavigationController.ID++}`;
+			const labels = node.element.elements.map(e => e.name);
+
+			// If there is a fuzzy score, we need to adjust the offset of the score
+			// to align with the last stat of the compressed label
+			let fuzzyScore = node.filterData;
+			if (fuzzyScore && fuzzyScore.length > 2) {
+				const filterDataOffset = labels.join('/').length - labels[labels.length - 1].length;
+				fuzzyScore = [fuzzyScore[0], fuzzyScore[1] + filterDataOffset, ...fuzzyScore.slice(2)];
+			}
+
+			this.renderStat(stat, labels, id, fuzzyScore, templateData);
+
+			const compressedNavigationController = new CompressedNavigationController(id, node.element.elements, templateData, node.depth, node.collapsed);
+			templateData.elementDisposables.add(compressedNavigationController);
+
+			const nodeControllers = this.compressedNavigationControllers.get(stat) ?? [];
+			this.compressedNavigationControllers.set(stat, [...nodeControllers, compressedNavigationController]);
+
+			// accessibility
+			templateData.elementDisposables.add(this._onDidChangeActiveDescendant.add(compressedNavigationController.onDidChange));
+
+			templateData.elementDisposables.add(DOM.addDisposableListener(templateData.container, 'mousedown', e => {
+				const result = getIconLabelNameFromHTMLElement(e.target);
+
+				if (result) {
+					compressedNavigationController.setIndex(result.index);
+				}
+			}));
+
+			templateData.elementDisposables.add(toDisposable(() => {
+				const nodeControllers = this.compressedNavigationControllers.get(stat) ?? [];
+				const renderedIndex = nodeControllers.findIndex(controller => controller === compressedNavigationController);
+
+				if (renderedIndex < 0) {
+					throw new Error('Disposing unknown navigation controller');
+				}
+
+				if (nodeControllers.length === 1) {
+					this.compressedNavigationControllers.delete(stat);
+				} else {
+					nodeControllers.splice(renderedIndex, 1);
+				}
+			}));
+		}
+
+		// Input Box
+		else {
+			templateData.label.element.classList.remove('compressed');
+			templateData.label.element.style.display = 'none';
+			templateData.contribs.forEach(c => c.setResource(undefined));
+			templateData.elementDisposables.add(this.renderInputBox(templateData.container, editable[0], editableData));
+		}
+	}
+
+	private renderStat(stat: ExplorerItem, label: string | string[], domId: string | undefined, filterData: FuzzyScore | undefined, templateData: IFileTemplateData): void {
+		templateData.label.element.style.display = 'flex';
+		const extraClasses = ['explorer-item'];
+		if (this.explorerService.isCut(stat)) {
+			extraClasses.push('cut');
+		}
+
+		// Offset nested children unless folders have both chevrons and icons, otherwise alignment breaks
+		const theme = this.themeService.getFileIconTheme();
+
+		// Hack to always render chevrons for file nests, or else may not be able to identify them.
+		// eslint-disable-next-line no-restricted-syntax
+		const twistieContainer = templateData.container.parentElement?.parentElement?.querySelector('.monaco-tl-twistie');
+		twistieContainer?.classList.toggle('force-twistie', stat.hasNests && theme.hidesExplorerArrows);
+
+		// when explorer arrows are hidden or there are no folder icons, nests get misaligned as they are forced to have arrows and files typically have icons
+		// Apply some CSS magic to get things looking as reasonable as possible.
+		const themeIsUnhappyWithNesting = theme.hasFileIcons && (theme.hidesExplorerArrows || !theme.hasFolderIcons);
+		const realignNestedChildren = stat.nestedParent && themeIsUnhappyWithNesting;
+		templateData.contribs.forEach(c => c.setResource(stat.resource));
+		templateData.label.setResource({ resource: stat.resource, name: label }, {
+			fileKind: stat.isRoot ? FileKind.ROOT_FOLDER : stat.isDirectory ? FileKind.FOLDER : FileKind.FILE,
+			extraClasses: realignNestedChildren ? [...extraClasses, 'align-nest-icon-with-parent-icon'] : extraClasses,
+			fileDecorations: this.config.explorer.decorations,
+			matches: createMatches(filterData),
+			separator: this.labelService.getSeparator(stat.resource.scheme, stat.resource.authority),
+			domId
+		});
+
+		const highlightResults = stat.isDirectory ? this.highlightTree.get(stat) : 0;
+		if (highlightResults > 0) {
+			const badge = new CountBadge(templateData.label.element.lastElementChild as HTMLElement, {}, { ...defaultCountBadgeStyles, badgeBackground: asCssVariable(listFilterMatchHighlight), badgeBorder: asCssVariable(listFilterMatchHighlightBorder) });
+			badge.setCount(highlightResults);
+			badge.setTitleFormat(localize('explorerHighlightFolderBadgeTitle', "Directory contains {0} matches", highlightResults));
+			templateData.elementDisposables.add(badge);
+		}
+		templateData.label.element.classList.toggle('highlight-badge', highlightResults > 0);
+	}
+
+	private renderInputBox(container: HTMLElement, stat: ExplorerItem, editableData: IEditableData): IDisposable {
+
+		// Use a file label only for the icon next to the input box
+		const label = this.labels.create(container);
+		const extraClasses = ['explorer-item', 'explorer-item-edited'];
+		const fileKind = stat.isRoot ? FileKind.ROOT_FOLDER : stat.isDirectory ? FileKind.FOLDER : FileKind.FILE;
+
+		const theme = this.themeService.getFileIconTheme();
+		const themeIsUnhappyWithNesting = theme.hasFileIcons && (theme.hidesExplorerArrows || !theme.hasFolderIcons);
+		const realignNestedChildren = stat.nestedParent && themeIsUnhappyWithNesting;
+
+		const labelOptions: IFileLabelOptions = {
+			hidePath: true,
+			hideLabel: true,
+			fileKind,
+			extraClasses: realignNestedChildren ? [...extraClasses, 'align-nest-icon-with-parent-icon'] : extraClasses,
+		};
+
+
+		const parent = stat.name ? dirname(stat.resource) : stat.resource;
+		const value = stat.name || '';
+
+		label.setFile(joinPath(parent, value || ' '), labelOptions); // Use icon for ' ' if name is empty.
+
+		// hack: hide label
+		(label.element.firstElementChild as HTMLElement).style.display = 'none';
+
+		// Input field for name
+		const inputBox = new InputBox(label.element, this.contextViewService, {
+			validationOptions: {
+				validation: (value) => {
+					const message = editableData.validationMessage(value);
+					if (!message || message.severity !== Severity.Error) {
+						return null;
+					}
+
+					return {
+						content: message.content,
+						formatContent: true,
+						type: MessageType.ERROR
+					};
+				}
+			},
+			ariaLabel: localize('fileInputAriaLabel', "Type file name. Press Enter to confirm or Escape to cancel."),
+			inputBoxStyles: defaultInputBoxStyles,
+		});
+
+		const lastDot = value.lastIndexOf('.');
+		let currentSelectionState = 'prefix';
+
+		inputBox.value = value;
+		inputBox.focus();
+		inputBox.select({ start: 0, end: lastDot > 0 && !stat.isDirectory ? lastDot : value.length });
+
+		const done = createSingleCallFunction((success: boolean, finishEditing: boolean) => {
+			label.element.style.display = 'none';
+			const value = inputBox.value;
+			dispose(toDispose);
+			label.element.remove();
+			if (finishEditing) {
+				editableData.onFinish(value, success);
+			}
+		});
+
+		const showInputBoxNotification = () => {
+			if (inputBox.isInputValid()) {
+				const message = editableData.validationMessage(inputBox.value);
+				if (message) {
+					inputBox.showMessage({
+						content: message.content,
+						formatContent: true,
+						type: message.severity === Severity.Info ? MessageType.INFO : message.severity === Severity.Warning ? MessageType.WARNING : MessageType.ERROR
+					});
+				} else {
+					inputBox.hideMessage();
+				}
+			}
+		};
+		showInputBoxNotification();
+
+		const toDispose = [
+			inputBox,
+			inputBox.onDidChange(value => {
+				label.setFile(joinPath(parent, value || ' '), labelOptions); // update label icon while typing!
+			}),
+			DOM.addStandardDisposableListener(inputBox.inputElement, DOM.EventType.KEY_DOWN, (e: IKeyboardEvent) => {
+				if (e.equals(KeyCode.F2)) {
+					const dotIndex = inputBox.value.lastIndexOf('.');
+					if (stat.isDirectory || dotIndex === -1) {
+						return;
+					}
+					if (currentSelectionState === 'prefix') {
+						currentSelectionState = 'all';
+						inputBox.select({ start: 0, end: inputBox.value.length });
+					} else if (currentSelectionState === 'all') {
+						currentSelectionState = 'suffix';
+						inputBox.select({ start: dotIndex + 1, end: inputBox.value.length });
+					} else {
+						currentSelectionState = 'prefix';
+						inputBox.select({ start: 0, end: dotIndex });
+					}
+				} else if (e.equals(KeyCode.Enter)) {
+					if (!inputBox.validate()) {
+						done(true, true);
+					}
+				} else if (e.equals(KeyCode.Escape)) {
+					done(false, true);
+				}
+			}),
+			DOM.addStandardDisposableListener(inputBox.inputElement, DOM.EventType.KEY_UP, (e: IKeyboardEvent) => {
+				showInputBoxNotification();
+			}),
+			DOM.addDisposableListener(inputBox.inputElement, DOM.EventType.BLUR, async () => {
+				while (true) {
+					await timeout(0);
+
+					const ownerDocument = inputBox.inputElement.ownerDocument;
+					if (!ownerDocument.hasFocus()) {
+						break;
+					} if (DOM.isActiveElement(inputBox.inputElement)) {
+						return;
+					} else if (DOM.isHTMLElement(ownerDocument.activeElement) && DOM.hasParentWithClass(ownerDocument.activeElement, 'context-view')) {
+						await Event.toPromise(this.contextMenuService.onDidHideContextMenu);
+					} else {
+						break;
+					}
+				}
+
+				done(inputBox.isInputValid(), true);
+			}),
+			label
+		];
+
+		return toDisposable(() => {
+			done(false, false);
+		});
+	}
+
+	disposeElement(element: ITreeNode<ExplorerItem, FuzzyScore>, index: number, templateData: IFileTemplateData): void {
+		templateData.currentContext = undefined;
+		templateData.elementDisposables.clear();
+	}
+
+	disposeCompressedElements(node: ITreeNode<ICompressedTreeNode<ExplorerItem>, FuzzyScore>, index: number, templateData: IFileTemplateData): void {
+		templateData.currentContext = undefined;
+		templateData.elementDisposables.clear();
+	}
+
+	disposeTemplate(templateData: IFileTemplateData): void {
+		templateData.templateDisposables.dispose();
+	}
+
+	getCompressedNavigationController(stat: ExplorerItem): ICompressedNavigationController[] | undefined {
+		return this.compressedNavigationControllers.get(stat);
+	}
+
+	// IAccessibilityProvider
+
+	getAriaLabel(element: ExplorerItem): string {
+		return element.name;
+	}
+
+	getAriaLevel(element: ExplorerItem): number {
+		// We need to comput aria level on our own since children of compact folders will otherwise have an incorrect level	#107235
+		let depth = 0;
+		let parent = element.parent;
+		while (parent) {
+			parent = parent.parent;
+			depth++;
+		}
+
+		if (this.contextService.getWorkbenchState() === WorkbenchState.WORKSPACE) {
+			depth = depth + 1;
+		}
+
+		return depth;
+	}
+
+	getActiveDescendantId(stat: ExplorerItem): string | undefined {
+		return this.compressedNavigationControllers.get(stat)?.[0]?.currentId ?? undefined;
+	}
+
+	dispose(): void {
+		this.configListener.dispose();
+	}
+}
+
+interface CachedParsedExpression {
+	original: glob.IExpression;
+	parsed: glob.ParsedExpression;
+}
+
+/**
+ * Respects files.exclude setting in filtering out content from the explorer.
+ * Makes sure that visible editors are always shown in the explorer even if they are filtered out by settings.
+ */
+export class FilesFilter implements ITreeFilter<ExplorerItem, FuzzyScore> {
+	private hiddenExpressionPerRoot = new Map<string, CachedParsedExpression>();
+	private editorsAffectingFilter = new Set<EditorInput>();
+	private _onDidChange = new Emitter<void>();
+	private toDispose: IDisposable[] = [];
+	// List of ignoreFile resources. Used to detect changes to the ignoreFiles.
+	private ignoreFileResourcesPerRoot = new Map<string, ResourceSet>();
+	// Ignore tree per root. Similar to `hiddenExpressionPerRoot`
+	// Note: URI in the ternary search tree is the URI of the folder containing the ignore file
+	// It is not the ignore file itself. This is because of the way the IgnoreFile works and nested paths
+	private ignoreTreesPerRoot = new Map<string, TernarySearchTree<URI, IgnoreFile>>();
+
+	constructor(
+		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IExplorerService private readonly explorerService: IExplorerService,
+		@IEditorService private readonly editorService: IEditorService,
+		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
+		@IFileService private readonly fileService: IFileService
+	) {
+		this.toDispose.push(this.contextService.onDidChangeWorkspaceFolders(() => this.updateConfiguration()));
+		this.toDispose.push(this.configurationService.onDidChangeConfiguration((e) => {
+			if (e.affectsConfiguration('files.exclude') || e.affectsConfiguration('explorer.excludeGitIgnore')) {
+				this.updateConfiguration();
+			}
+		}));
+		this.toDispose.push(this.fileService.onDidFilesChange(e => {
+			// Check to see if the update contains any of the ignoreFileResources
+			for (const [root, ignoreFileResourceSet] of this.ignoreFileResourcesPerRoot.entries()) {
+				ignoreFileResourceSet.forEach(async ignoreResource => {
+					if (e.contains(ignoreResource, FileChangeType.UPDATED)) {
+						await this.processIgnoreFile(root, ignoreResource, true);
+					}
+					if (e.contains(ignoreResource, FileChangeType.DELETED)) {
+						this.ignoreTreesPerRoot.get(root)?.delete(dirname(ignoreResource));
+						ignoreFileResourceSet.delete(ignoreResource);
+						this._onDidChange.fire();
+					}
+				});
+			}
+		}));
+		this.toDispose.push(this.editorService.onDidVisibleEditorsChange(() => {
+			const editors = this.editorService.visibleEditors;
+			let shouldFire = false;
+
+			for (const e of editors) {
+				if (!e.resource) {
+					continue;
+				}
+
+				const stat = this.explorerService.findClosest(e.resource);
+				if (stat?.isExcluded) {
+					// A filtered resource suddenly became visible since user opened an editor
+					shouldFire = true;
+					break;
+				}
+			}
+
+			for (const e of this.editorsAffectingFilter) {
+				if (!editors.includes(e)) {
+					// Editor that was affecting filtering is no longer visible
+					shouldFire = true;
+					break;
+				}
+			}
+
+			if (shouldFire) {
+				this.editorsAffectingFilter.clear();
+				this._onDidChange.fire();
+			}
+		}));
+		this.updateConfiguration();
+	}
+
+	get onDidChange(): Event<void> {
+		return this._onDidChange.event;
+	}
+
+	private updateConfiguration(): void {
+		let shouldFire = false;
+		let updatedGitIgnoreSetting = false;
+		this.contextService.getWorkspace().folders.forEach(folder => {
+			const configuration = this.configurationService.getValue<IFilesConfiguration>({ resource: folder.uri });
+			const excludesConfig: glob.IExpression = configuration?.files?.exclude || Object.create(null);
+			const parseIgnoreFile: boolean = configuration.explorer.excludeGitIgnore;
+
+			// If we should be parsing ignoreFiles for this workspace and don't have an ignore tree initialize one
+			if (parseIgnoreFile && !this.ignoreTreesPerRoot.has(folder.uri.toString())) {
+				updatedGitIgnoreSetting = true;
+				this.ignoreFileResourcesPerRoot.set(folder.uri.toString(), new ResourceSet());
+				this.ignoreTreesPerRoot.set(folder.uri.toString(), TernarySearchTree.forUris((uri) => this.uriIdentityService.extUri.ignorePathCasing(uri)));
+			}
+
+			// If we shouldn't be parsing ignore files but have an ignore tree, clear the ignore tree
+			if (!parseIgnoreFile && this.ignoreTreesPerRoot.has(folder.uri.toString())) {
+				updatedGitIgnoreSetting = true;
+				this.ignoreFileResourcesPerRoot.delete(folder.uri.toString());
+				this.ignoreTreesPerRoot.delete(folder.uri.toString());
+			}
+
+			if (!shouldFire) {
+				const cached = this.hiddenExpressionPerRoot.get(folder.uri.toString());
+				shouldFire = !cached || !equals(cached.original, excludesConfig);
+			}
+
+			const excludesConfigCopy = deepClone(excludesConfig); // do not keep the config, as it gets mutated under our hoods
+
+			this.hiddenExpressionPerRoot.set(folder.uri.toString(), { original: excludesConfigCopy, parsed: glob.parse(excludesConfigCopy) });
+		});
+
+		if (shouldFire || updatedGitIgnoreSetting) {
+			this.editorsAffectingFilter.clear();
+			this._onDidChange.fire();
+		}
+	}
+
+	/**
+	 * Given a .gitignore file resource, processes the resource and adds it to the ignore tree which hides explorer items
+	 * @param root The root folder of the workspace as a string. Used for lookup key for ignore tree and resource list
+	 * @param ignoreFileResource The resource of the .gitignore file
+	 * @param update Whether or not we're updating an existing ignore file. If true it deletes the old entry
+	 */
+	private async processIgnoreFile(root: string, ignoreFileResource: URI, update?: boolean) {
+		// Get the name of the directory which the ignore file is in
+		const dirUri = dirname(ignoreFileResource);
+		const ignoreTree = this.ignoreTreesPerRoot.get(root);
+		if (!ignoreTree) {
+			return;
+		}
+
+		// Don't process a directory if we already have it in the tree
+		if (!update && ignoreTree.has(dirUri)) {
+			return;
+		}
+		// Maybe we need a cancellation token here in case it's super long?
+		const content = await this.fileService.readFile(ignoreFileResource);
+
+		// If it's just an update we update the contents keeping all references the same
+		if (update) {
+			const ignoreFile = ignoreTree.get(dirUri);
+			ignoreFile?.updateContents(content.value.toString());
+		} else {
+			// Otherwise we create a new ignorefile and add it to the tree
+			const ignoreParent = ignoreTree.findSubstr(dirUri);
+			const ignoreFile = new IgnoreFile(content.value.toString(), dirUri.path, ignoreParent);
+			ignoreTree.set(dirUri, ignoreFile);
+			// If we haven't seen this resource before then we need to add it to the list of resources we're tracking
+			if (!this.ignoreFileResourcesPerRoot.get(root)?.has(ignoreFileResource)) {
+				this.ignoreFileResourcesPerRoot.get(root)?.add(ignoreFileResource);
+			}
+		}
+
+		// Notify the explorer of the change so we may ignore these files
+		this._onDidChange.fire();
+	}
+
+	filter(stat: ExplorerItem, parentVisibility: TreeVisibility): boolean {
+		// Add newly visited .gitignore files to the ignore tree
+		if (stat.name === '.gitignore' && this.ignoreTreesPerRoot.has(stat.root.resource.toString())) {
+			this.processIgnoreFile(stat.root.resource.toString(), stat.resource, false);
+			return true;
+		}
+
+		return this.isVisible(stat, parentVisibility);
+	}
+
+	private isVisible(stat: ExplorerItem, parentVisibility: TreeVisibility): boolean {
+		stat.isExcluded = false;
+		if (parentVisibility === TreeVisibility.Hidden) {
+			stat.isExcluded = true;
+			return false;
+		}
+		if (this.explorerService.getEditableData(stat)) {
+			return true; // always visible
+		}
+
+		// Hide those that match Hidden Patterns
+		const cached = this.hiddenExpressionPerRoot.get(stat.root.resource.toString());
+		const globMatch = cached?.parsed(path.relative(stat.root.resource.path, stat.resource.path), stat.name, name => !!(stat.parent?.getChild(name)));
+		// Small optimization to only run isHiddenResource (traverse gitIgnore) if the globMatch from fileExclude returned nothing
+		const isHiddenResource = globMatch ? true : this.isIgnored(stat.resource, stat.root.resource, stat.isDirectory);
+		if (isHiddenResource || stat.parent?.isExcluded) {
+			stat.isExcluded = true;
+			const editors = this.editorService.visibleEditors;
+			const editor = editors.find(e => e.resource && this.uriIdentityService.extUri.isEqualOrParent(e.resource, stat.resource));
+			if (editor && stat.root === this.explorerService.findClosestRoot(stat.resource)) {
+				this.editorsAffectingFilter.add(editor);
+				return true; // Show all opened files and their parents
+			}
+
+			return false; // hidden through pattern
+		}
+
+		return true;
+	}
+
+	isIgnored(resource: URI, rootResource: URI, isDirectory: boolean): boolean {
+		const ignoreFile = this.ignoreTreesPerRoot.get(rootResource.toString())?.findSubstr(resource);
+		const isIncludedInTraversal = ignoreFile?.isPathIncludedInTraversal(resource.path, isDirectory);
+
+		// Doing !undefined returns true and we want it to be false when undefined because that means it's not included in the ignore file
+		return isIncludedInTraversal === undefined ? false : !isIncludedInTraversal;
+	}
+
+	dispose(): void {
+		dispose(this.toDispose);
+	}
+}
+
+// Explorer Sorter
+export class FileSorter implements ITreeSorter<ExplorerItem> {
+
+	constructor(
+		@IExplorerService private readonly explorerService: IExplorerService,
+		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService
+	) { }
+
+	compare(statA: ExplorerItem, statB: ExplorerItem): number {
+		// Do not sort roots
+		if (statA.isRoot) {
+			if (statB.isRoot) {
+				const workspaceA = this.contextService.getWorkspaceFolder(statA.resource);
+				const workspaceB = this.contextService.getWorkspaceFolder(statB.resource);
+				return workspaceA && workspaceB ? (workspaceA.index - workspaceB.index) : -1;
+			}
+
+			return -1;
+		}
+
+		if (statB.isRoot) {
+			return 1;
+		}
+
+		const sortOrder = this.explorerService.sortOrderConfiguration.sortOrder;
+		const lexicographicOptions = this.explorerService.sortOrderConfiguration.lexicographicOptions;
+		const reverse = this.explorerService.sortOrderConfiguration.reverse;
+		if (reverse) {
+			[statA, statB] = [statB, statA];
+		}
+
+		let compareFileNames;
+		let compareFileExtensions;
+		switch (lexicographicOptions) {
+			case 'upper':
+				compareFileNames = compareFileNamesUpper;
+				compareFileExtensions = compareFileExtensionsUpper;
+				break;
+			case 'lower':
+				compareFileNames = compareFileNamesLower;
+				compareFileExtensions = compareFileExtensionsLower;
+				break;
+			case 'unicode':
+				compareFileNames = compareFileNamesUnicode;
+				compareFileExtensions = compareFileExtensionsUnicode;
+				break;
+			default:
+				// 'default'
+				compareFileNames = compareFileNamesDefault;
+				compareFileExtensions = compareFileExtensionsDefault;
+		}
+
+		// Sort Directories
+		switch (sortOrder) {
+			case 'type':
+				if (statA.isDirectory && !statB.isDirectory) {
+					return -1;
+				}
+
+				if (statB.isDirectory && !statA.isDirectory) {
+					return 1;
+				}
+
+				if (statA.isDirectory && statB.isDirectory) {
+					return compareFileNames(statA.name, statB.name);
+				}
+
+				break;
+
+			case 'filesFirst':
+				if (statA.isDirectory && !statB.isDirectory) {
+					return 1;
+				}
+
+				if (statB.isDirectory && !statA.isDirectory) {
+					return -1;
+				}
+
+				break;
+
+			case 'foldersNestsFiles':
+				if (statA.isDirectory && !statB.isDirectory) {
+					return -1;
+				}
+
+				if (statB.isDirectory && !statA.isDirectory) {
+					return 1;
+				}
+
+				if (statA.hasNests && !statB.hasNests) {
+					return -1;
+				}
+
+				if (statB.hasNests && !statA.hasNests) {
+					return 1;
+				}
+
+				break;
+
+			case 'mixed':
+				break; // not sorting when "mixed" is on
+
+			default: /* 'default', 'modified' */
+				if (statA.isDirectory && !statB.isDirectory) {
+					return -1;
+				}
+
+				if (statB.isDirectory && !statA.isDirectory) {
+					return 1;
+				}
+
+				break;
+		}
+
+		// Sort Files
+		switch (sortOrder) {
+			case 'type':
+				return compareFileExtensions(statA.name, statB.name);
+
+			case 'modified':
+				if (statA.mtime !== statB.mtime) {
+					return (statA.mtime && statB.mtime && statA.mtime < statB.mtime) ? 1 : -1;
+				}
+
+				return compareFileNames(statA.name, statB.name);
+
+			default: /* 'default', 'mixed', 'filesFirst' */
+				return compareFileNames(statA.name, statB.name);
+		}
+	}
+}
+
+export class FileDragAndDrop implements ITreeDragAndDrop<ExplorerItem> {
+	private static readonly CONFIRM_DND_SETTING_KEY = 'explorer.confirmDragAndDrop';
+
+	private compressedDragOverElement: HTMLElement | undefined;
+	private compressedDropTargetDisposable: IDisposable = Disposable.None;
+
+	private readonly disposables = new DisposableStore();
+	private dropEnabled = false;
+
+	constructor(
+		private isCollapsed: (item: ExplorerItem) => boolean,
+		@IExplorerService private explorerService: IExplorerService,
+		@IEditorService private editorService: IEditorService,
+		@IDialogService private dialogService: IDialogService,
+		@IWorkspaceContextService private contextService: IWorkspaceContextService,
+		@IFileService private fileService: IFileService,
+		@IConfigurationService private configurationService: IConfigurationService,
+		@IInstantiationService private instantiationService: IInstantiationService,
+		@IWorkspaceEditingService private workspaceEditingService: IWorkspaceEditingService,
+		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService
+	) {
+		const updateDropEnablement = (e: IConfigurationChangeEvent | undefined) => {
+			if (!e || e.affectsConfiguration('explorer.enableDragAndDrop')) {
+				this.dropEnabled = this.configurationService.getValue('explorer.enableDragAndDrop');
+			}
+		};
+		updateDropEnablement(undefined);
+		this.disposables.add(this.configurationService.onDidChangeConfiguration(e => updateDropEnablement(e)));
+	}
+
+	onDragOver(data: IDragAndDropData, target: ExplorerItem | undefined, targetIndex: number | undefined, targetSector: ListViewTargetSector | undefined, originalEvent: DragEvent): boolean | ITreeDragOverReaction {
+		if (!this.dropEnabled) {
+			return false;
+		}
+
+		// Compressed folders
+		if (target) {
+			const compressedTarget = FileDragAndDrop.getCompressedStatFromDragEvent(target, originalEvent);
+
+			if (compressedTarget) {
+				const iconLabelName = getIconLabelNameFromHTMLElement(originalEvent.target);
+
+				if (iconLabelName && iconLabelName.index < iconLabelName.count - 1) {
+					const result = this.handleDragOver(data, compressedTarget, targetIndex, targetSector, originalEvent);
+
+					if (result) {
+						if (iconLabelName.element !== this.compressedDragOverElement) {
+							this.compressedDragOverElement = iconLabelName.element;
+							this.compressedDropTargetDisposable.dispose();
+							this.compressedDropTargetDisposable = toDisposable(() => {
+								iconLabelName.element.classList.remove('drop-target');
+								this.compressedDragOverElement = undefined;
+							});
+
+							iconLabelName.element.classList.add('drop-target');
+						}
+
+						return typeof result === 'boolean' ? result : { ...result, feedback: [] };
+					}
+
+					this.compressedDropTargetDisposable.dispose();
+					return false;
+				}
+			}
+		}
+
+		this.compressedDropTargetDisposable.dispose();
+		return this.handleDragOver(data, target, targetIndex, targetSector, originalEvent);
+	}
+
+	private handleDragOver(data: IDragAndDropData, target: ExplorerItem | undefined, targetIndex: number | undefined, targetSector: ListViewTargetSector | undefined, originalEvent: DragEvent): boolean | ITreeDragOverReaction {
+		const isCopy = originalEvent && ((originalEvent.ctrlKey && !isMacintosh) || (originalEvent.altKey && isMacintosh));
+		const isNative = data instanceof NativeDragAndDropData;
+		const effectType = (isNative || isCopy) ? ListDragOverEffectType.Copy : ListDragOverEffectType.Move;
+		const effect = { type: effectType, position: ListDragOverEffectPosition.Over };
+
+		// Native DND
+		if (isNative) {
+			if (!containsDragType(originalEvent, DataTransfers.FILES, CodeDataTransfers.FILES, DataTransfers.RESOURCES)) {
+				return false;
+			}
+		}
+
+		// Other-Tree DND
+		else if (data instanceof ExternalElementsDragAndDropData) {
+			return false;
+		}
+
+		// In-Explorer DND
+		else {
+			const items = FileDragAndDrop.getStatsFromDragAndDropData(data as ElementsDragAndDropData<ExplorerItem, ExplorerItem[]>);
+			const isRootsReorder = items.every(item => item.isRoot);
+
+			if (!target) {
+				// Dropping onto the empty area. Do not accept if items dragged are already
+				// children of the root unless we are copying the file
+				if (!isCopy && items.every(i => !!i.parent && i.parent.isRoot)) {
+					return false;
+				}
+
+				// root is added after last root folder when hovering on empty background
+				if (isRootsReorder) {
+					return { accept: true, effect: { type: ListDragOverEffectType.Move, position: ListDragOverEffectPosition.After } };
+				}
+
+				return { accept: true, bubble: TreeDragOverBubble.Down, effect, autoExpand: false };
+			}
+
+			if (!Array.isArray(items)) {
+				return false;
+			}
+
+			if (!isCopy && items.every((source) => source.isReadonly)) {
+				return false; // Cannot move readonly items unless we copy
+			}
+
+			if (items.some((source) => {
+				if (source.isRoot) {
+					return false; // Root folders are handled seperately
+				}
+
+				if (this.uriIdentityService.extUri.isEqual(source.resource, target.resource)) {
+					return true; // Can not move anything onto itself excpet for root folders
+				}
+
+				if (!isCopy && this.uriIdentityService.extUri.isEqual(dirname(source.resource), target.resource)) {
+					return true; // Can not move a file to the same parent unless we copy
+				}
+
+				if (this.uriIdentityService.extUri.isEqualOrParent(target.resource, source.resource)) {
+					return true; // Can not move a parent folder into one of its children
+				}
+
+				return false;
+			})) {
+				return false;
+			}
+
+			// reordering roots
+			if (isRootsReorder) {
+				if (!target.isRoot) {
+					return false;
+				}
+
+				let dropEffectPosition: ListDragOverEffectPosition | undefined = undefined;
+				switch (targetSector) {
+					case ListViewTargetSector.TOP:
+					case ListViewTargetSector.CENTER_TOP:
+						dropEffectPosition = ListDragOverEffectPosition.Before; break;
+					case ListViewTargetSector.CENTER_BOTTOM:
+					case ListViewTargetSector.BOTTOM:
+						dropEffectPosition = ListDragOverEffectPosition.After; break;
+				}
+				return { accept: true, effect: { type: ListDragOverEffectType.Move, position: dropEffectPosition } };
+			}
+		}
+
+		// All (target = model)
+		if (!target) {
+			return { accept: true, bubble: TreeDragOverBubble.Down, effect };
+		}
+
+		// All (target = file/folder)
+		else {
+			if (target.isDirectory) {
+				if (target.isReadonly) {
+					return false;
+				}
+
+				return { accept: true, bubble: TreeDragOverBubble.Down, effect, autoExpand: true };
+			}
+
+			if (this.contextService.getWorkspace().folders.every(folder => folder.uri.toString() !== target.resource.toString())) {
+				return { accept: true, bubble: TreeDragOverBubble.Up, effect };
+			}
+		}
+
+		return false;
+	}
+
+	getDragURI(element: ExplorerItem): string | null {
+		if (this.explorerService.isEditable(element)) {
+			return null;
+		}
+
+		return element.resource.toString();
+	}
+
+	getDragLabel(elements: ExplorerItem[], originalEvent: DragEvent): string | undefined {
+		if (elements.length === 1) {
+			const stat = FileDragAndDrop.getCompressedStatFromDragEvent(elements[0], originalEvent);
+			return stat.name;
+		}
+
+		return String(elements.length);
+	}
+
+	onDragStart(data: IDragAndDropData, originalEvent: DragEvent): void {
+		const items = FileDragAndDrop.getStatsFromDragAndDropData(data as ElementsDragAndDropData<ExplorerItem, ExplorerItem[]>, originalEvent);
+		if (items.length && originalEvent.dataTransfer) {
+			// Apply some datatransfer types to allow for dragging the element outside of the application
+			this.instantiationService.invokeFunction(accessor => fillEditorsDragData(accessor, items, originalEvent));
+
+			// The only custom data transfer we set from the explorer is a file transfer
+			// to be able to DND between multiple code file explorers across windows
+			const fileResources = items.filter(s => s.resource.scheme === Schemas.file).map(r => r.resource.fsPath);
+			if (fileResources.length) {
+				originalEvent.dataTransfer.setData(CodeDataTransfers.FILES, JSON.stringify(fileResources));
+			}
+		}
+	}
+
+	async drop(data: IDragAndDropData, target: ExplorerItem | undefined, targetIndex: number | undefined, targetSector: ListViewTargetSector | undefined, originalEvent: DragEvent): Promise<void> {
+		this.compressedDropTargetDisposable.dispose();
+
+		// Find compressed target
+		if (target) {
+			const compressedTarget = FileDragAndDrop.getCompressedStatFromDragEvent(target, originalEvent);
+
+			if (compressedTarget) {
+				target = compressedTarget;
+			}
+		}
+
+		// Find parent to add to
+		if (!target) {
+			target = this.explorerService.roots[this.explorerService.roots.length - 1];
+			targetSector = ListViewTargetSector.BOTTOM;
+		}
+		if (!target.isDirectory && target.parent) {
+			target = target.parent;
+		}
+		if (target.isReadonly) {
+			return;
+		}
+		const resolvedTarget = target;
+		if (!resolvedTarget) {
+			return;
+		}
+
+		try {
+
+			// External file DND (Import/Upload file)
+			if (data instanceof NativeDragAndDropData) {
+				// Use local file import when supported
+				if (!isWeb || (isTemporaryWorkspace(this.contextService.getWorkspace()) && WebFileSystemAccess.supported(mainWindow))) {
+					const fileImport = this.instantiationService.createInstance(ExternalFileImport);
+					await fileImport.import(resolvedTarget, originalEvent, mainWindow);
+				}
+				// Otherwise fallback to browser based file upload
+				else {
+					const browserUpload = this.instantiationService.createInstance(BrowserFileUpload);
+					await browserUpload.upload(target, originalEvent);
+				}
+			}
+
+			// In-Explorer DND (Move/Copy file)
+			else {
+				await this.handleExplorerDrop(data as ElementsDragAndDropData<ExplorerItem, ExplorerItem[]>, resolvedTarget, targetIndex, targetSector, originalEvent);
+			}
+		} catch (error) {
+			this.dialogService.error(toErrorMessage(error));
+		}
+	}
+
+	private async handleExplorerDrop(data: ElementsDragAndDropData<ExplorerItem, ExplorerItem[]>, target: ExplorerItem, targetIndex: number | undefined, targetSector: ListViewTargetSector | undefined, originalEvent: DragEvent): Promise<void> {
+		const elementsData = FileDragAndDrop.getStatsFromDragAndDropData(data);
+		const distinctItems = new Map(elementsData.map(element => [element, this.isCollapsed(element)]));
+
+		for (const [item, collapsed] of distinctItems) {
+			if (collapsed) {
+				const nestedChildren = item.nestedChildren;
+				if (nestedChildren) {
+					for (const child of nestedChildren) {
+						// if parent is collapsed, then the nested children is considered collapsed to operate as a group
+						// and skip collapsed state check since they're not in the tree
+						distinctItems.set(child, true);
+					}
+				}
+			}
+		}
+
+		const items = distinctParents([...distinctItems.keys()], s => s.resource);
+		const isCopy = (originalEvent.ctrlKey && !isMacintosh) || (originalEvent.altKey && isMacintosh);
+
+		// Handle confirm setting
+		const confirmDragAndDrop = !isCopy && this.configurationService.getValue<boolean>(FileDragAndDrop.CONFIRM_DND_SETTING_KEY);
+		if (confirmDragAndDrop) {
+			const message = items.length > 1 && items.every(s => s.isRoot) ? localize('confirmRootsMove', "Are you sure you want to change the order of multiple root folders in your workspace?")
+				: items.length > 1 ? localize('confirmMultiMove', "Are you sure you want to move the following {0} files into '{1}'?", items.length, target.name)
+					: items[0].isRoot ? localize('confirmRootMove', "Are you sure you want to change the order of root folder '{0}' in your workspace?", items[0].name)
+						: localize('confirmMove', "Are you sure you want to move '{0}' into '{1}'?", items[0].name, target.name);
+			const detail = items.length > 1 && !items.every(s => s.isRoot) ? getFileNamesMessage(items.map(i => i.resource)) : undefined;
+
+			const confirmation = await this.dialogService.confirm({
+				message,
+				detail,
+				checkbox: {
+					label: localize('doNotAskAgain', "Do not ask me again")
+				},
+				primaryButton: localize({ key: 'moveButtonLabel', comment: ['&& denotes a mnemonic'] }, "&&Move")
+			});
+
+			if (!confirmation.confirmed) {
+				return;
+			}
+
+			// Check for confirmation checkbox
+			if (confirmation.checkboxChecked === true) {
+				await this.configurationService.updateValue(FileDragAndDrop.CONFIRM_DND_SETTING_KEY, false);
+			}
+		}
+
+		await this.doHandleRootDrop(items.filter(s => s.isRoot), target, targetSector);
+
+		const sources = items.filter(s => !s.isRoot);
+		if (isCopy) {
+			return this.doHandleExplorerDropOnCopy(sources, target);
+		}
+
+		return this.doHandleExplorerDropOnMove(sources, target);
+	}
+
+	private async doHandleRootDrop(roots: ExplorerItem[], target: ExplorerItem, targetSector: ListViewTargetSector | undefined): Promise<void> {
+		if (roots.length === 0) {
+			return;
+		}
+
+		const folders = this.contextService.getWorkspace().folders;
+		let targetIndex: number | undefined;
+		const sourceIndices: number[] = [];
+		const workspaceCreationData: IWorkspaceFolderCreationData[] = [];
+		const rootsToMove: IWorkspaceFolderCreationData[] = [];
+
+		for (let index = 0; index < folders.length; index++) {
+			const data = {
+				uri: folders[index].uri,
+				name: folders[index].name
+			};
+
+			// Is current target
+			if (target instanceof ExplorerItem && this.uriIdentityService.extUri.isEqual(folders[index].uri, target.resource)) {
+				targetIndex = index;
+			}
+
+			// Is current source
+			for (const root of roots) {
+				if (this.uriIdentityService.extUri.isEqual(folders[index].uri, root.resource)) {
+					sourceIndices.push(index);
+					break;
+				}
+			}
+
+			if (roots.every(r => r.resource.toString() !== folders[index].uri.toString())) {
+				workspaceCreationData.push(data);
+			} else {
+				rootsToMove.push(data);
+			}
+		}
+		if (targetIndex === undefined) {
+			targetIndex = workspaceCreationData.length;
+		} else {
+			switch (targetSector) {
+				case ListViewTargetSector.BOTTOM:
+				case ListViewTargetSector.CENTER_BOTTOM:
+					targetIndex++;
+					break;
+			}
+			// Adjust target index if source was located before target.
+			// The move will cause the index to change
+			for (const sourceIndex of sourceIndices) {
+				if (sourceIndex < targetIndex) {
+					targetIndex--;
+				}
+			}
+		}
+
+		workspaceCreationData.splice(targetIndex, 0, ...rootsToMove);
+
+		return this.workspaceEditingService.updateFolders(0, workspaceCreationData.length, workspaceCreationData);
+	}
+
+	private async doHandleExplorerDropOnCopy(sources: ExplorerItem[], target: ExplorerItem): Promise<void> {
+
+		// Reuse duplicate action when user copies
+		const explorerConfig = this.configurationService.getValue<IFilesConfiguration>().explorer;
+		const resourceFileEdits: ResourceFileEdit[] = [];
+		for (const { resource, isDirectory } of sources) {
+			const allowOverwrite = explorerConfig.incrementalNaming === 'disabled';
+			const newResource = await findValidPasteFileTarget(this.explorerService,
+				this.fileService,
+				this.dialogService,
+				target,
+				{ resource, isDirectory, allowOverwrite },
+				explorerConfig.incrementalNaming
+			);
+			if (!newResource) {
+				continue;
+			}
+			const resourceEdit = new ResourceFileEdit(resource, newResource, { copy: true, overwrite: allowOverwrite });
+			resourceFileEdits.push(resourceEdit);
+		}
+		const labelSuffix = getFileOrFolderLabelSuffix(sources);
+		await this.explorerService.applyBulkEdit(resourceFileEdits, {
+			confirmBeforeUndo: explorerConfig.confirmUndo === UndoConfirmLevel.Default || explorerConfig.confirmUndo === UndoConfirmLevel.Verbose,
+			undoLabel: localize('copy', "Copy {0}", labelSuffix),
+			progressLabel: localize('copying', "Copying {0}", labelSuffix),
+		});
+
+		const editors = resourceFileEdits.filter(edit => {
+			const item = edit.newResource ? this.explorerService.findClosest(edit.newResource) : undefined;
+			return item && !item.isDirectory;
+		}).map(edit => ({ resource: edit.newResource, options: { pinned: true } }));
+
+		await this.editorService.openEditors(editors);
+	}
+
+	private async doHandleExplorerDropOnMove(sources: ExplorerItem[], target: ExplorerItem): Promise<void> {
+
+		// Do not allow moving readonly items
+		const resourceFileEdits = sources.filter(source => !source.isReadonly).map(source => new ResourceFileEdit(source.resource, joinPath(target.resource, source.name)));
+		const labelSuffix = getFileOrFolderLabelSuffix(sources);
+		const options = {
+			confirmBeforeUndo: this.configurationService.getValue<IFilesConfiguration>().explorer.confirmUndo === UndoConfirmLevel.Verbose,
+			undoLabel: localize('move', "Move {0}", labelSuffix),
+			progressLabel: localize('moving', "Moving {0}", labelSuffix)
+		};
+
+		try {
+			await this.explorerService.applyBulkEdit(resourceFileEdits, options);
+		} catch (error) {
+
+			// Conflict
+			if ((<FileOperationError>error).fileOperationResult === FileOperationResult.FILE_MOVE_CONFLICT) {
+
+				const overwrites: URI[] = [];
+				for (const edit of resourceFileEdits) {
+					if (edit.newResource && await this.fileService.exists(edit.newResource)) {
+						overwrites.push(edit.newResource);
+					}
+				}
+
+				// Move with overwrite if the user confirms
+				const confirm = getMultipleFilesOverwriteConfirm(overwrites);
+				const { confirmed } = await this.dialogService.confirm(confirm);
+				if (confirmed) {
+					await this.explorerService.applyBulkEdit(resourceFileEdits.map(re => new ResourceFileEdit(re.oldResource, re.newResource, { overwrite: true })), options);
+				}
+			}
+
+			// Any other error: bubble up
+			else {
+				throw error;
+			}
+		}
+	}
+
+	private static getStatsFromDragAndDropData(data: ElementsDragAndDropData<ExplorerItem, ExplorerItem[]>, dragStartEvent?: DragEvent): ExplorerItem[] {
+		if (data.context) {
+			return data.context;
+		}
+
+		// Detect compressed folder dragging
+		if (dragStartEvent && data.elements.length === 1) {
+			data.context = [FileDragAndDrop.getCompressedStatFromDragEvent(data.elements[0], dragStartEvent)];
+			return data.context;
+		}
+
+		return data.elements;
+	}
+
+	private static getCompressedStatFromDragEvent(stat: ExplorerItem, dragEvent: DragEvent): ExplorerItem {
+		const target = DOM.getWindow(dragEvent).document.elementFromPoint(dragEvent.clientX, dragEvent.clientY);
+		const iconLabelName = getIconLabelNameFromHTMLElement(target);
+
+		if (iconLabelName) {
+			const { count, index } = iconLabelName;
+
+			let i = count - 1;
+			while (i > index && stat.parent) {
+				stat = stat.parent;
+				i--;
+			}
+
+			return stat;
+		}
+
+		return stat;
+	}
+
+	onDragEnd(): void {
+		this.compressedDropTargetDisposable.dispose();
+	}
+
+	dispose(): void {
+		this.compressedDropTargetDisposable.dispose();
+	}
+}
+
+function getIconLabelNameFromHTMLElement(target: HTMLElement | EventTarget | Element | null): { element: HTMLElement; count: number; index: number } | null {
+	if (!(DOM.isHTMLElement(target))) {
+		return null;
+	}
+
+	let element: HTMLElement | null = target;
+
+	while (element && !element.classList.contains('monaco-list-row')) {
+		if (element.classList.contains('label-name') && element.hasAttribute('data-icon-label-count')) {
+			const count = Number(element.getAttribute('data-icon-label-count'));
+			const index = Number(element.getAttribute('data-icon-label-index'));
+
+			if (isNumber(count) && isNumber(index)) {
+				return { element: element, count, index };
+			}
+		}
+
+		element = element.parentElement;
+	}
+
+	return null;
+}
+
+export function isCompressedFolderName(target: HTMLElement | EventTarget | Element | null): boolean {
+	return !!getIconLabelNameFromHTMLElement(target);
+}
+
+export class ExplorerCompressionDelegate implements ITreeCompressionDelegate<ExplorerItem> {
+
+	isIncompressible(stat: ExplorerItem): boolean {
+		return stat.isRoot || !stat.isDirectory || stat instanceof NewExplorerItem || (!stat.parent || stat.parent.isRoot);
+	}
+}
+
+function getFileOrFolderLabelSuffix(items: ExplorerItem[]): string {
+	if (items.length === 1) {
+		return items[0].name;
+	}
+
+	if (items.every(i => i.isDirectory)) {
+		return localize('numberOfFolders', "{0} folders", items.length);
+	}
+	if (items.every(i => !i.isDirectory)) {
+		return localize('numberOfFiles', "{0} files", items.length);
+	}
+
+	return `${items.length} files and folders`;
+}
+
+
+========================================
+FILE: vscode/src/vs/workbench/contrib/files/browser/views/explorerViewSplit.css
+========================================
+
+/*---------------------------------------------------------------------------------------------
+ *  Explorer View with Split - Scene Hierarchy + Project Files
+ *  Styled identically to VS Code's native file tree
+ *--------------------------------------------------------------------------------------------*/
+
+.explorer-view-with-split {
+	height: 100%;
+	overflow: hidden;
+}
+
+.explorer-split-container {
+	height: 100%;
+	width: 100%;
+}
+
+/* ============================================================
+   SCENE HIERARCHY CONTAINER
+   ============================================================ */
+
+.scene-hierarchy-container {
+	overflow: hidden;
+	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border));
+	display: flex;
+	flex-direction: column;
+	background: var(--vscode-sideBar-background);
+}
+
+/* ---- Section Title Bar ---- */
+.scene-hierarchy-title-section {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0 8px 0 12px;
+	height: 22px;
+	min-height: 22px;
+	background: var(--vscode-sideBarSectionHeader-background);
+	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+	flex-shrink: 0;
+}
+
+.scene-hierarchy-title {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: var(--vscode-sideBarSectionHeader-foreground);
+	letter-spacing: 0;
+	line-height: 22px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.scene-hierarchy-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 0;
+}
+
+.scene-hierarchy-action {
+	width: 22px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 5px;
+	cursor: pointer;
+	color: var(--vscode-icon-foreground);
+	opacity: 1;
+}
+
+.scene-hierarchy-action:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+/* ============================================================
+   SCENE TREE CONTENT
+   ============================================================ */
+
+.scene-hierarchy-content {
+	flex: 1;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+/* VS Code-style scrollbars */
+.scene-hierarchy-content::-webkit-scrollbar {
+	width: 10px;
+}
+
+.scene-hierarchy-content::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.scene-hierarchy-content::-webkit-scrollbar-thumb {
+	background: var(--vscode-scrollbarSlider-background);
+	border-radius: 10px;
+	border: 2px solid transparent;
+	background-clip: padding-box;
+}
+
+.scene-hierarchy-content::-webkit-scrollbar-thumb:hover {
+	background: var(--vscode-scrollbarSlider-hoverBackground);
+	border-radius: 10px;
+	border: 2px solid transparent;
+	background-clip: padding-box;
+}
+
+.scene-hierarchy-content::-webkit-scrollbar-thumb:active {
+	background: var(--vscode-scrollbarSlider-activeBackground);
+	border-radius: 10px;
+	border: 2px solid transparent;
+	background-clip: padding-box;
+}
+
+/* ============================================================
+   SCENE TREE ROW
+   Matches VS Code list/tree row styling exactly.
+   ============================================================ */
+
+.scene-tree-row {
+	display: flex;
+	align-items: center;
+	height: 22px;
+	padding-left: 0;
+	padding-right: 4px;
+	cursor: pointer;
+	user-select: none;
+	position: relative;
+	color: var(--vscode-foreground);
+	font-size: 13px;
+	outline: none;
+}
+
+/* Hover — same as VS Code tree */
+.scene-tree-row.hovered {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+/* Selected — inactive (panel not focused) */
+.scene-tree-row.selected {
+	background-color: var(--vscode-list-inactiveSelectionBackground);
+	color: var(--vscode-list-inactiveSelectionForeground, var(--vscode-foreground));
+}
+
+/* Selected + focused */
+.scene-hierarchy-content.focused .scene-tree-row.selected {
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+/* Selected + hovered */
+.scene-tree-row.selected.hovered {
+	background-color: var(--vscode-list-inactiveSelectionBackground);
+}
+
+.scene-hierarchy-content.focused .scene-tree-row.selected.hovered {
+	background-color: var(--vscode-list-activeSelectionBackground);
+}
+
+/* ============================================================
+   DRAG AND DROP
+   ============================================================ */
+
+.scene-tree-row.drag-over-into {
+	background-color: var(--vscode-list-dropBackground) !important;
+}
+
+.scene-tree-row.drag-over-above::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 1px;
+	background: var(--vscode-list-focusOutline, var(--vscode-focusBorder));
+	z-index: 10;
+	pointer-events: none;
+}
+
+.scene-tree-row.drag-over-below::after {
+	content: '';
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	height: 1px;
+	background: var(--vscode-list-focusOutline, var(--vscode-focusBorder));
+	z-index: 10;
+	pointer-events: none;
+}
+
+.scene-tree-row.dragging {
+	opacity: 0.35;
+}
+
+/* ============================================================
+   INDENT GUIDES
+   ============================================================ */
+
+.scene-tree-indent {
+	position: relative;
+	flex-shrink: 0;
+	height: 100%;
+	pointer-events: none;
+}
+
+.scene-tree-indent-guide {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 1px;
+	background-color: var(--vscode-tree-indentGuidesStroke);
+	opacity: 1;
+}
+
+.scene-tree-indent-guide.active {
+	background-color: var(--vscode-tree-indentGuidesStroke);
+}
+
+/* ============================================================
+   TWISTIE
+   ============================================================ */
+
+.scene-tree-twistie {
+	width: 16px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	color: var(--vscode-foreground);
+	opacity: 0;
+	font-size: 10px;
+	cursor: default;
+}
+
+.scene-tree-twistie.has-children {
+	opacity: 1;
+	cursor: pointer;
+}
+
+.scene-hierarchy-content.focused .scene-tree-row.selected .scene-tree-twistie {
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+/* ============================================================
+   ICON
+   ============================================================ */
+
+.scene-tree-icon {
+	width: 16px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	margin-right: 4px;
+	font-size: 14px;
+	color: var(--vscode-icon-foreground);
+}
+
+/* Entity type icon colors */
+.scene-tree-icon.icon-mesh {
+	color: var(--vscode-symbolIcon-classForeground, #ee9d28);
+}
+
+.scene-tree-icon.icon-light {
+	color: var(--vscode-symbolIcon-colorForeground, #e2c08d);
+}
+
+.scene-tree-icon.icon-camera {
+	color: var(--vscode-symbolIcon-enumeratorForeground, #b180d7);
+}
+
+.scene-tree-icon.icon-root {
+	color: var(--vscode-symbolIcon-folderForeground, #c09553);
+}
+
+/* Component icons */
+.scene-tree-icon.component-icon {
+	opacity: 0.7;
+	font-size: 12px;
+}
+
+.scene-tree-icon.comp-transform {
+	color: var(--vscode-symbolIcon-variableForeground, #75beff);
+}
+
+.scene-tree-icon.comp-mesh {
+	color: var(--vscode-symbolIcon-classForeground, #ee9d28);
+}
+
+.scene-tree-icon.comp-material {
+	color: var(--vscode-symbolIcon-colorForeground, #e2c08d);
+}
+
+.scene-tree-icon.comp-light {
+	color: var(--vscode-symbolIcon-colorForeground, #e2c08d);
+}
+
+.scene-tree-icon.comp-camera {
+	color: var(--vscode-symbolIcon-enumeratorForeground, #b180d7);
+}
+
+/* Selected row overrides icon color in focused state */
+.scene-hierarchy-content.focused .scene-tree-row.selected .scene-tree-icon {
+	color: var(--vscode-list-activeSelectionForeground) !important;
+}
+
+.scene-hierarchy-content.focused .scene-tree-row.selected .scene-tree-icon.component-icon {
+	opacity: 0.85;
+}
+
+/* ============================================================
+   LABEL
+   ============================================================ */
+
+.scene-tree-label {
+	flex: 1;
+	overflow: hidden;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	height: 100%;
+}
+
+.scene-tree-label-text {
+	font-size: 13px;
+	line-height: 22px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.scene-tree-row.component-row .scene-tree-label-text {
+	opacity: 0.85;
+	font-size: 12px;
+}
+
+.scene-tree-label-subtitle {
+	font-size: 11px;
+	opacity: 0.5;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	flex-shrink: 1;
+	min-width: 0;
+}
+
+/* Rename input */
+.scene-tree-rename-input {
+	flex: 1;
+	height: 18px;
+	padding: 0 2px;
+	margin: 1px 0;
+	border: 1px solid var(--vscode-focusBorder);
+	border-radius: 0;
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	font-size: 13px;
+	font-family: inherit;
+	outline: none;
+	min-width: 40px;
+}
+
+.scene-tree-rename-input::selection {
+	background: var(--vscode-editor-selectionBackground);
+}
+
+/* ============================================================
+   ACTIONS — always in layout, toggled via opacity
+   Prevents "strobe" layout shift on hover.
+   ============================================================ */
+
+.scene-tree-actions {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+	/* Always reserve space for 2 icons (20px each) */
+	min-width: 40px;
+	justify-content: flex-end;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.scene-tree-row.hovered .scene-tree-actions,
+.scene-tree-row.selected .scene-tree-actions {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.scene-tree-action {
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 5px;
+	cursor: pointer;
+	color: var(--vscode-icon-foreground);
+	font-size: 14px;
+}
+
+.scene-tree-action:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scene-hierarchy-content.focused .scene-tree-row.selected .scene-tree-action {
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+/* ============================================================
+   PROJECT FILES CONTAINER
+   ============================================================ */
+
+.project-files-container {
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+
+.project-files-title-section {
+	display: flex;
+	align-items: center;
+	padding: 0 8px 0 12px;
+	height: 22px;
+	min-height: 22px;
+	background: var(--vscode-sideBarSectionHeader-background);
+	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+	flex-shrink: 0;
+}
+
+.project-files-title {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: var(--vscode-sideBarSectionHeader-foreground);
+	line-height: 22px;
+}
+
+.project-files-container .explorer-folders-view {
+	flex: 1;
+	overflow: hidden;
+}
+
+/* ============================================================
+   SPLIT SASH
+   ============================================================ */
+
+.explorer-split-container .monaco-sash {
+	background-color: transparent;
+}
+
+.explorer-split-container .monaco-sash:hover {
+	background-color: var(--vscode-sash-hoverBorder);
+	transition: background-color 0.1s ease 0.15s;
+}
+
+/* ============================================================
+   EMPTY STATE
+   ============================================================ */
+
+.scene-hierarchy-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 32px 16px;
+	text-align: center;
+	height: 100%;
+	gap: 10px;
+}
+
+.scene-hierarchy-empty .empty-message {
+	font-size: 13px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.scene-hierarchy-empty .create-scene-btn {
+	padding: 4px 12px;
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
+	border-radius: 2px;
+	cursor: pointer;
+	font-size: 13px;
+	font-family: inherit;
+}
+
+.scene-hierarchy-empty .create-scene-btn:hover {
+	background: var(--vscode-button-hoverBackground);
+}
+
+
+========================================
+FILE: vscode/src/vs/workbench/contrib/files/browser/explorerViewlet.ts
+========================================
+
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import './media/explorerviewlet.css';
+import { localize, localize2 } from '../../../../nls.js';
+import { mark } from '../../../../base/common/performance.js';
+import { VIEWLET_ID, VIEW_ID, IFilesConfiguration, ExplorerViewletVisibleContext } from '../common/files.js';
+import { IViewletViewOptions } from '../../../browser/parts/views/viewsViewlet.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { ExplorerView } from './views/explorerView.js';
+import { EmptyView } from './views/emptyView.js';
+import { OpenEditorsView } from './views/openEditorsView.js';
+import { IStorageService } from '../../../../platform/storage/common/storage.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IExtensionService } from '../../../services/extensions/common/extensions.js';
+import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
+import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
+import { IContextKeyService, IContextKey, ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { IThemeService } from '../../../../platform/theme/common/themeService.js';
+import { IViewsRegistry, IViewDescriptor, Extensions, ViewContainer, IViewContainersRegistry, ViewContainerLocation, IViewDescriptorService, ViewContentGroups } from '../../../common/views.js';
+import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
+import { IWorkbenchContribution } from '../../../common/contributions.js';
+import { IWorkbenchLayoutService } from '../../../services/layout/browser/layoutService.js';
+import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
+import { ViewPane } from '../../../browser/parts/views/viewPane.js';
+import { KeyChord, KeyMod, KeyCode } from '../../../../base/common/keyCodes.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { IProgressService, ProgressLocation } from '../../../../platform/progress/common/progress.js';
+import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
+import { WorkbenchStateContext, RemoteNameContext, OpenFolderWorkspaceSupportContext } from '../../../common/contextkeys.js';
+import { IsWebContext } from '../../../../platform/contextkey/common/contextkeys.js';
+import { AddRootFolderAction, OpenFolderAction, OpenFolderViaWorkspaceAction } from '../../../browser/actions/workspaceActions.js';
+import { OpenRecentAction } from '../../../browser/actions/windowActions.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
+import { isMouseEvent } from '../../../../base/browser/dom.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
+
+const explorerViewIcon = registerIcon('explorer-view-icon', Codicon.files, localize('explorerViewIcon', 'View icon of the explorer view.'));
+const openEditorsViewIcon = registerIcon('open-editors-view-icon', Codicon.book, localize('openEditorsIcon', 'View icon of the open editors view.'));
+
+export class ExplorerViewletViewsContribution extends Disposable implements IWorkbenchContribution {
+
+	static readonly ID = 'workbench.contrib.explorerViewletViews';
+
+	constructor(
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@IProgressService progressService: IProgressService
+	) {
+		super();
+
+		progressService.withProgress({ location: ProgressLocation.Explorer }, () => workspaceContextService.getCompleteWorkspace()).finally(() => {
+			this.registerViews();
+
+			this._register(workspaceContextService.onDidChangeWorkbenchState(() => this.registerViews()));
+			this._register(workspaceContextService.onDidChangeWorkspaceFolders(() => this.registerViews()));
+		});
+	}
+
+	private registerViews(): void {
+		mark('code/willRegisterExplorerViews');
+
+		const viewDescriptors = viewsRegistry.getViews(VIEW_CONTAINER);
+
+		const viewDescriptorsToRegister: IViewDescriptor[] = [];
+		const viewDescriptorsToDeregister: IViewDescriptor[] = [];
+
+		const openEditorsViewDescriptor = this.createOpenEditorsViewDescriptor();
+		if (!viewDescriptors.some(v => v.id === openEditorsViewDescriptor.id)) {
+			viewDescriptorsToRegister.push(openEditorsViewDescriptor);
+		}
+
+		const explorerViewDescriptor = this.createExplorerViewDescriptor();
+		const registeredExplorerViewDescriptor = viewDescriptors.find(v => v.id === explorerViewDescriptor.id);
+		const emptyViewDescriptor = this.createEmptyViewDescriptor();
+		const registeredEmptyViewDescriptor = viewDescriptors.find(v => v.id === emptyViewDescriptor.id);
+
+		if (this.workspaceContextService.getWorkbenchState() === WorkbenchState.EMPTY || this.workspaceContextService.getWorkspace().folders.length === 0) {
+			if (registeredExplorerViewDescriptor) {
+				viewDescriptorsToDeregister.push(registeredExplorerViewDescriptor);
+			}
+			if (!registeredEmptyViewDescriptor) {
+				viewDescriptorsToRegister.push(emptyViewDescriptor);
+			}
+		} else {
+			if (registeredEmptyViewDescriptor) {
+				viewDescriptorsToDeregister.push(registeredEmptyViewDescriptor);
+			}
+			if (!registeredExplorerViewDescriptor) {
+				viewDescriptorsToRegister.push(explorerViewDescriptor);
+			}
+		}
+
+		if (viewDescriptorsToDeregister.length) {
+			viewsRegistry.deregisterViews(viewDescriptorsToDeregister, VIEW_CONTAINER);
+		}
+		if (viewDescriptorsToRegister.length) {
+			viewsRegistry.registerViews(viewDescriptorsToRegister, VIEW_CONTAINER);
+		}
+
+		mark('code/didRegisterExplorerViews');
+	}
+
+	private createOpenEditorsViewDescriptor(): IViewDescriptor {
+		return {
+			id: OpenEditorsView.ID,
+			name: OpenEditorsView.NAME,
+			ctorDescriptor: new SyncDescriptor(OpenEditorsView),
+			containerIcon: openEditorsViewIcon,
+			order: 0,
+			canToggleVisibility: true,
+			canMoveView: true,
+			collapsed: false,
+			hideByDefault: true,
+			focusCommand: {
+				id: 'workbench.files.action.focusOpenEditorsView',
+				keybindings: { primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyCode.KeyE) }
+			}
+		};
+	}
+
+	private createEmptyViewDescriptor(): IViewDescriptor {
+		return {
+			id: EmptyView.ID,
+			name: EmptyView.NAME,
+			containerIcon: explorerViewIcon,
+			ctorDescriptor: new SyncDescriptor(EmptyView),
+			order: 1,
+			canToggleVisibility: true,
+			focusCommand: {
+				id: 'workbench.explorer.fileView.focus'
+			}
+		};
+	}
+
+	private createExplorerViewDescriptor(): IViewDescriptor {
+		return {
+			id: VIEW_ID,
+			name: localize2('folders', "Folders"),
+			containerIcon: explorerViewIcon,
+			ctorDescriptor: new SyncDescriptor(ExplorerView),
+			order: 1,
+			canMoveView: true,
+			canToggleVisibility: false,
+			focusCommand: {
+				id: 'workbench.explorer.fileView.focus'
+			}
+		};
+	}
+}
+
+export class ExplorerViewPaneContainer extends ViewPaneContainer {
+
+	private viewletVisibleContextKey: IContextKey<boolean>;
+
+	constructor(
+		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
+		@ITelemetryService telemetryService: ITelemetryService,
+		@IWorkspaceContextService contextService: IWorkspaceContextService,
+		@IStorageService storageService: IStorageService,
+		@IConfigurationService configurationService: IConfigurationService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IThemeService themeService: IThemeService,
+		@IContextMenuService contextMenuService: IContextMenuService,
+		@IExtensionService extensionService: IExtensionService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+		@ILogService logService: ILogService,
+	) {
+
+		super(VIEWLET_ID, { mergeViewWithContainerWhenSingleView: true }, instantiationService, configurationService, layoutService, contextMenuService, telemetryService, extensionService, themeService, storageService, contextService, viewDescriptorService, logService);
+
+		this.viewletVisibleContextKey = ExplorerViewletVisibleContext.bindTo(contextKeyService);
+		this._register(this.contextService.onDidChangeWorkspaceName(e => this.updateTitleArea()));
+	}
+
+	override create(parent: HTMLElement): void {
+		super.create(parent);
+		parent.classList.add('explorer-viewlet');
+	}
+
+	protected override createView(viewDescriptor: IViewDescriptor, options: IViewletViewOptions): ViewPane {
+		if (viewDescriptor.id === VIEW_ID) {
+			return this.instantiationService.createInstance(ExplorerView, {
+				...options, delegate: {
+					willOpenElement: e => {
+						if (!isMouseEvent(e)) {
+							return; // only delay when user clicks
+						}
+
+						const openEditorsView = this.getOpenEditorsView();
+						if (openEditorsView) {
+							let delay = 0;
+
+							const config = this.configurationService.getValue<IFilesConfiguration>();
+							if (config.workbench?.editor?.enablePreview) {
+								// delay open editors view when preview is enabled
+								// to accomodate for the user doing a double click
+								// to pin the editor.
+								// without this delay a double click would be not
+								// possible because the next element would move
+								// under the mouse after the first click.
+								delay = 250;
+							}
+
+							openEditorsView.setStructuralRefreshDelay(delay);
+						}
+					},
+					didOpenElement: e => {
+						if (!isMouseEvent(e)) {
+							return; // only delay when user clicks
+						}
+
+						const openEditorsView = this.getOpenEditorsView();
+						openEditorsView?.setStructuralRefreshDelay(0);
+					}
+				}
+			});
+		}
+		return super.createView(viewDescriptor, options);
+	}
+
+	getExplorerView(): ExplorerView {
+		return <ExplorerView>this.getView(VIEW_ID);
+	}
+
+	getOpenEditorsView(): OpenEditorsView {
+		return <OpenEditorsView>this.getView(OpenEditorsView.ID);
+	}
+
+	override setVisible(visible: boolean): void {
+		this.viewletVisibleContextKey.set(visible);
+		super.setVisible(visible);
+	}
+
+	override focus(): void {
+		const explorerView = this.getView(VIEW_ID);
+		if (explorerView && this.panes.every(p => !p.isExpanded())) {
+			explorerView.setExpanded(true);
+		}
+		if (explorerView?.isExpanded()) {
+			explorerView.focus();
+		} else {
+			super.focus();
+		}
+	}
+}
+
+const viewContainerRegistry = Registry.as<IViewContainersRegistry>(Extensions.ViewContainersRegistry);
+
+/**
+ * Explorer viewlet container.
+ */
+export const VIEW_CONTAINER: ViewContainer = viewContainerRegistry.registerViewContainer({
+	id: VIEWLET_ID,
+	title: localize2('explore', "Explorer"),
+	ctorDescriptor: new SyncDescriptor(ExplorerViewPaneContainer),
+	storageId: 'workbench.explorer.views.state',
+	icon: explorerViewIcon,
+	alwaysUseContainerInfo: true,
+	hideIfEmpty: true,
+	order: 0,
+	openCommandActionDescriptor: {
+		id: VIEWLET_ID,
+		title: localize2('explore', "Explorer"),
+		mnemonicTitle: localize({ key: 'miViewExplorer', comment: ['&& denotes a mnemonic'] }, "&&Explorer"),
+		keybindings: { primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyE },
+		order: 0
+	},
+}, ViewContainerLocation.Sidebar, { isDefault: true });
+
+const openFolder = localize('openFolder', "Open Folder");
+const addAFolder = localize('addAFolder', "add a folder");
+const openRecent = localize('openRecent', "Open Recent");
+
+const addRootFolderButton = `[${openFolder}](command:${AddRootFolderAction.ID})`;
+const addAFolderButton = `[${addAFolder}](command:${AddRootFolderAction.ID})`;
+const openFolderButton = `[${openFolder}](command:${OpenFolderAction.ID})`;
+const openFolderViaWorkspaceButton = `[${openFolder}](command:${OpenFolderViaWorkspaceAction.ID})`;
+const openRecentButton = `[${openRecent}](command:${OpenRecentAction.ID})`;
+
+const viewsRegistry = Registry.as<IViewsRegistry>(Extensions.ViewsRegistry);
+viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
+	content: localize({ key: 'noWorkspaceHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+		"You have not yet added a folder to the workspace.\n{0}", addRootFolderButton),
+	when: ContextKeyExpr.and(
+		// inside a .code-workspace
+		WorkbenchStateContext.isEqualTo('workspace'),
+		// unless we cannot enter or open workspaces (e.g. web serverless)
+		OpenFolderWorkspaceSupportContext
+	),
+	group: ViewContentGroups.Open,
+	order: 1
+});
+
+viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
+	content: localize({ key: 'noFolderHelpWeb', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+		"You have not yet opened a folder.\n{0}\n{1}", openFolderViaWorkspaceButton, openRecentButton),
+	when: ContextKeyExpr.and(
+		// inside a .code-workspace
+		WorkbenchStateContext.isEqualTo('workspace'),
+		// we cannot enter workspaces (e.g. web serverless)
+		OpenFolderWorkspaceSupportContext.toNegated()
+	),
+	group: ViewContentGroups.Open,
+	order: 1
+});
+
+viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
+	content: localize({ key: 'remoteNoFolderHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+		"Connected to remote.\n{0}", openFolderButton),
+	when: ContextKeyExpr.and(
+		// not inside a .code-workspace
+		WorkbenchStateContext.notEqualsTo('workspace'),
+		// connected to a remote
+		RemoteNameContext.notEqualsTo(''),
+		// but not in web
+		IsWebContext.toNegated()),
+	group: ViewContentGroups.Open,
+	order: 1
+});
+
+viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
+	content: localize({ key: 'noFolderButEditorsHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+		"You have not yet opened a folder.\n{0}\nOpening a folder will close all currently open editors. To keep them open, {1} instead.", openFolderButton, addAFolderButton),
+	when: ContextKeyExpr.and(
+		// editors are opened
+		ContextKeyExpr.has('editorIsOpen'),
+		ContextKeyExpr.or(
+			// not inside a .code-workspace and local
+			ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), RemoteNameContext.isEqualTo('')),
+			// not inside a .code-workspace and web
+			ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), IsWebContext)
+		)
+	),
+	group: ViewContentGroups.Open,
+	order: 1
+});
+
+viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
+	content: localize({ key: 'noFolderHelp', comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change'] },
+		"You have not yet opened a folder.\n{0}", openFolderButton),
+	when: ContextKeyExpr.and(
+		// no editor is open
+		ContextKeyExpr.has('editorIsOpen')?.negate(),
+		ContextKeyExpr.or(
+			// not inside a .code-workspace and local
+			ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), RemoteNameContext.isEqualTo('')),
+			// not inside a .code-workspace and web
+			ContextKeyExpr.and(WorkbenchStateContext.notEqualsTo('workspace'), IsWebContext)
+		)
+	),
+	group: ViewContentGroups.Open,
+	order: 1
+});
+
+
+========================================
+FILE: vscode/src/vs/workbench/contrib/files/browser/views/sceneHierarchyView.ts
+========================================
+
+/*---------------------------------------------------------------------------------------------
+ *  Scene Hierarchy View — Connected to SceneBridge
+ *--------------------------------------------------------------------------------------------*/
+
+import './sceneHierarchyView.css';
+import * as DOM from '../../../../../base/browser/dom.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { IContextMenuService } from '../../../../../platform/contextview/browser/contextView.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { IViewDescriptorService } from '../../../../common/views.js';
+import { ViewPane, IViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { sceneBridge } from '../../../voidSceneEditor/common/voidSceneBridge.js';
+import { Entity } from '../../../voidSceneEditor/common/vecnTypes.js';
+
+export class SceneHierarchyView extends ViewPane {
+	private treeContainer!: HTMLElement;
+	private emptyContainer!: HTMLElement;
+	private selectedId: string | null = null;
+
+	constructor(
+		options: IViewPaneOptions,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextMenuService contextMenuService: IContextMenuService,
+		@IConfigurationService configurationService: IConfigurationService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+		@IInstantiationService instantiationService: IInstantiationService,
+		@IOpenerService openerService: IOpenerService,
+		@IThemeService themeService: IThemeService,
+		@IHoverService hoverService: IHoverService
+	) {
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
+	}
+
+	protected override renderBody(container: HTMLElement): void {
+		super.renderBody(container);
+		container.classList.add('scene-hierarchy-view');
+
+		console.log('[Hierarchy] === renderBody called ===');
+		console.log('[Hierarchy] bridge.hasScene():', sceneBridge.hasScene());
+		console.log('[Hierarchy] bridge.getEntities().length:', sceneBridge.getEntities().length);
+
+		this.emptyContainer = DOM.append(container, DOM.$('.scene-hierarchy-empty'));
+		DOM.append(this.emptyContainer, DOM.$('.empty-message')).textContent = 'No scene loaded';
+		const btn = DOM.append(this.emptyContainer, DOM.$('button.create-scene-button'));
+		btn.textContent = 'Create Main Scene';
+		this._register(DOM.addDisposableListener(btn, DOM.EventType.CLICK, () => {
+			console.log('[Hierarchy] Create scene requested');
+		}));
+
+		this.treeContainer = DOM.append(container, DOM.$('.scene-hierarchy-tree'));
+		this.treeContainer.style.display = 'none';
+
+		// === BRIDGE LISTENERS ===
+		this._register(sceneBridge.onSceneUpdated(u => {
+			console.log('[Hierarchy] onSceneUpdated received! source:', u.source, 'entities:', u.entities.length);
+			// Skip transform-only updates (tree structure doesn't change)
+			if (u.source === 'viewport') return;
+			this.renderTree(u.entities);
+		}));
+
+		this._register(sceneBridge.onEntitySelected(id => {
+			this.selectedId = id;
+			this.updateHighlight();
+		}));
+
+		// Initial: if bridge already has data, render immediately
+		if (sceneBridge.hasScene()) {
+			this.renderTree(sceneBridge.getEntities());
+		} else {
+			// Bridge загрузился ДО подписки — poll пока данные не появятся
+			console.log('[Hierarchy] No scene yet, starting poll...');
+			const poll = setInterval(() => {
+				console.log('[Hierarchy] Poll tick, hasScene:', sceneBridge.hasScene());
+				if (sceneBridge.hasScene()) {
+					clearInterval(poll);
+					console.log('[Hierarchy] Poll SUCCESS! entities:', sceneBridge.getEntities().length);
+					this.renderTree(sceneBridge.getEntities());
+				}
+			}, 300);
+			setTimeout(() => clearInterval(poll), 30000);
+			this._register({ dispose: () => clearInterval(poll) });
+		}
+	}
+
+	private renderTree(entities: Entity[]): void {
+		if (!entities || entities.length === 0) {
+			this.emptyContainer.style.display = 'flex';
+			this.treeContainer.style.display = 'none';
+			return;
+		}
+
+		this.emptyContainer.style.display = 'none';
+		this.treeContainer.style.display = 'block';
+
+		const scroll = this.treeContainer.scrollTop;
+		DOM.clearNode(this.treeContainer);
+
+		// Header
+		const hdr = document.createElement('div');
+		hdr.style.cssText = 'padding:4px 10px;font-size:9px;color:#555;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #2a2a2e;margin-bottom:2px;';
+		hdr.textContent = `Scene · ${this.countAll(entities)} entities`;
+		this.treeContainer.appendChild(hdr);
+
+		for (const e of entities) this.renderNode(e, 0);
+
+		this.treeContainer.scrollTop = scroll;
+	}
+
+	private renderNode(entity: Entity, depth: number): void {
+		const row = document.createElement('div');
+		row.className = 'entity-row';
+		row.setAttribute('data-id', entity.id);
+		row.style.paddingLeft = `${depth * 14 + 8}px`;
+
+		if (entity.id === this.selectedId) row.classList.add('selected');
+
+		// Icon
+		const icon = document.createElement('span');
+		icon.className = 'entity-icon';
+		icon.textContent = this.getEntityIcon(entity);
+		row.appendChild(icon);
+
+		// Name
+		const name = document.createElement('span');
+		name.className = 'entity-name';
+		name.textContent = entity.name;
+		row.appendChild(name);
+
+		// Component count
+		const badge = document.createElement('span');
+		badge.textContent = String(entity.components.length);
+		badge.style.cssText = 'font-size:9px;color:#555;background:#2a2a2e;border-radius:3px;padding:0 4px;margin-left:auto;';
+		row.appendChild(badge);
+
+		// Click -> Bridge
+		row.addEventListener('click', (e) => {
+			e.stopPropagation();
+			sceneBridge.selectEntity(entity.id);
+		});
+
+		this.treeContainer.appendChild(row);
+
+		for (const child of entity.children) {
+			this.renderNode(child, depth + 1);
+		}
+	}
+
+	private updateHighlight(): void {
+		const rows = this.treeContainer.querySelectorAll('.entity-row');
+		rows.forEach(r => r.classList.remove('selected'));
+		if (this.selectedId) {
+			const sel = this.treeContainer.querySelector(`.entity-row[data-id="${this.selectedId}"]`);
+			if (sel) {
+				sel.classList.add('selected');
+				sel.scrollIntoView({ block: 'nearest' });
+			}
+		}
+	}
+
+	private countAll(list: Entity[]): number {
+		let n = 0;
+		for (const e of list) { n++; n += this.countAll(e.children); }
+		return n;
+	}
+
+	private getEntityIcon(e: Entity): string {
+		if (e.components.some(c => c.type === 'PointLight' || c.type === 'DirectionalLight')) return '💡';
+		if (e.components.some(c => c.type === 'Camera')) return '📷';
+		if (e.components.some(c => c.type === 'Mesh')) return '◆';
+		return '⚪';
+	}
+
+	protected override layoutBody(height: number, width: number): void {
+		super.layoutBody(height, width);
+	}
+}
+
+
+========================================
+FILE: vscode/src/vs/workbench/contrib/files/browser/views/sceneHierarchyView.css
+========================================
+
+.scene-hierarchy-view {
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+	background: var(--vscode-sideBar-background, #1c1c1d);
+	color: #c0c0c0;
+}
+
+.scene-hierarchy-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	gap: 12px;
+	padding: 20px;
+}
+
+.scene-hierarchy-empty .empty-message {
+	color: #555;
+	font-size: 12px;
+}
+
+.scene-hierarchy-empty .create-scene-button {
+	padding: 5px 14px;
+	background: #2d2d32;
+	color: #b0b0b0;
+	border: 1px solid #383840;
+	border-radius: 3px;
+	cursor: pointer;
+	font-size: 12px;
+}
+
+.scene-hierarchy-empty .create-scene-button:hover {
+	background: #383840;
+	color: #d0d0d0;
+}
+
+.scene-hierarchy-tree {
+	flex: 1;
+	overflow-y: auto;
+	padding: 0;
+}
+
+.entity-row {
+	display: flex;
+	align-items: center;
+	height: 22px;
+	padding: 0 8px;
+	gap: 5px;
+	cursor: pointer;
+	user-select: none;
+}
+
+.entity-row:hover {
+	background: #2a2a2e;
+}
+
+.entity-row.selected {
+	background: #094771 !important;
+	color: #fff;
+}
+
+.entity-icon {
+	font-size: 11px;
+	width: 14px;
+	text-align: center;
+	flex-shrink: 0;
+}
+
+.entity-name {
+	flex: 1;
+	font-size: 12px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.scene-hierarchy-tree::-webkit-scrollbar { width: 3px; }
+.scene-hierarchy-tree::-webkit-scrollbar-track { background: transparent; }
+.scene-hierarchy-tree::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+

@@ -1,0 +1,44 @@
+/*---------------------------------------------------------------------------------------------
+ *  Add Object Dialog - Animations and Styles
+ *--------------------------------------------------------------------------------------------*/
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes slideUp {
+	from {
+		opacity: 0;
+		transform: translateY(30px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.add-object-dialog-overlay {
+	animation: fadeIn 0.2s ease-out;
+}
+
+.add-object-dialog {
+	animation: slideUp 0.3s ease-out;
+}
+
+.object-card {
+	transition: all 0.2s ease-out;
+}
+
+.object-card:hover {
+	transform: translateY(-4px);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.object-card:active {
+	transform: translateY(-2px);
+}

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bevy Viewport Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #fff;
+            font-family: 'Consolas', monospace;
+        }
+        #container {
+            position: relative;
+            width: 1280px;
+            height: 720px;
+            margin: 20px auto;
+            background: #000;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        #status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 10px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        #fps {
+            margin-top: 5px;
+            color: #4ec9b0;
+        }
+        .connected { color: #4ec9b0; }
+        .disconnected { color: #f48771; }
+        .connecting { color: #dcdcaa; }
+    </style>
+</head>
+<body>
+    <h1>🎮 Bevy Viewport Test</h1>
+    <p>Testing WebSocket connection to Bevy on ws://localhost:9002</p>
+    
+    <div id="container">
+        <canvas id="viewport" width="1280" height="720"></canvas>
+        <div id="status">
+            <div id="connection" class="connecting">🔌 Connecting...</div>
+            <div id="fps">FPS: 0</div>
+        </div>
+    </div>
+
+    <div style="margin: 20px auto; width: 1280px;">
+        <button onclick="sendPing()">Send Ping</button>
+        <button onclick="reconnect()">Reconnect</button>
+        <div id="log" style="margin-top: 10px; font-size: 12px; color: #858585;"></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('viewport');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('connection');
+        const fpsEl = document.getElementById('fps');
+        const logEl = document.getElementById('log');
+
+        let ws = null;
+        let frameCount = 0;
+        let lastFrameTime = performance.now();
+        let fps = 0;
+
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            logEl.innerHTML = `[${time}] ${message}<br>` + logEl.innerHTML;
+            console.log(message);
+        }
+
+        function connect() {
+            log('Connecting to ws://localhost:9002...');
+            ws = new WebSocket('ws://localhost:9002');
+
+            ws.onopen = () => {
+                statusEl.textContent = '✅ Connected to Bevy';
+                statusEl.className = 'connected';
+                log('✅ Connected!');
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    handleMessage(message);
+                } catch (err) {
+                    log('❌ Parse error: ' + err.message);
+                }
+            };
+
+            ws.onerror = (error) => {
+                statusEl.textContent = '❌ Connection error';
+                statusEl.className = 'disconnected';
+                log('❌ WebSocket error');
+            };
+
+            ws.onclose = () => {
+                statusEl.textContent = '🔌 Disconnected';
+                statusEl.className = 'disconnected';
+                log('🔌 Disconnected');
+                
+                // Auto-reconnect after 2 seconds
+                setTimeout(() => {
+                    log('Attempting to reconnect...');
+                    connect();
+                }, 2000);
+            };
+        }
+
+        function handleMessage(message) {
+            switch (message.type) {
+                case 'connected':
+                    log('📡 Bevy says: ' + message.data.message);
+                    break;
+
+                case 'frame':
+                    renderFrame(message.data);
+                    break;
+
+                case 'pong':
+                    log('🏓 Pong: ' + message.data);
+                    break;
+
+                default:
+                    log('❓ Unknown message: ' + message.type);
+            }
+        }
+
+        function renderFrame(data) {
+            try {
+                const { width, height, pixels, frame_count } = data;
+
+                // Decode base64
+                const binaryString = atob(pixels);
+                const bytes = new Uint8ClampedArray(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+
+                // Create ImageData
+                const imageData = new ImageData(bytes, width, height);
+
+                // Resize canvas if needed
+                if (canvas.width !== width || canvas.height !== height) {
+                    canvas.width = width;
+                    canvas.height = height;
+                }
+
+                // Draw
+                ctx.putImageData(imageData, 0, 0);
+
+                // Update FPS
+                frameCount++;
+                const now = performance.now();
+                if (now - lastFrameTime >= 1000) {
+                    fps = Math.round(frameCount * 1000 / (now - lastFrameTime));
+                    fpsEl.textContent = `FPS: ${fps} | Frame: ${frame_count}`;
+                    frameCount = 0;
+                    lastFrameTime = now;
+                }
+            } catch (err) {
+                log('❌ Render error: ' + err.message);
+            }
+        }
+
+        function sendPing() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping', data: 'Hello Bevy!' }));
+                log('📤 Sent ping');
+            } else {
+                log('❌ Not connected');
+            }
+        }
+
+        function reconnect() {
+            if (ws) {
+                ws.close();
+            }
+            connect();
+        }
+
+        // Start connection
+        connect();
+    </script>
+</body>
+</html>

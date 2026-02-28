@@ -1,0 +1,11 @@
+[package]
+name = "void-scene-loader"
+version = "0.1.0"
+edition = "2021"
+description = "Void Engine scene loader - loads .vecn scene files"
+license = "MIT"
+
+[dependencies]
+bevy = "0.15"
+serde = { version = "1.0", features = ["derive"] }
+ron = "0.8"

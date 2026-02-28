@@ -1,0 +1,10 @@
+C:\Users\Starred\Desktop\G4F\vscode\engine\void-scene-loader\target\debug\deps\bevy_image-4e97c465bf734b23.d: C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\lib.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\image.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\hdr_texture_loader.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\image_loader.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\ktx2.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\image_texture_conversion.rs
+
+C:\Users\Starred\Desktop\G4F\vscode\engine\void-scene-loader\target\debug\deps\libbevy_image-4e97c465bf734b23.rmeta: C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\lib.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\image.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\hdr_texture_loader.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\image_loader.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\ktx2.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\image_texture_conversion.rs
+
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\lib.rs:
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\image.rs:
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\hdr_texture_loader.rs:
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\image_loader.rs:
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\ktx2.rs:
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.15.3\src\image_texture_conversion.rs:

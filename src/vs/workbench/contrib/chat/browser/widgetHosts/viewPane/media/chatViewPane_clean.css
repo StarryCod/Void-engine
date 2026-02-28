@@ -1,0 +1,650 @@
+/* Void AI Chat - Полный перенос стилей из карточек */
+
+/* ВАЖНО: Devicon не используем из-за CSP, используем простые иконки */
+
+/* ===== ПЕРЕМЕННЫЕ (адаптированы под VSCode) ===== */
+.kiro-chat-container {
+    --accent-success: #4ade80;
+    --accent-success-dim: rgba(74, 222, 128, 0.15);
+    --accent-error: #f87171;
+    --accent-error-dim: rgba(248, 113, 113, 0.15);
+    --accent-info: #60a5fa;
+}
+
+/* ===== КОНТЕЙНЕР ===== */
+.kiro-chat-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--vscode-editor-background);
+}
+
+/* ===== ОБЛАСТЬ СООБЩЕНИЙ ===== */
+.kiro-messages-area {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scrollbar-width: thin;
+}
+
+/* Скроллбар - НЕЗАМЕТНЫЙ */
+.kiro-messages-area::-webkit-scrollbar {
+    width: 4px;
+}
+
+.kiro-messages-area::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.kiro-messages-area::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, 0.2);
+    border-radius: 2px;
+}
+
+.kiro-messages-area::-webkit-scrollbar-thumb:hover {
+    background: rgba(128, 128, 128, 0.4);
+}
+
+.kiro-messages-area {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(128, 128, 128, 0.2) transparent;
+}
+
+/* ===== СООБЩЕНИЯ ПОЛЬЗОВАТЕЛЯ ===== */
+.qwen-message-user {
+    align-self: flex-end;
+    max-width: 70%;
+    padding: 10px 14px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* ===== ОТВЕТЫ AI ===== */
+.qwen-message-assistant {
+    align-self: flex-start;
+    max-width: 85%;
+    color: var(--vscode-editor-foreground);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+/* ===== КАРТОЧКИ ИНСТРУМЕНТОВ ===== */
+.qwen-tool-card {
+    align-self: flex-start;
+    width: calc(100% - 8px);
+    max-width: 600px;
+    min-height: 80px;
+    background: var(--vscode-editorWidget-background);
+    border: 1px solid var(--vscode-widget-border);
+    border-radius: 10px;
+    padding: 12px;
+    margin: 4px 0;
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 8px 12px;
+    position: relative;
+    transition: border-color 0.2s ease;
+    animation: slideIn 0.3s ease backwards;
+}
+
+.qwen-tool-card:hover {
+    border-color: rgba(74, 175, 80, 0.4);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ===== ИКОНКА ИНСТРУМЕНТА ===== */
+.qwen-tool-icon-box {
+    grid-row: 1 / 2;
+    grid-column: 1 / 2;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+
+.qwen-tool-card:hover .qwen-tool-icon-box {
+    transform: scale(1.1);
+}
+
+.qwen-tool-icon-box svg {
+    width: 24px;
+    height: 24px;
+    fill: var(--accent-success);
+    transition: filter 0.2s;
+}
+
+.qwen-tool-card:hover .qwen-tool-icon-box svg {
+    filter: drop-shadow(0 0 4px var(--accent-success));
+}
+
+.qwen-tool-icon-box.error svg {
+    fill: var(--accent-error);
+}
+
+.qwen-tool-card:hover .qwen-tool-icon-box.error svg {
+    filter: drop-shadow(0 0 4px var(--accent-error));
+}
+
+.qwen-tool-icon-box.info svg {
+    fill: var(--accent-info);
+}
+
+.qwen-tool-card:hover .qwen-tool-icon-box.info svg {
+    filter: drop-shadow(0 0 4px var(--accent-info));
+}
+
+/* ===== НАЗВАНИЕ ИНСТРУМЕНТА ===== */
+.qwen-tool-name {
+    grid-row: 2 / 3;
+    grid-column: 1 / 2;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--vscode-descriptionForeground);
+    text-align: center;
+    line-height: 1.2;
+}
+
+/* ===== КОНТЕНТ КАРТОЧКИ ===== */
+.qwen-tool-content {
+    grid-row: 1 / 3;
+    grid-column: 2 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+/* ===== МИНИ-КАРТОЧКИ (файлы, поиск) ===== */
+.qwen-mini-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--vscode-widget-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-family: var(--vscode-editor-font-family);
+    color: var(--vscode-foreground);
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    position: relative;
+    animation: slideInLeft 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) backwards;
+}
+
+.qwen-mini-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, 
+        transparent, 
+        rgba(74, 222, 128, 0.2), 
+        transparent
+    );
+    transition: left 0.5s;
+}
+
+.qwen-mini-card:hover::before {
+    left: 100%;
+}
+
+.qwen-mini-card:hover {
+    border-color: rgba(76, 175, 80, 0.5);
+    transform: translateX(3px) scale(1.02);
+    box-shadow: 0 3px 12px rgba(74, 222, 128, 0.3);
+}
+
+.qwen-mini-card.success {
+    border-color: rgba(76, 175, 80, 0.3);
+}
+
+.qwen-mini-card.error {
+    border-color: rgba(244, 67, 54, 0.3);
+    color: var(--accent-error);
+}
+
+.qwen-mini-card:nth-child(1) {
+    animation-delay: 0.05s;
+}
+
+.qwen-mini-card:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.qwen-mini-card:nth-child(3) {
+    animation-delay: 0.15s;
+}
+
+@keyframes slideInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.qwen-file-icon,
+.qwen-search-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+}
+
+.qwen-mini-card:hover .qwen-file-icon,
+.qwen-mini-card:hover .qwen-search-icon {
+    transform: scale(1.1);
+}
+
+.qwen-file-name,
+.qwen-search-query {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ===== ТЕРМИНАЛ ===== */
+.qwen-terminal-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--vscode-widget-border);
+    border-radius: 6px;
+    overflow: hidden;
+    max-height: 300px;
+    display: flex;
+    flex-direction: column;
+}
+
+.qwen-process-id {
+    padding: 6px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--vscode-descriptionForeground);
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid var(--vscode-widget-border);
+}
+
+.qwen-terminal-command {
+    padding: 8px 10px 8px 30px;
+    font-size: 12px;
+    font-family: var(--vscode-editor-font-family);
+    color: var(--vscode-textLink-foreground);
+    background: rgba(255, 255, 255, 0.02);
+    position: relative;
+}
+
+.qwen-terminal-command::before {
+    content: '>';
+    position: absolute;
+    left: 10px;
+    color: var(--accent-success);
+}
+
+.qwen-terminal-divider {
+    height: 1px;
+    background: var(--vscode-widget-border);
+    margin: 0 10px;
+}
+
+.qwen-terminal-output {
+    padding: 8px 10px 8px 30px;
+    font-size: 11px;
+    font-family: var(--vscode-editor-font-family);
+    color: var(--vscode-foreground);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-y: auto;
+    flex: 1;
+    max-height: 200px;
+    scrollbar-width: thin;
+    position: relative;
+}
+
+.qwen-terminal-output::before {
+    content: '◆';
+    position: absolute;
+    left: 10px;
+    top: 14px;
+    color: var(--accent-info);
+    font-size: 8px;
+}
+
+.qwen-terminal-output::-webkit-scrollbar {
+    width: 8px;
+}
+
+.qwen-terminal-output::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 4px;
+}
+
+.qwen-terminal-output::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background);
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.qwen-terminal-output::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-success);
+    box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+}
+
+.qwen-terminal-output.error {
+    color: var(--accent-error);
+}
+
+/* ===== TODO СПИСОК ===== */
+.qwen-todo-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.qwen-todo-task {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--vscode-foreground);
+    padding: 8px 12px;
+    border-radius: 6px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    animation: slideInLeft 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) backwards;
+}
+
+.qwen-todo-task:nth-child(1) {
+    animation-delay: 0.05s;
+}
+
+.qwen-todo-task:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.qwen-todo-task:nth-child(3) {
+    animation-delay: 0.15s;
+}
+
+.qwen-todo-task::before {
+    content: '';
+    position: absolute;
+    left: -100%;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, 
+        transparent, 
+        rgba(74, 222, 128, 0.1), 
+        transparent
+    );
+    transition: left 0.5s;
+}
+
+.qwen-todo-task:hover::before {
+    left: 100%;
+}
+
+.qwen-todo-task:hover {
+    background: rgba(255, 255, 255, 0.02);
+    transform: translateX(3px) scale(1.01);
+    box-shadow: 0 2px 8px rgba(74, 222, 128, 0.2);
+}
+
+.qwen-todo-num {
+    font-weight: 600;
+    color: var(--vscode-textLink-foreground);
+    flex-shrink: 0;
+    min-width: 20px;
+}
+
+.qwen-todo-text {
+    flex: 1;
+}
+
+.qwen-todo-task.completed {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.qwen-todo-task.completed .qwen-todo-text {
+    text-decoration: line-through;
+    text-decoration-color: rgba(255, 255, 255, 0.6);
+    text-decoration-thickness: 1.5px;
+    color: var(--vscode-descriptionForeground);
+    opacity: 0.7;
+}
+
+.qwen-todo-task.completed .qwen-todo-num {
+    color: var(--vscode-descriptionForeground);
+}
+
+/* ===== INPUT AREA ===== */
+.kiro-input-container {
+    padding: 12px 16px 16px;
+}
+
+.kiro-input-wrapper {
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    position: relative;
+}
+
+.kiro-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--vscode-input-foreground);
+    padding: 4px 40px 4px 4px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: none;
+    outline: none;
+    min-height: 20px;
+    max-height: 150px;
+}
+
+.kiro-input::placeholder {
+    color: var(--vscode-input-placeholderForeground);
+}
+
+.kiro-send-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.kiro-send-btn:hover {
+    background: var(--vscode-button-hoverBackground);
+    box-shadow: 0 0 12px rgba(74, 222, 128, 0.4);
+}
+
+.kiro-send-btn:active {
+    transform: scale(0.95);
+}
+
+.kiro-send-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* ===== THINKING INDICATOR ===== */
+.qwen-thinking-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+}
+
+.qwen-thinking-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--vscode-panel-border);
+    border-top-color: var(--accent-success);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.qwen-thinking-text {
+    color: var(--vscode-descriptionForeground);
+    font-size: 12px;
+    font-style: italic;
+    animation: thinkingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thinkingPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
+/* ===== MARKDOWN В ОТВЕТАХ ===== */
+.qwen-message-assistant h1,
+.qwen-message-assistant h2,
+.qwen-message-assistant h3 {
+    margin: 12px 0 6px;
+    font-weight: 600;
+}
+
+.qwen-message-assistant p {
+    margin: 6px 0;
+}
+
+.qwen-message-assistant code {
+    background: var(--vscode-textCodeBlock-background);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: var(--vscode-editor-font-family);
+    font-size: 0.9em;
+}
+
+.qwen-message-assistant pre {
+    background: var(--vscode-textCodeBlock-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    padding: 10px;
+    margin: 8px 0;
+    overflow-x: auto;
+    font-family: var(--vscode-editor-font-family);
+    font-size: 0.9em;
+}
+
+.qwen-message-assistant ul,
+.qwen-message-assistant ol {
+    margin: 6px 0;
+    padding-left: 20px;
+}
+
+.qwen-message-assistant li {
+    margin: 3px 0;
+}
+
+/* ===== SELECTION ===== */
+::selection {
+    background: var(--accent-success-dim);
+    color: var(--accent-success);
+}
+
+/* ===== FOCUS STATES ===== */
+.qwen-mini-card:focus-visible,
+.qwen-todo-task:focus-visible {
+    outline: 2px solid var(--accent-success);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.2);
+}
+
+/* ===== АДАПТИВНОСТЬ ===== */
+@media (max-width: 600px) {
+    .qwen-tool-card {
+        max-width: 100%;
+    }
+    
+    .qwen-message-user {
+        max-width: 85%;
+    }
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+
+/* ===== КАРТОЧКИ - МИНИМАЛЬНЫЕ ЭФФЕКТЫ ===== */
+.card {
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 8px;
+    overflow: visible;
+    transition: all 0.2s ease;
+    animation: slideIn 0.3s ease backwards;
+    position: relative;
+    max-width: 480px;
+    margin-bottom: 8px;
+}
+
+.card:hover {
+    border-color: var(--accent-success);
+    box-shadow: 0 2px 8px rgba(74, 222, 128, 0.15);
+}
+
+.card.large {
+    max-width: 680px;
+}

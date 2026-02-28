@@ -1,0 +1,410 @@
+// Void Engine Test World - Correct RON Syntax
+// All components match Rust definitions exactly
+
+VoidScene(
+    version: "1.0",
+    mode: Scene3D,
+
+    entities: [
+        // ===== CAMERA =====
+        (
+            id: "cam",
+            name: "MainCamera",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0, 5, 15),
+                    rotation: (-0.1, 0, 0, 0.995),
+                    scale: (1, 1, 1),
+                ),
+                Camera(
+                    fov: 60,
+                    near: 0.1,
+                    far: 1000,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== SUN =====
+        (
+            id: "sun",
+            name: "Sun",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (10, 20, 10),
+                    rotation: (-0.4, 0.2, 0.1, 0.9),
+                    scale: (1, 1, 1),
+                ),
+                DirectionalLight(
+                    color: (1.0, 0.95, 0.9),
+                    illuminance: 1.0,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== POINT LIGHT =====
+        (
+            id: "plight",
+            name: "PointLight",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (-5, 4, 0),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                PointLight(
+                    color: (1.0, 0.8, 0.6),
+                    intensity: 400,
+                    range: 15,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== SPOT LIGHT (tuple variant - double parens!) =====
+        (
+            id: "slight",
+            name: "SpotLight",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (5, 6, 3),
+                    rotation: (0.3, 0, 0, 0.955),
+                    scale: (1, 1, 1),
+                ),
+                SpotLight((
+                    color: (1.0, 1.0, 1.0),
+                    intensity: 600,
+                    range: 12,
+                    angle: 45,
+                    attenuation: 0.8,
+                )),
+            ],
+            children: [],
+        ),
+
+        // ===== FLOOR =====
+        (
+            id: "floor",
+            name: "Floor",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0, 0, 0),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Plane(size: 20)),
+                Material(
+                    color: (0.25, 0.25, 0.28, 1),
+                    metallic: 0,
+                    roughness: 0.9,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== RED CUBE =====
+        (
+            id: "cube1",
+            name: "RedCube",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (-4, 0.5, 0),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Cube(size: 1)),
+                Material(
+                    color: (0.9, 0.2, 0.2, 1),
+                    metallic: 0.1,
+                    roughness: 0.7,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== GREEN CUBE =====
+        (
+            id: "cube2",
+            name: "GreenCube",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0, 0.5, 0),
+                    rotation: (0, 0.3, 0, 0.955),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Cube(size: 1)),
+                Material(
+                    color: (0.2, 0.8, 0.3, 1),
+                    metallic: 0.3,
+                    roughness: 0.5,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== BLUE CUBE =====
+        (
+            id: "cube3",
+            name: "BlueCube",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (4, 0.5, 0),
+                    rotation: (0, 0.6, 0, 0.8),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Cube(size: 1)),
+                Material(
+                    color: (0.2, 0.4, 0.9, 1),
+                    metallic: 0.5,
+                    roughness: 0.3,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== SPHERE =====
+        (
+            id: "sphere1",
+            name: "Sphere",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (-4, 0.5, 4),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Sphere(radius: 0.5)),
+                Material(
+                    color: (0.9, 0.7, 0.2, 1),
+                    metallic: 0.7,
+                    roughness: 0.2,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== CYLINDER =====
+        (
+            id: "cyl1",
+            name: "Cylinder",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0, 0.5, 4),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Cylinder(radius: 0.4, height: 1)),
+                Material(
+                    color: (0.3, 0.3, 0.8, 1),
+                    metallic: 0.6,
+                    roughness: 0.3,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== CONE =====
+        (
+            id: "cone1",
+            name: "Cone",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (4, 0, 4),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Cone(radius: 0.5, height: 1)),
+                Material(
+                    color: (0.8, 0.8, 0.3, 1),
+                    metallic: 0.2,
+                    roughness: 0.5,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== TORUS =====
+        (
+            id: "torus1",
+            name: "Torus",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (-4, 1, 8),
+                    rotation: (0.7, 0, 0, 0.7),
+                    scale: (1.5, 1.5, 1.5),
+                ),
+                Mesh(shape: Torus(radius: 0.5, tube: 0.15)),
+                Material(
+                    color: (0.9, 0.3, 0.8, 1),
+                    metallic: 0.9,
+                    roughness: 0.1,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== CAPSULE =====
+        (
+            id: "cap1",
+            name: "Capsule",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0, 0.75, 8),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Capsule(radius: 0.3, height: 1)),
+                Material(
+                    color: (0.3, 0.8, 0.7, 1),
+                    metallic: 0.4,
+                    roughness: 0.4,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== MIRROR SPHERE =====
+        (
+            id: "mirror",
+            name: "MirrorSphere",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (4, 0.5, 8),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Sphere(radius: 0.5)),
+                Material(
+                    color: (0.95, 0.95, 1.0, 1),
+                    metallic: 1.0,
+                    roughness: 0.02,
+                ),
+            ],
+            children: [],
+        ),
+
+        // ===== TIMER (tuple variant - double parens!) =====
+        (
+            id: "timer1",
+            name: "Timer",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (-6, 1, 12),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Timer((
+                    wait_time: 5.0,
+                    one_shot: false,
+                    autostart: true,
+                    time_left: 5.0,
+                    paused: false,
+                )),
+            ],
+            children: [],
+        ),
+
+        // ===== CHARACTER BODY (tuple variant - double parens!) =====
+        (
+            id: "charbody",
+            name: "CharacterBody",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (-2, 0.5, 12),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Cube(size: 0.8)),
+                Material(
+                    color: (0.9, 0.5, 0.2, 1),
+                    metallic: 0.1,
+                    roughness: 0.6,
+                ),
+                CharacterBody((
+                    mass: 1.0,
+                    gravity_scale: 1.0,
+                    lock_rotation: false,
+                )),
+            ],
+            children: [],
+        ),
+
+        // ===== RIGID BODY (tuple variant - double parens!) =====
+        (
+            id: "rigid",
+            name: "RigidBody",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (2, 0.5, 12),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Sphere(radius: 0.4)),
+                Material(
+                    color: (0.2, 0.6, 0.9, 1),
+                    metallic: 0.4,
+                    roughness: 0.4,
+                ),
+                RigidBody((
+                    mass: 2.0,
+                    gravity_scale: 1.0,
+                    linear_damping: 0.1,
+                    angular_damping: 0.2,
+                    lock_rotation_x: false,
+                    lock_rotation_y: false,
+                    lock_rotation_z: false,
+                )),
+            ],
+            children: [],
+        ),
+
+        // ===== STATIC BODY (tuple variant - double parens!) =====
+        (
+            id: "static",
+            name: "StaticBody",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (6, 0.25, 12),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh(shape: Cube(size: 0.5)),
+                Material(
+                    color: (0.5, 0.5, 0.55, 1),
+                    metallic: 0,
+                    roughness: 0.8,
+                ),
+                StaticBody((
+                    friction: 0.8,
+                    restitution: 0.2,
+                )),
+            ],
+            children: [],
+        ),
+    ],
+
+    resources: [
+        AmbientLight(
+            color: (0.4, 0.4, 0.45),
+            brightness: 0.4,
+        ),
+    ],
+)

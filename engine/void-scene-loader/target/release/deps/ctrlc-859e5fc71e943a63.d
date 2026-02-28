@@ -1,0 +1,11 @@
+C:\Users\Starred\Desktop\G4F\vscode\engine\void-scene-loader\target\release\deps\ctrlc-859e5fc71e943a63.d: C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\lib.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\error.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\platform\mod.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\platform\windows\mod.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\signal.rs
+
+C:\Users\Starred\Desktop\G4F\vscode\engine\void-scene-loader\target\release\deps\libctrlc-859e5fc71e943a63.rlib: C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\lib.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\error.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\platform\mod.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\platform\windows\mod.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\signal.rs
+
+C:\Users\Starred\Desktop\G4F\vscode\engine\void-scene-loader\target\release\deps\libctrlc-859e5fc71e943a63.rmeta: C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\lib.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\error.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\platform\mod.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\platform\windows\mod.rs C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\signal.rs
+
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\lib.rs:
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\error.rs:
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\platform\mod.rs:
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\platform\windows\mod.rs:
+C:\Users\Starred\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ctrlc-3.5.2\src\signal.rs:

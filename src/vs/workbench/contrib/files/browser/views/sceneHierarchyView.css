@@ -1,0 +1,292 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Scene Hierarchy View — Professional Godot-style Tree
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.scene-hierarchy-view {
+        width: 100%;
+        height: 100%;
+        background: var(--vscode-sideBar-background);
+        display: flex;
+        flex-direction: column;
+}
+
+/* ═══ HEADER ═══ */
+.tree-header {
+        display: flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--vscode-panel-border);
+        background: var(--vscode-sideBarSectionHeader-background);
+        gap: 8px;
+        flex-shrink: 0;
+}
+
+.tree-title {
+        font-size: 9px;
+        font-weight: 700;
+        color: var(--vscode-sideBarSectionHeader-foreground);
+        opacity: 0.7;
+        letter-spacing: 1.5px;
+        flex: 1;
+}
+
+.tree-action-btn {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        border-radius: 4px;
+        color: var(--vscode-foreground);
+        opacity: 0.6;
+        font-size: 14px;
+        transition: all 0.12s ease;
+}
+
+.tree-action-btn:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+        opacity: 1;
+}
+
+.tree-action-btn.active {
+        background: var(--vscode-button-secondaryBackground);
+        color: var(--vscode-button-secondaryForeground);
+        opacity: 1;
+}
+
+/* ═══ TREE CONTENT ═══ */
+.tree-content {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 4px 0;
+        font-size: 12px;
+        color: var(--vscode-foreground);
+}
+
+.empty-message {
+        color: var(--vscode-descriptionForeground);
+        padding: 20px;
+        text-align: center;
+        font-size: 11px;
+        opacity: 0.7;
+}
+
+/* ═══ TREE ITEM ═══ */
+.tree-item {
+        padding: 3px 8px;
+        cursor: pointer;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin: 1px 4px;
+        position: relative;
+        user-select: none;
+        min-height: 22px;
+        transition: background 0.1s ease;
+}
+
+.tree-item:hover {
+        background: var(--vscode-list-hoverBackground);
+}
+
+.tree-item.selected {
+        background: var(--vscode-list-activeSelectionBackground);
+        color: var(--vscode-list-activeSelectionForeground);
+}
+
+.tree-item.selected .item-icon {
+        opacity: 1;
+}
+
+/* ── Hidden entity styling ── */
+.tree-item.is-hidden .item-name {
+        opacity: 0.5;
+        font-style: italic;
+}
+
+/* ── Component items ── */
+.tree-item.component-item {
+        opacity: 0.65;
+        font-size: 11px;
+        min-height: 20px;
+}
+
+.tree-item.component-item:hover {
+        opacity: 0.85;
+        background: var(--vscode-list-hoverBackground);
+}
+
+/* ── Drag states ── */
+.tree-item.dragging {
+        opacity: 0.4;
+        background: transparent;
+}
+
+.tree-item.drag-over {
+        background: var(--vscode-list-dropBackground) !important;
+        border: 1px dashed var(--vscode-focusBorder);
+        margin: 0 4px;
+}
+
+/* ═══ ITEM ELEMENTS ═══ */
+
+/* Arrow */
+.item-arrow {
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 12px;
+        opacity: 0.5;
+        transition: transform 0.15s ease, opacity 0.15s ease;
+        cursor: pointer;
+}
+
+.item-arrow:hover {
+        opacity: 1;
+}
+
+.item-arrow.collapsed {
+        transform: rotate(-90deg);
+}
+
+.item-arrow-spacer {
+        width: 16px;
+        flex-shrink: 0;
+}
+
+/* Icon */
+.item-icon {
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 14px;
+        opacity: 0.85;
+}
+
+/* Name */
+.item-name {
+        flex: 1;
+        font-weight: 400;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+}
+
+/* Actions (visible on hover) */
+.item-actions {
+        display: flex;
+        gap: 2px;
+        opacity: 0;
+        transition: opacity 0.12s ease;
+        margin-left: auto;
+        padding-left: 4px;
+}
+
+.tree-item:hover .item-actions,
+.tree-item.selected .item-actions {
+        opacity: 1;
+}
+
+.action-btn {
+        width: 18px;
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+        color: var(--vscode-foreground);
+        opacity: 0.6;
+        transition: all 0.12s ease;
+}
+
+.action-btn:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+        opacity: 1;
+}
+
+/* ═══ RENAME INPUT ═══ */
+.rename-input {
+        font-size: 12px;
+        border-radius: 3px;
+        outline: none;
+}
+
+/* ═══ SCROLLBAR ═══ */
+.tree-content::-webkit-scrollbar {
+        width: 8px;
+}
+
+.tree-content::-webkit-scrollbar-track {
+        background: transparent;
+}
+
+.tree-content::-webkit-scrollbar-thumb {
+        background: rgba(121, 121, 121, 0.3);
+        border-radius: 4px;
+}
+
+.tree-content::-webkit-scrollbar-thumb:hover {
+        background: rgba(100, 100, 100, 0.5);
+}
+
+/* ═══ CONTEXT MENU ═══ */
+.scene-context-menu {
+        position: fixed;
+        background: var(--vscode-menu-background);
+        border: 1px solid var(--vscode-menu-border);
+        border-radius: 4px;
+        padding: 4px 0;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 10000;
+        min-width: 160px;
+}
+
+.scene-context-menu-item {
+        padding: 6px 24px 6px 12px;
+        cursor: pointer;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+}
+
+.scene-context-menu-item:hover {
+        background: var(--vscode-menu-selectionBackground);
+        color: var(--vscode-menu-selectionForeground);
+}
+
+.scene-context-menu-item.danger {
+        color: var(--vscode-errorForeground);
+}
+
+.scene-context-menu-item.danger:hover {
+        background: rgba(248, 113, 113, 0.15);
+}
+
+.scene-context-menu-separator {
+        height: 1px;
+        background: var(--vscode-menu-separatorBackground);
+        margin: 4px 8px;
+}
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width: 400px) {
+        .tree-title {
+                display: none;
+        }
+        
+        .item-actions {
+                opacity: 1;
+        }
+}
