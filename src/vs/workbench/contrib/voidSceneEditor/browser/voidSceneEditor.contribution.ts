@@ -29,7 +29,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	private inspectorPane: HTMLElement | null = null;
 	private splitter: HTMLElement | null = null;
 	
-	// Viewports
+	// Viewports - created lazily
 	private viewport3D: ThreeViewport | null = null;
 	private viewport2D: Viewport2D | null = null;
 	private inspector: InspectorView | null = null;
@@ -38,11 +38,14 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	
 	// Inspector width state
 	private inspectorWidth: number = 280;
-	private isDragging: boolean = false;
+	private isDraggingSplitter: boolean = false;
 
 	private modelListener: IDisposable | null = null;
 	private fileWatcher: IDisposable | null = null;
 	private suppressModelUntil: number = 0;
+	
+	// Initialization state
+	private isLayoutReady: boolean = false;
 
 	private readonly _onModeChanged = this._register(new Emitter<EditorMode>());
 	public readonly onModeChanged: Event<EditorMode> = this._onModeChanged.event;
@@ -54,7 +57,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	) {
 		super();
 
-		// Create toolbar
+		// Create toolbar (async, retries until editor part exists)
 		this.createToolbar();
 
 		// Bridge -> Disk (save handler)
@@ -72,11 +75,15 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	// ════════════════════════════════════════════════════════════════
 
 	private createToolbar(): void {
+		let attempts = 0;
+		const maxAttempts = 50;
+		
 		const checkEditorPart = () => {
+			attempts++;
 			const editorPart = document.querySelector('.part.editor');
 			if (editorPart) {
 				this.insertToolbar(editorPart as HTMLElement);
-			} else {
+			} else if (attempts < maxAttempts) {
 				setTimeout(checkEditorPart, 100);
 			}
 		};
@@ -84,6 +91,9 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	}
 
 	private insertToolbar(editorPart: HTMLElement): void {
+		// Prevent duplicate toolbar
+		if (this.toolbar && this.toolbar.parentElement) return;
+		
 		// Toolbar container
 		this.toolbar = document.createElement('div');
 		this.toolbar.className = 'void-editor-toolbar';
@@ -200,7 +210,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		if (monacoEditor) monacoEditor.style.display = 'none';
 		if (this.layoutContainer) this.layoutContainer.style.display = 'none';
 
-		// Stop rendering on both viewports
+		// Stop all viewports
 		if (this.viewport3D) this.viewport3D.stopRendering();
 		if (this.viewport2D) this.viewport2D.stopRendering();
 
@@ -214,151 +224,42 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	}
 
 	private activateViewport(editorContainer: HTMLElement | null, mode: '3D' | '2D'): void {
-		if (!editorContainer) return;
+		if (!editorContainer) {
+			console.warn('[VoidSceneEditor] No editorContainer for viewport');
+			return;
+		}
 
 		// Ensure scene is loaded
 		this.ensureSceneLoaded();
 
-		// Create layout container if not exists
-		if (!this.layoutContainer) {
+		// Create layout if needed (synchronous)
+		if (!this.isLayoutReady || !this.layoutContainer) {
 			this.createLayout(editorContainer);
 		}
 
-		this.layoutContainer!.style.display = 'flex';
-
-		// Switch viewport visibility
-		if (mode === '3D') {
-			this.activate3DViewport();
-		} else {
-			this.activate2DViewport();
-		}
-	}
-
-	// ════════════════════════════════════════════════════════════════
-	// VIEWPORT SWITCHING
-	// ════════════════════════════════════════════════════════════════
-
-	private activate3DViewport(): void {
-		// Hide 2D viewport
-		if (this.viewport2D) {
-			this.viewport2D.stopRendering();
+		// Show layout
+		if (this.layoutContainer) {
+			this.layoutContainer.style.display = 'flex';
 		}
 
-		// Show/create 3D viewport
-		if (!this.viewport3D && this.viewportPane) {
-			const content = sceneBridge.getRaw() || '';
-			this.viewport3D = new ThreeViewport(this.viewportPane, content);
-			this._register(this.viewport3D);
-
-			// Wire up events
-			this._register(this.viewport3D.onTransformEditedTRS(e => {
-				sceneBridge.updateTransform({
-					entityId: e.entityId,
-					translation: e.translation,
-					rotation: e.rotation,
-					scale: e.scale,
-				});
-			}));
-
-			this._register(this.viewport3D.onEntityPicked(id => {
-				sceneBridge.selectEntity(id);
-			}));
-		}
-
-		// Update scene
-		if (this.viewport3D) {
-			const raw = sceneBridge.getRaw();
-			if (raw) this.viewport3D.updateScene(raw);
-		}
-	}
-
-	private activate2DViewport(): void {
-		// Hide 3D viewport
-		if (this.viewport3D) {
-			this.viewport3D.stopRendering();
-		}
-
-		// Show/create 2D viewport
-		if (!this.viewport2D && this.viewportPane) {
-			this.viewport2D = new Viewport2D(this.viewportPane);
-			this._register(this.viewport2D);
-
-			// Wire up events
-			this._register(this.viewport2D.onEntitySelected(id => {
-				sceneBridge.selectEntity(id);
-			}));
-
-			this._register(this.viewport2D.onTransformChanged(e => {
-				sceneBridge.updateTransform({
-					entityId: e.id,
-					translation: [e.transform.position[0], e.transform.position[1], 0],
-					rotation: [0, 0, e.transform.rotation / 180 * Math.PI, 1],
-					scale: [e.transform.scale[0], e.transform.scale[1], 1],
-				});
-			}));
-		}
-
-		// Load entities
-		if (this.viewport2D) {
-			const entities = sceneBridge.getEntities();
-			// Convert to 2D format
-			const entities2D = entities.map(e => ({
-				id: e.id,
-				name: e.name,
-				transform: {
-					position: [0, 0] as [number, number],
-					rotation: 0,
-					scale: [1, 1] as [number, number],
-				},
-				visible: e.visible ?? true,
-				// Extract 2D transform from components
-				...this.extract2DData(e),
-			}));
-			this.viewport2D.loadScene(entities2D);
-			this.viewport2D.resize();
-		}
-	}
-
-	private extract2DData(entity: any): any {
-		const result: any = {};
-		
-		for (const comp of entity.components || []) {
-			if (comp.type === 'Transform2D') {
-				result.transform = {
-					position: comp.position || [0, 0],
-					rotation: comp.rotation || 0,
-					scale: comp.scale || [1, 1],
-				};
-			} else if (comp.type === 'Transform') {
-				// Fall back to 3D transform X/Y
-				result.transform = {
-					position: [comp.translation?.[0] || 0, comp.translation?.[1] || 0],
-					rotation: 0,
-					scale: [comp.scale?.[0] || 1, comp.scale?.[1] || 1],
-				};
-			} else if (comp.type === 'Sprite2D') {
-				result.sprite = {
-					texture: comp.texture,
-					size: [100, 100], // Default size
-					offset: comp.offset || [0, 0],
-				};
-			} else if (comp.type === 'CollisionShape2D') {
-				result.collider = {
-					type: comp.shape?.type?.toLowerCase() || 'box',
-					size: comp.shape?.size || [50, 50],
-					radius: comp.shape?.radius,
-				};
+		// Wait for DOM to settle, then activate viewport
+		requestAnimationFrame(() => {
+			if (mode === '3D') {
+				this.activate3DViewport();
+			} else {
+				this.activate2DViewport();
 			}
-		}
-
-		return result;
+		});
 	}
 
 	// ════════════════════════════════════════════════════════════════
-	// LAYOUT: Viewport (left) | Splitter | Inspector (right)
+	// LAYOUT (Create once, reuse always)
 	// ════════════════════════════════════════════════════════════════
 
 	private createLayout(editorContainer: HTMLElement): void {
+		// Prevent duplicate layout
+		if (this.isLayoutReady && this.layoutContainer) return;
+
 		// Main layout container
 		this.layoutContainer = DOM.append(editorContainer, DOM.$('.void-scene-layout'));
 		this.layoutContainer.style.cssText = `
@@ -369,7 +270,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			bottom: 0;
 			background: #1e1e1e;
 			z-index: 50;
-			display: flex;
+			display: none;
 			flex-direction: row;
 			overflow: hidden;
 		`;
@@ -380,7 +281,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			flex: 1;
 			position: relative;
 			min-width: 200px;
-			background: #1e1e1e;
+			background: #1a1a1e;
 		`;
 
 		// Splitter (resizable divider)
@@ -396,37 +297,40 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		// Splitter drag handlers
 		this.splitter.addEventListener('mousedown', (e) => {
 			e.preventDefault();
-			this.isDragging = true;
+			this.isDraggingSplitter = true;
 			this.splitter!.style.background = '#E67E22';
 			document.body.style.cursor = 'col-resize';
 		});
 
-		document.addEventListener('mousemove', (e) => {
-			if (!this.isDragging || !this.layoutContainer) return;
+		const onMouseMove = (e: MouseEvent) => {
+			if (!this.isDraggingSplitter || !this.layoutContainer) return;
 			
 			const containerRect = this.layoutContainer.getBoundingClientRect();
 			const newWidth = containerRect.right - e.clientX;
 			
-			// Clamp width
 			if (newWidth >= 200 && newWidth <= containerRect.width - 200) {
 				this.inspectorWidth = newWidth;
-				this.inspectorPane!.style.width = `${newWidth}px`;
-				// Resize 2D viewport if active
-				if (this.viewport2D && this.currentMode === '2D') {
+				if (this.inspectorPane) {
+					this.inspectorPane.style.width = `${newWidth}px`;
+				}
+				if (this.viewport2D) {
 					this.viewport2D.resize();
 				}
 			}
-		});
+		};
 
-		document.addEventListener('mouseup', () => {
-			if (this.isDragging) {
-				this.isDragging = false;
+		const onMouseUp = () => {
+			if (this.isDraggingSplitter) {
+				this.isDraggingSplitter = false;
 				if (this.splitter) {
 					this.splitter.style.background = '#3c3c3c';
 				}
 				document.body.style.cursor = '';
 			}
-		});
+		};
+
+		document.addEventListener('mousemove', onMouseMove);
+		document.addEventListener('mouseup', onMouseUp);
 
 		// Inspector pane (right side)
 		this.inspectorPane = DOM.append(this.layoutContainer, DOM.$('.void-inspector-pane'));
@@ -440,7 +344,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			flex-direction: column;
 		`;
 
-		// Create inspector
+		// Create inspector immediately
 		this.inspector = new InspectorView(this.inspectorPane);
 		this._register(this.inspector);
 
@@ -451,16 +355,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 					this.viewport3D.updateScene(u.raw);
 				}
 				if (this.viewport2D && this.currentMode === '2D') {
-					// Reload entities
-					const entities = sceneBridge.getEntities();
-					const entities2D = entities.map(e => ({
-						id: e.id,
-						name: e.name,
-						transform: { position: [0, 0] as [number, number], rotation: 0, scale: [1, 1] as [number, number] },
-						visible: e.visible ?? true,
-						...this.extract2DData(e),
-					}));
-					this.viewport2D.loadScene(entities2D);
+					this.update2DEntities();
 				}
 			}
 		}));
@@ -473,7 +368,158 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 				this.viewport2D.selectEntity(id);
 			}
 		}));
+
+		this.isLayoutReady = true;
 	}
+
+	// ════════════════════════════════════════════════════════════════
+	// VIEWPORT MANAGEMENT
+	// ════════════════════════════════════════════════════════════════
+
+	private activate3DViewport(): void {
+		if (!this.viewportPane) {
+			console.warn('[VoidSceneEditor] viewportPane not ready for 3D');
+			return;
+		}
+
+		// Stop 2D viewport
+		if (this.viewport2D) {
+			this.viewport2D.stopRendering();
+		}
+
+		// Create 3D viewport if needed
+		if (!this.viewport3D) {
+			try {
+				const content = sceneBridge.getRaw() || '';
+				this.viewport3D = new ThreeViewport(this.viewportPane, content);
+				this._register(this.viewport3D);
+
+				this._register(this.viewport3D.onTransformEditedTRS(e => {
+					sceneBridge.updateTransform({
+						entityId: e.entityId,
+						translation: e.translation,
+						rotation: e.rotation,
+						scale: e.scale,
+					});
+				}));
+
+				this._register(this.viewport3D.onEntityPicked(id => {
+					sceneBridge.selectEntity(id);
+				}));
+			} catch (err) {
+				console.error('[VoidSceneEditor] Failed to create 3D viewport:', err);
+				return;
+			}
+		}
+
+		// Update scene data
+		const raw = sceneBridge.getRaw();
+		if (raw && this.viewport3D) {
+			this.viewport3D.updateScene(raw);
+		}
+	}
+
+	private activate2DViewport(): void {
+		if (!this.viewportPane) {
+			console.warn('[VoidSceneEditor] viewportPane not ready for 2D');
+			return;
+		}
+
+		// Stop 3D viewport
+		if (this.viewport3D) {
+			this.viewport3D.stopRendering();
+		}
+
+		// Create 2D viewport if needed
+		if (!this.viewport2D) {
+			try {
+				this.viewport2D = new Viewport2D(this.viewportPane);
+				this._register(this.viewport2D);
+
+				this._register(this.viewport2D.onEntitySelected(id => {
+					sceneBridge.selectEntity(id);
+				}));
+
+				this._register(this.viewport2D.onTransformChanged(e => {
+					sceneBridge.updateTransform({
+						entityId: e.id,
+						translation: [e.transform.position[0], e.transform.position[1], 0],
+						rotation: [0, 0, e.transform.rotation / 180 * Math.PI, 1],
+						scale: [e.transform.scale[0], e.transform.scale[1], 1],
+					});
+				}));
+			} catch (err) {
+				console.error('[VoidSceneEditor] Failed to create 2D viewport:', err);
+				return;
+			}
+		}
+
+		// Load entities
+		this.update2DEntities();
+		
+		// Ensure resize
+		requestAnimationFrame(() => {
+			if (this.viewport2D) {
+				this.viewport2D.resize();
+			}
+		});
+	}
+
+	private update2DEntities(): void {
+		if (!this.viewport2D) return;
+		
+		const entities = sceneBridge.getEntities();
+		const entities2D = entities.map(e => ({
+			id: e.id,
+			name: e.name,
+			transform: {
+				position: [0, 0] as [number, number],
+				rotation: 0,
+				scale: [1, 1] as [number, number],
+			},
+			visible: e.visible ?? true,
+			...this.extract2DData(e),
+		}));
+		this.viewport2D.loadScene(entities2D);
+	}
+
+	private extract2DData(entity: any): any {
+		const result: any = {};
+		
+		for (const comp of entity.components || []) {
+			if (comp.type === 'Transform2D') {
+				result.transform = {
+					position: comp.position || [0, 0],
+					rotation: comp.rotation || 0,
+					scale: comp.scale || [1, 1],
+				};
+			} else if (comp.type === 'Transform') {
+				result.transform = {
+					position: [comp.translation?.[0] || 0, comp.translation?.[1] || 0],
+					rotation: 0,
+					scale: [comp.scale?.[0] || 1, comp.scale?.[1] || 1],
+				};
+			} else if (comp.type === 'Sprite2D') {
+				result.sprite = {
+					texture: comp.texture,
+					size: [100, 100],
+					offset: comp.offset || [0, 0],
+				};
+			} else if (comp.type === 'CollisionShape2D') {
+				result.collider = {
+					type: comp.shape?.type?.toLowerCase() || 'box',
+					size: comp.shape?.size || [50, 50],
+					radius: comp.shape?.radius,
+				};
+			}
+		}
+
+		return result;
+	}
+
+	// ════════════════════════════════════════════════════════════════
+	// SCENE LOADING
+	// ════════════════════════════════════════════════════════════════
 
 	private ensureSceneLoaded(): void {
 		if (sceneBridge.hasScene()) return;
@@ -488,10 +534,6 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			}
 		});
 	}
-
-	// ════════════════════════════════════════════════════════════════
-	// EARLY DISCOVERY
-	// ════════════════════════════════════════════════════════════════
 
 	private async earlyDiscovery(): Promise<void> {
 		const delays = [100, 300, 600, 1000, 2000, 3000];
@@ -521,7 +563,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	}
 
 	// ════════════════════════════════════════════════════════════════
-	// FIND .vecn FILE
+	// FILE UTILITIES
 	// ════════════════════════════════════════════════════════════════
 
 	private async findVecnUri(): Promise<URI | null> {

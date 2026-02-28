@@ -1,57 +1,44 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine — 2D Viewport (WebGL2)
- *  Godot-style 2D scene editor with grid, camera bounds, and object manipulation
+ *  Void Engine — 2D Viewport (Canvas2D)
+ *  Godot-style 2D scene editor
+ *  Coordinate system: X→right, Y→down (screen coordinates)
+ *  Render zone: 4th quadrant (positive X, positive Y from origin)
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// COLOR PALETTE (Godot 4.x Style)
+// COLOR PALETTE (Same as 3D Viewport)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const COLORS = {
-	// Viewport background
-	background: '#1e1e1e',
-	backgroundLight: '#252526',
+	// Background (same as 3D viewport)
+	background: '#1a1a1e',
 	
 	// Grid
-	gridLine: '#2a2a2a',
-	gridLineMajor: '#3a3a3a',
-	gridOrigin: '#444444',
+	gridLine: '#252528',
+	gridLineMajor: '#2d2d32',
 	
-	// Camera bounds (render zone)
-	cameraBounds: '#4a9eff',
-	cameraBoundsFill: 'rgba(74, 158, 255, 0.03)',
-	cameraBoundsDashed: '#4a9eff80',
+	// Axes
+	axisX: '#ff6b6b',  // Red for X
+	axisY: '#69db7c',  // Green for Y
 	
-	// Safe area (what will be rendered)
-	safeArea: '#69db7c40',
-	safeAreaBorder: '#69db7c',
+	// Render zone (camera view)
+	renderZone: 'rgba(74, 158, 255, 0.08)',
+	renderZoneBorder: 'rgba(74, 158, 255, 0.5)',
 	
-	// Outside render zone (dimmed overlay)
-	outsideRender: 'rgba(0, 0, 0, 0.4)',
+	// Outside render zone (dimmed)
+	outsideRender: 'rgba(0, 0, 0, 0.35)',
 	
 	// Objects
-	spriteBounds: '#ffffff',
-	spriteSelected: '#4a9eff',
+	objectBounds: '#888888',
+	objectSelected: '#4a9eff',
+	objectHovered: '#aaaaaa',
 	collider: '#4caf50',
-	colliderSelected: '#69db7c',
-	
-	// Selection
-	selectionBox: 'rgba(74, 158, 255, 0.3)',
-	selectionBorder: '#4a9eff',
 	
 	// Gizmo
-	gizmoX: '#ff6b6b',
-	gizmoY: '#69db7c',
-	gizmoCenter: '#ffffff',
-	
-	// UI
-	toolbar: '#222225',
-	toolbarBorder: '#3c3c3c',
-	text: '#cccccc',
-	textDim: '#666666',
+	gizmoHandle: '#ffffff',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -59,6 +46,7 @@ const COLORS = {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface Vec2 { x: number; y: number; }
+
 interface Transform2D {
 	position: [number, number];
 	rotation: number;
@@ -69,24 +57,9 @@ interface SceneEntity2D {
 	id: string;
 	name: string;
 	transform: Transform2D;
-	sprite?: {
-		texture?: string;
-		size: [number, number];
-		offset: [number, number];
-		region?: [number, number, number, number];
-	};
-	collider?: {
-		type: 'box' | 'circle' | 'capsule';
-		size: [number, number];
-		radius?: number;
-	};
+	sprite?: { size: [number, number] };
+	collider?: { type: string; size: [number, number]; radius?: number };
 	visible: boolean;
-}
-
-interface Camera2D {
-	position: [number, number];
-	zoom: number;
-	viewportSize: [number, number]; // pixels
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -98,28 +71,28 @@ export class Viewport2D extends Disposable {
 	private canvas: HTMLCanvasElement;
 	private ctx: CanvasRenderingContext2D;
 	
-	// Scene state
+	// Scene
 	private entities: SceneEntity2D[] = [];
 	private selectedIds: Set<string> = new Set();
-	private camera: Camera2D = {
-		position: [0, 0],
-		zoom: 1,
-		viewportSize: [800, 600],
-	};
 	
-	// Interaction state
-	private isDragging: boolean = false;
+	// Camera (pan & zoom)
+	private cameraX: number = 0;
+	private cameraY: number = 0;
+	private zoom: number = 1;
+	
+	// Render zone size (what will be rendered)
+	private renderWidth: number = 1152;
+	private renderHeight: number = 648;
+	
+	// Interaction
 	private isPanning: boolean = false;
-	private dragStart: Vec2 = { x: 0, y: 0 };
-	private selectionBox: { start: Vec2; end: Vec2 } | null = null;
-	private hoveredEntity: string | null = null;
+	private isDragging: boolean = false;
+	private lastMouse: Vec2 = { x: 0, y: 0 };
+	private hoveredId: string | null = null;
 	
-	// Render state
+	// Rendering
 	private rafId: number | null = null;
-	private gridEnabled: boolean = true;
-	private gridSize: number = 32;
-	private showCameraBounds: boolean = true;
-	private showColliders: boolean = true;
+	private isRunning: boolean = false;
 	
 	// Events
 	private readonly _onEntitySelected = this._register(new Emitter<string | null>());
@@ -131,7 +104,7 @@ export class Viewport2D extends Disposable {
 	constructor(parent: HTMLElement) {
 		super();
 		
-		// Create container
+		// Container
 		this.container = document.createElement('div');
 		this.container.className = 'void-viewport-2d';
 		this.container.style.cssText = `
@@ -140,248 +113,285 @@ export class Viewport2D extends Disposable {
 			position: relative;
 			background: ${COLORS.background};
 			overflow: hidden;
+			outline: none;
 		`;
+		this.container.tabIndex = 0;
 		
-		// Create canvas
+		// Canvas
 		this.canvas = document.createElement('canvas');
-		this.canvas.style.cssText = `
-			width: 100%;
-			height: 100%;
-			display: block;
-		`;
+		this.canvas.style.cssText = `width: 100%; height: 100%; display: block;`;
 		this.container.appendChild(this.canvas);
 		
-		// Get context
-		const ctx = this.canvas.getContext('2d');
-		if (!ctx) throw new Error('Failed to get 2D context');
+		// Context
+		const ctx = this.canvas.getContext('2d', { alpha: false });
+		if (!ctx) throw new Error('Canvas 2D context failed');
 		this.ctx = ctx;
 		
-		// Setup interactions
-		this.setupInteractions();
+		// Events
+		this.setupEvents();
 		
-		// Append to parent
+		// Append
 		parent.appendChild(this.container);
 		
 		// Initial resize
-		this.resize();
+		this.handleResize();
 		
-		// Start render loop
+		// Start
 		this.startRendering();
 	}
 	
 	// ════════════════════════════════════════════════════════════════
-	// SCENE MANAGEMENT
+	// PUBLIC API
 	// ════════════════════════════════════════════════════════════════
 	
 	public loadScene(entities: SceneEntity2D[]): void {
 		this.entities = entities;
-		this.scheduleRender();
 	}
 	
 	public selectEntity(id: string | null): void {
 		this.selectedIds.clear();
 		if (id) this.selectedIds.add(id);
-		this.scheduleRender();
 	}
 	
-	public setCamera(position: [number, number], zoom: number): void {
-		this.camera.position = position;
-		this.camera.zoom = Math.max(0.1, Math.min(10, zoom));
-		this.scheduleRender();
+	public resize(): void {
+		this.handleResize();
 	}
 	
-	public setViewportSize(width: number, height: number): void {
-		this.camera.viewportSize = [width, height];
-		this.scheduleRender();
+	public startRendering(): void {
+		if (this.isRunning) return;
+		this.isRunning = true;
+		this.renderLoop();
+	}
+	
+	public stopRendering(): void {
+		this.isRunning = false;
+		if (this.rafId) {
+			cancelAnimationFrame(this.rafId);
+			this.rafId = null;
+		}
 	}
 	
 	// ════════════════════════════════════════════════════════════════
 	// RENDERING
 	// ════════════════════════════════════════════════════════════════
 	
-	private startRendering(): void {
-		const render = () => {
-			this.render();
-			this.rafId = requestAnimationFrame(render);
-		};
-		this.rafId = requestAnimationFrame(render);
-	}
-	
-	public stopRendering(): void {
-		if (this.rafId !== null) {
-			cancelAnimationFrame(this.rafId);
-			this.rafId = null;
-		}
-	}
-	
-	private scheduleRender(): void {
-		// RAF already running, just let it render
+	private renderLoop(): void {
+		if (!this.isRunning) return;
+		this.render();
+		this.rafId = requestAnimationFrame(() => this.renderLoop());
 	}
 	
 	private render(): void {
-		const { width, height } = this.canvas.getBoundingClientRect();
-		const dpr = window.devicePixelRatio || 1;
+		const w = this.canvas.width;
+		const h = this.canvas.height;
 		
-		// Set canvas size
-		if (this.canvas.width !== width * dpr || this.canvas.height !== height * dpr) {
-			this.canvas.width = width * dpr;
-			this.canvas.height = height * dpr;
-			this.ctx.scale(dpr, dpr);
-		}
+		if (w === 0 || h === 0) return;
 		
-		// Clear
+		// Clear with background
 		this.ctx.fillStyle = COLORS.background;
-		this.ctx.fillRect(0, 0, width, height);
+		this.ctx.fillRect(0, 0, w, h);
 		
-		// Calculate view transform
-		const viewCenter = { x: width / 2, y: height / 2 };
-		const cameraOffset = {
-			x: viewCenter.x - this.camera.position[0] * this.camera.zoom,
-			y: viewCenter.y - this.camera.position[1] * this.camera.zoom,
-		};
+		// Viewport center in screen coordinates
+		const centerX = w / 2;
+		const centerY = h / 2;
+		
+		// World origin in screen coordinates
+		const originX = centerX - this.cameraX * this.zoom;
+		const originY = centerY - this.cameraY * this.zoom;
 		
 		// Draw grid
-		if (this.gridEnabled) {
-			this.drawGrid(width, height, cameraOffset);
-		}
+		this.drawGrid(w, h, originX, originY);
 		
-		// Draw camera bounds (what will be rendered)
-		if (this.showCameraBounds) {
-			this.drawCameraBounds(width, height, cameraOffset);
-		}
+		// Draw axes (X = red, Y = green)
+		this.drawAxes(w, h, originX, originY);
+		
+		// Draw render zone (4th quadrant - positive X, positive Y)
+		this.drawRenderZone(w, h, originX, originY);
 		
 		// Draw entities
 		this.ctx.save();
-		this.ctx.translate(cameraOffset.x, cameraOffset.y);
-		this.ctx.scale(this.camera.zoom, this.camera.zoom);
+		this.ctx.translate(originX, originY);
+		this.ctx.scale(this.zoom, this.zoom);
 		
 		for (const entity of this.entities) {
-			if (!entity.visible) continue;
-			this.drawEntity(entity);
+			if (entity.visible) {
+				this.drawEntity(entity);
+			}
 		}
 		
 		this.ctx.restore();
 		
-		// Draw selection box
-		if (this.selectionBox) {
-			this.drawSelectionBox();
-		}
-		
-		// Draw info overlay
-		this.drawInfoOverlay(width, height);
+		// Draw info
+		this.drawInfo(w, h);
 	}
 	
 	// ════════════════════════════════════════════════════════════════
-	// GRID DRAWING
+	// GRID (Same style as 3D viewport)
 	// ════════════════════════════════════════════════════════════════
 	
-	private drawGrid(width: number, height: number, offset: Vec2): void {
-		const grid = this.gridSize * this.camera.zoom;
-		const majorGrid = grid * 8;
+	private drawGrid(w: number, h: number, originX: number, originY: number): void {
+		const gridSize = 32;
+		const majorInterval = 8;
 		
+		const step = gridSize * this.zoom;
+		const majorStep = step * majorInterval;
+		
+		// Skip if too zoomed out
+		if (step < 4) return;
+		
+		// Minor grid
 		this.ctx.strokeStyle = COLORS.gridLine;
 		this.ctx.lineWidth = 1;
-		
-		// Calculate grid start positions
-		const startX = offset.x % grid;
-		const startY = offset.y % grid;
-		const majorStartX = offset.x % majorGrid;
-		const majorStartY = offset.y % majorGrid;
-		
-		// Draw minor grid lines
 		this.ctx.beginPath();
-		for (let x = startX; x < width; x += grid) {
+		
+		// Vertical lines
+		let startX = originX % step;
+		for (let x = startX; x < w; x += step) {
 			this.ctx.moveTo(x, 0);
-			this.ctx.lineTo(x, height);
+			this.ctx.lineTo(x, h);
 		}
-		for (let y = startY; y < height; y += grid) {
+		
+		// Horizontal lines
+		let startY = originY % step;
+		for (let y = startY; y < h; y += step) {
 			this.ctx.moveTo(0, y);
-			this.ctx.lineTo(width, y);
+			this.ctx.lineTo(w, y);
 		}
+		
 		this.ctx.stroke();
 		
-		// Draw major grid lines (thicker)
+		// Major grid
 		this.ctx.strokeStyle = COLORS.gridLineMajor;
 		this.ctx.lineWidth = 1;
 		this.ctx.beginPath();
-		for (let x = majorStartX; x < width; x += majorGrid) {
-			this.ctx.moveTo(x, 0);
-			this.ctx.lineTo(x, height);
-		}
-		for (let y = majorStartY; y < height; y += majorGrid) {
-			this.ctx.moveTo(0, y);
-			this.ctx.lineTo(width, y);
-		}
-		this.ctx.stroke();
 		
-		// Draw origin lines (axes)
-		this.ctx.strokeStyle = COLORS.gridOrigin;
-		this.ctx.lineWidth = 2;
-		this.ctx.beginPath();
-		// X axis
-		this.ctx.moveTo(0, offset.y);
-		this.ctx.lineTo(width, offset.y);
-		// Y axis
-		this.ctx.moveTo(offset.x, 0);
-		this.ctx.lineTo(offset.x, height);
+		let majorStartX = originX % majorStep;
+		for (let x = majorStartX; x < w; x += majorStep) {
+			this.ctx.moveTo(x, 0);
+			this.ctx.lineTo(x, h);
+		}
+		
+		let majorStartY = originY % majorStep;
+		for (let y = majorStartY; y < h; y += majorStep) {
+			this.ctx.moveTo(0, y);
+			this.ctx.lineTo(w, y);
+		}
+		
 		this.ctx.stroke();
 	}
 	
 	// ════════════════════════════════════════════════════════════════
-	// CAMERA BOUNDS DRAWING (RENDER ZONE)
+	// AXES (X = Red →, Y = Green ↓)
 	// ════════════════════════════════════════════════════════════════
 	
-	private drawCameraBounds(width: number, height: number, offset: Vec2): void {
-		const { viewportSize, zoom, position } = this.camera;
-		
-		// Camera viewport in world coordinates
-		const halfWidth = viewportSize[0] / 2 / zoom;
-		const halfHeight = viewportSize[1] / 2 / zoom;
-		
-		// Camera bounds in screen coordinates
-		const left = offset.x - halfWidth * zoom;
-		const right = offset.x + halfWidth * zoom;
-		const top = offset.y - halfHeight * zoom;
-		const bottom = offset.y + halfHeight * zoom;
-		
-		// Fill area OUTSIDE camera bounds (dimmed)
-		this.ctx.fillStyle = COLORS.outsideRender;
-		// Top
-		this.ctx.fillRect(0, 0, width, Math.max(0, top));
-		// Bottom
-		this.ctx.fillRect(0, bottom, width, height - bottom);
-		// Left
-		this.ctx.fillRect(0, top, Math.max(0, left), bottom - top);
-		// Right
-		this.ctx.fillRect(right, top, width - right, bottom - top);
-		
-		// Draw camera bounds rectangle
-		this.ctx.strokeStyle = COLORS.cameraBounds;
+	private drawAxes(w: number, h: number, originX: number, originY: number): void {
 		this.ctx.lineWidth = 2;
-		this.ctx.setLineDash([8, 4]);
-		this.ctx.strokeRect(left, top, right - left, bottom - top);
-		this.ctx.setLineDash([]);
 		
-		// Draw corner labels
-		this.ctx.fillStyle = COLORS.cameraBounds;
-		this.ctx.font = '10px monospace';
+		// X axis (red) - goes RIGHT from origin
+		this.ctx.strokeStyle = COLORS.axisX;
+		this.ctx.beginPath();
+		this.ctx.moveTo(0, originY);
+		this.ctx.lineTo(w, originY);
+		this.ctx.stroke();
+		
+		// Y axis (green) - goes DOWN from origin
+		this.ctx.strokeStyle = COLORS.axisY;
+		this.ctx.beginPath();
+		this.ctx.moveTo(originX, 0);
+		this.ctx.lineTo(originX, h);
+		this.ctx.stroke();
+		
+		// Origin marker
+		this.ctx.fillStyle = '#ffffff';
+		this.ctx.beginPath();
+		this.ctx.arc(originX, originY, 4, 0, Math.PI * 2);
+		this.ctx.fill();
+		
+		// Axis labels
+		this.ctx.font = '11px sans-serif';
 		this.ctx.textAlign = 'left';
 		this.ctx.textBaseline = 'top';
-		this.ctx.fillText(`Camera: ${viewportSize[0]}×${viewportSize[1]}`, left + 4, top + 4);
 		
-		// Draw center crosshair
-		this.ctx.strokeStyle = COLORS.cameraBoundsDashed;
-		this.ctx.lineWidth = 1;
-		this.ctx.setLineDash([4, 4]);
-		this.ctx.beginPath();
-		// Horizontal line through center
-		this.ctx.moveTo(left, offset.y);
-		this.ctx.lineTo(right, offset.y);
-		// Vertical line through center
-		this.ctx.moveTo(offset.x, top);
-		this.ctx.lineTo(offset.x, bottom);
-		this.ctx.stroke();
+		// X label (right side)
+		this.ctx.fillStyle = COLORS.axisX;
+		this.ctx.fillText('X', w - 20, originY + 6);
+		
+		// Y label (bottom)
+		this.ctx.fillStyle = COLORS.axisY;
+		this.ctx.fillText('Y', originX + 6, h - 20);
+		
+		// Quadrant numbers
+		this.ctx.fillStyle = '#555';
+		this.ctx.font = '10px sans-serif';
+		
+		// Quadrant 1 (top-right)
+		this.ctx.fillText('1', originX + 10, originY - 20);
+		// Quadrant 2 (top-left)  
+		this.ctx.fillText('2', originX - 20, originY - 20);
+		// Quadrant 3 (bottom-left)
+		this.ctx.fillText('3', originX - 20, originY + 10);
+		// Quadrant 4 (bottom-right) - this is where render zone is
+		this.ctx.fillText('4', originX + 10, originY + 10);
+	}
+	
+	// ════════════════════════════════════════════════════════════════
+	// RENDER ZONE (4th Quadrant - positive X, positive Y)
+	// ════════════════════════════════════════════════════════════════
+	
+	private drawRenderZone(w: number, h: number, originX: number, originY: number): void {
+		// Render zone is in 4th quadrant
+		// Top-left corner at (0,0) world = (originX, originY) screen
+		// Extends to (renderWidth, renderHeight) world
+		
+		const screenW = this.renderWidth * this.zoom;
+		const screenH = this.renderHeight * this.zoom;
+		
+		// Screen coordinates of render zone
+		const left = originX;
+		const top = originY;
+		const right = originX + screenW;
+		const bottom = originY + screenH;
+		
+		// Dim everything OUTSIDE render zone
+		this.ctx.fillStyle = COLORS.outsideRender;
+		
+		// Left side (x < 0 in world)
+		if (originX > 0) {
+			this.ctx.fillRect(0, 0, originX, h);
+		}
+		
+		// Top side (y < 0 in world)
+		if (originY > 0) {
+			this.ctx.fillRect(originX, 0, w - originX, originY);
+		}
+		
+		// Right side (x > renderWidth)
+		if (right < w) {
+			this.ctx.fillRect(right, originY, w - right, bottom - originY);
+		}
+		
+		// Bottom side (y > renderHeight)
+		if (bottom < h) {
+			this.ctx.fillRect(originX, bottom, right - originX, h - bottom);
+		}
+		
+		// Draw render zone rectangle
+		this.ctx.fillStyle = COLORS.renderZone;
+		this.ctx.fillRect(originX, originY, screenW, screenH);
+		
+		// Border
+		this.ctx.strokeStyle = COLORS.renderZoneBorder;
+		this.ctx.lineWidth = 2;
+		this.ctx.setLineDash([6, 3]);
+		this.ctx.strokeRect(originX, originY, screenW, screenH);
 		this.ctx.setLineDash([]);
+		
+		// Label
+		this.ctx.fillStyle = COLORS.renderZoneBorder;
+		this.ctx.font = '10px sans-serif';
+		this.ctx.textAlign = 'left';
+		this.ctx.textBaseline = 'top';
+		this.ctx.fillText(`Render: ${this.renderWidth}×${this.renderHeight}`, originX + 6, originY + 6);
 	}
 	
 	// ════════════════════════════════════════════════════════════════
@@ -389,347 +399,214 @@ export class Viewport2D extends Disposable {
 	// ════════════════════════════════════════════════════════════════
 	
 	private drawEntity(entity: SceneEntity2D): void {
-		const { transform, sprite, collider } = entity;
 		const isSelected = this.selectedIds.has(entity.id);
-		const isHovered = this.hoveredEntity === entity.id;
+		const isHovered = this.hoveredId === entity.id;
 		
-		this.ctx.save();
-		this.ctx.translate(transform.position[0], transform.position[1]);
-		this.ctx.rotate(transform.rotation * Math.PI / 180);
-		this.ctx.scale(transform.scale[0], transform.scale[1]);
+		const x = entity.transform.position[0];
+		const y = entity.transform.position[1];
 		
-		// Draw sprite bounds
-		if (sprite) {
-			const halfW = sprite.size[0] / 2;
-			const halfH = sprite.size[1] / 2;
+		// Sprite bounds
+		if (entity.sprite) {
+			const sw = entity.sprite.size[0] * entity.transform.scale[0];
+			const sh = entity.sprite.size[1] * entity.transform.scale[1];
 			
-			// Fill with placeholder color
-			this.ctx.fillStyle = 'rgba(100, 100, 100, 0.3)';
-			this.ctx.fillRect(-halfW, -halfH, sprite.size[0], sprite.size[1]);
+			// Placeholder
+			this.ctx.fillStyle = 'rgba(80, 80, 80, 0.4)';
+			this.ctx.fillRect(x - sw/2, y - sh/2, sw, sh);
 			
-			// Draw texture placeholder icon
-			this.ctx.fillStyle = COLORS.textDim;
-			this.ctx.font = '12px sans-serif';
-			this.ctx.textAlign = 'center';
-			this.ctx.textBaseline = 'middle';
-			this.ctx.fillText('🖼', 0, 0);
-			
-			// Draw bounds
-			this.ctx.strokeStyle = isSelected ? COLORS.spriteSelected : COLORS.spriteBounds;
+			// Bounds
+			this.ctx.strokeStyle = isSelected ? COLORS.objectSelected : 
+			                       isHovered ? COLORS.objectHovered : COLORS.objectBounds;
 			this.ctx.lineWidth = isSelected ? 2 : 1;
-			this.ctx.strokeRect(-halfW, -halfH, sprite.size[0], sprite.size[1]);
+			this.ctx.strokeRect(x - sw/2, y - sh/2, sw, sh);
 		}
 		
-		// Draw collider
-		if (collider && this.showColliders) {
-			this.drawCollider(collider, isSelected);
+		// Collider
+		if (entity.collider) {
+			this.ctx.strokeStyle = COLORS.collider;
+			this.ctx.lineWidth = 1;
+			this.ctx.setLineDash([3, 2]);
+			
+			const cw = entity.collider.size[0];
+			const ch = entity.collider.size[1];
+			this.ctx.strokeRect(x - cw/2, y - ch/2, cw, ch);
+			
+			this.ctx.setLineDash([]);
 		}
 		
-		// Draw name label
+		// Name label
 		if (isSelected || isHovered) {
-			this.ctx.fillStyle = isSelected ? COLORS.spriteSelected : COLORS.text;
+			this.ctx.fillStyle = isSelected ? COLORS.objectSelected : COLORS.objectHovered;
 			this.ctx.font = '10px sans-serif';
 			this.ctx.textAlign = 'center';
 			this.ctx.textBaseline = 'bottom';
-			const labelY = sprite ? -sprite.size[1] / 2 - 4 : -10;
-			this.ctx.fillText(entity.name, 0, labelY);
+			const labelY = y - (entity.sprite?.size[1] || 20) / 2 - 4;
+			this.ctx.fillText(entity.name, x, labelY);
 		}
 		
-		this.ctx.restore();
-		
-		// Draw selection highlight
+		// Selection gizmo
 		if (isSelected) {
-			this.drawSelectionGizmo(entity);
+			this.drawGizmo(x, y);
 		}
 	}
 	
-	private drawCollider(collider: SceneEntity2D['collider'], isSelected: boolean): void {
-		if (!collider) return;
+	private drawGizmo(x: number, y: number): void {
+		const size = 10 / this.zoom;
 		
-		this.ctx.strokeStyle = isSelected ? COLORS.colliderSelected : COLORS.collider;
-		this.ctx.lineWidth = 1;
-		this.ctx.setLineDash([4, 2]);
-		
-		switch (collider.type) {
-			case 'box':
-				const halfW = collider.size[0] / 2;
-				const halfH = collider.size[1] / 2;
-				this.ctx.strokeRect(-halfW, -halfH, collider.size[0], collider.size[1]);
-				break;
-				
-			case 'circle':
-				this.ctx.beginPath();
-				this.ctx.arc(0, 0, collider.radius || collider.size[0] / 2, 0, Math.PI * 2);
-				this.ctx.stroke();
-				break;
-				
-			case 'capsule':
-				const r = collider.radius || 0.25;
-				const h = collider.size[1] - r * 2;
-				this.ctx.beginPath();
-				this.ctx.arc(0, -h / 2, r, Math.PI, 0);
-				this.ctx.lineTo(r, h / 2);
-				this.ctx.arc(0, h / 2, r, 0, Math.PI);
-				this.ctx.lineTo(-r, -h / 2);
-				this.ctx.stroke();
-				break;
-		}
-		
-		this.ctx.setLineDash([]);
-	}
-	
-	private drawSelectionGizmo(entity: SceneEntity2D): void {
-		const { transform } = entity;
-		const size = 8 / this.camera.zoom;
-		
-		this.ctx.save();
-		this.ctx.translate(transform.position[0], transform.position[1]);
-		
-		// Center gizmo
-		this.ctx.fillStyle = COLORS.gizmoCenter;
+		// Center
+		this.ctx.fillStyle = COLORS.gizmoHandle;
 		this.ctx.beginPath();
-		this.ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+		this.ctx.arc(x, y, size / 2, 0, Math.PI * 2);
 		this.ctx.fill();
 		
-		// X axis handle
-		this.ctx.strokeStyle = COLORS.gizmoX;
+		// X handle (red, goes right)
+		this.ctx.strokeStyle = COLORS.axisX;
 		this.ctx.lineWidth = 2;
 		this.ctx.beginPath();
-		this.ctx.moveTo(0, 0);
-		this.ctx.lineTo(size * 3, 0);
+		this.ctx.moveTo(x, y);
+		this.ctx.lineTo(x + size * 3, y);
 		this.ctx.stroke();
-		this.ctx.fillStyle = COLORS.gizmoX;
-		this.ctx.beginPath();
-		this.ctx.moveTo(size * 3, 0);
-		this.ctx.lineTo(size * 2.5, -size / 2);
-		this.ctx.lineTo(size * 2.5, size / 2);
-		this.ctx.closePath();
-		this.ctx.fill();
 		
-		// Y axis handle
-		this.ctx.strokeStyle = COLORS.gizmoY;
+		// Y handle (green, goes down)
+		this.ctx.strokeStyle = COLORS.axisY;
 		this.ctx.beginPath();
-		this.ctx.moveTo(0, 0);
-		this.ctx.lineTo(0, -size * 3);
+		this.ctx.moveTo(x, y);
+		this.ctx.lineTo(x, y + size * 3);
 		this.ctx.stroke();
-		this.ctx.fillStyle = COLORS.gizmoY;
-		this.ctx.beginPath();
-		this.ctx.moveTo(0, -size * 3);
-		this.ctx.lineTo(-size / 2, -size * 2.5);
-		this.ctx.lineTo(size / 2, -size * 2.5);
-		this.ctx.closePath();
-		this.ctx.fill();
-		
-		this.ctx.restore();
-	}
-	
-	// ════════════════════════════════════════════════════════════════
-	// SELECTION BOX
-	// ════════════════════════════════════════════════════════════════
-	
-	private drawSelectionBox(): void {
-		if (!this.selectionBox) return;
-		
-		const { start, end } = this.selectionBox;
-		const x = Math.min(start.x, end.x);
-		const y = Math.min(start.y, end.y);
-		const w = Math.abs(end.x - start.x);
-		const h = Math.abs(end.y - start.y);
-		
-		this.ctx.fillStyle = COLORS.selectionBox;
-		this.ctx.fillRect(x, y, w, h);
-		
-		this.ctx.strokeStyle = COLORS.selectionBorder;
-		this.ctx.lineWidth = 1;
-		this.ctx.setLineDash([4, 2]);
-		this.ctx.strokeRect(x, y, w, h);
-		this.ctx.setLineDash([]);
 	}
 	
 	// ════════════════════════════════════════════════════════════════
 	// INFO OVERLAY
 	// ════════════════════════════════════════════════════════════════
 	
-	private drawInfoOverlay(width: number, height: number): void {
+	private drawInfo(w: number, h: number): void {
 		const padding = 8;
-		const lineHeight = 16;
+		const lineH = 16;
 		
-		// Background for text
-		this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-		this.ctx.fillRect(padding, height - padding - lineHeight * 3, 150, lineHeight * 3);
+		// Background
+		this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+		this.ctx.fillRect(padding, h - padding - lineH * 2, 140, lineH * 2);
 		
 		// Text
-		this.ctx.fillStyle = COLORS.text;
-		this.ctx.font = '11px monospace';
+		this.ctx.fillStyle = '#aaa';
+		this.ctx.font = '10px monospace';
 		this.ctx.textAlign = 'left';
 		this.ctx.textBaseline = 'bottom';
 		
-		const lines = [
-			`Zoom: ${(this.camera.zoom * 100).toFixed(0)}%`,
-			`Camera: (${this.camera.position[0].toFixed(0)}, ${this.camera.position[1].toFixed(0)})`,
-			`Viewport: ${this.camera.viewportSize[0]}×${this.camera.viewportSize[1]}`,
-		];
-		
-		lines.forEach((line, i) => {
-			this.ctx.fillText(line, padding + 4, height - padding - lineHeight * (2 - i));
-		});
+		this.ctx.fillText(`Zoom: ${Math.round(this.zoom * 100)}%`, padding + 4, h - padding - lineH);
+		this.ctx.fillText(`Camera: ${Math.round(this.cameraX)}, ${Math.round(this.cameraY)}`, padding + 4, h - padding);
 	}
 	
 	// ════════════════════════════════════════════════════════════════
-	// INTERACTIONS
+	// EVENTS
 	// ════════════════════════════════════════════════════════════════
 	
-	private setupInteractions(): void {
-		// Mouse events
-		this.canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
-		this.canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
-		this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
-		this.canvas.addEventListener('wheel', this.onWheel.bind(this));
+	private setupEvents(): void {
+		this.canvas.addEventListener('mousedown', e => this.onMouseDown(e));
+		this.canvas.addEventListener('mousemove', e => this.onMouseMove(e));
+		this.canvas.addEventListener('mouseup', () => this.onMouseUp());
+		this.canvas.addEventListener('wheel', e => this.onWheel(e), { passive: false });
 		this.canvas.addEventListener('contextmenu', e => e.preventDefault());
+		this.container.addEventListener('keydown', e => this.onKeyDown(e));
 		
-		// Keyboard events
-		this.container.tabIndex = 0;
-		this.container.addEventListener('keydown', this.onKeyDown.bind(this));
+		// Focus on click
+		this.canvas.addEventListener('mousedown', () => this.container.focus());
 	}
 	
 	private onMouseDown(e: MouseEvent): void {
 		const rect = this.canvas.getBoundingClientRect();
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
+		const sx = e.clientX - rect.left;
+		const sy = e.clientY - rect.top;
 		
-		this.dragStart = { x, y };
+		this.lastMouse = { x: sx, y: sy };
 		
 		if (e.button === 1 || (e.button === 0 && e.altKey)) {
-			// Middle click or Alt+Left: Pan
+			// Pan
 			this.isPanning = true;
 			this.container.style.cursor = 'grabbing';
 		} else if (e.button === 0) {
-			// Left click: Select or start selection box
-			const worldPos = this.screenToWorld(x, y);
-			const hitEntity = this.hitTest(worldPos.x, worldPos.y);
+			// Select
+			const world = this.screenToWorld(sx, sy);
+			const hit = this.hitTest(world.x, world.y);
 			
-			if (hitEntity) {
+			if (hit) {
 				this.selectedIds.clear();
-				this.selectedIds.add(hitEntity.id);
-				this._onEntitySelected.fire(hitEntity.id);
+				this.selectedIds.add(hit.id);
+				this._onEntitySelected.fire(hit.id);
 				this.isDragging = true;
 			} else {
 				this.selectedIds.clear();
 				this._onEntitySelected.fire(null);
-				this.selectionBox = { start: { x, y }, end: { x, y } };
 			}
 		}
-		
-		this.scheduleRender();
 	}
 	
 	private onMouseMove(e: MouseEvent): void {
 		const rect = this.canvas.getBoundingClientRect();
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
+		const sx = e.clientX - rect.left;
+		const sy = e.clientY - rect.top;
 		
 		if (this.isPanning) {
-			const dx = x - this.dragStart.x;
-			const dy = y - this.dragStart.y;
-			this.camera.position[0] -= dx / this.camera.zoom;
-			this.camera.position[1] -= dy / this.camera.zoom;
-			this.dragStart = { x, y };
+			const dx = sx - this.lastMouse.x;
+			const dy = sy - this.lastMouse.y;
+			this.cameraX += dx / this.zoom;
+			this.cameraY += dy / this.zoom;
 		} else if (this.isDragging && this.selectedIds.size === 1) {
-			// Move selected entity
-			const worldPos = this.screenToWorld(x, y);
-			const dragWorldStart = this.screenToWorld(this.dragStart.x, this.dragStart.y);
-			const dx = worldPos.x - dragWorldStart.x;
-			const dy = worldPos.y - dragWorldStart.y;
+			const world = this.screenToWorld(sx, sy);
+			const lastWorld = this.screenToWorld(this.lastMouse.x, this.lastMouse.y);
 			
-			const entityId = Array.from(this.selectedIds)[0];
-			const entity = this.entities.find(e => e.id === entityId);
-			if (entity) {
-				entity.transform.position[0] += dx;
-				entity.transform.position[1] += dy;
-				this._onTransformChanged.fire({ id: entityId, transform: entity.transform });
+			const id = Array.from(this.selectedIds)[0];
+			const ent = this.entities.find(e => e.id === id);
+			if (ent) {
+				ent.transform.position[0] += world.x - lastWorld.x;
+				ent.transform.position[1] += world.y - lastWorld.y;
+				this._onTransformChanged.fire({ id, transform: ent.transform });
 			}
-			
-			this.dragStart = { x, y };
-		} else if (this.selectionBox) {
-			this.selectionBox.end = { x, y };
 		} else {
-			// Hover detection
-			const worldPos = this.screenToWorld(x, y);
-			const hitEntity = this.hitTest(worldPos.x, worldPos.y);
-			const newHovered = hitEntity?.id || null;
-			
-			if (newHovered !== this.hoveredEntity) {
-				this.hoveredEntity = newHovered;
-				this.container.style.cursor = hitEntity ? 'pointer' : 'default';
-			}
+			// Hover
+			const world = this.screenToWorld(sx, sy);
+			const hit = this.hitTest(world.x, world.y);
+			this.hoveredId = hit?.id || null;
+			this.container.style.cursor = hit ? 'pointer' : 'default';
 		}
 		
-		this.scheduleRender();
+		this.lastMouse = { x: sx, y: sy };
 	}
 	
-	private onMouseUp(e: MouseEvent): void {
-		if (this.selectionBox) {
-			// Select entities in box
-			this.selectInBox(this.selectionBox);
-			this.selectionBox = null;
-		}
-		
-		this.isDragging = false;
+	private onMouseUp(): void {
 		this.isPanning = false;
+		this.isDragging = false;
 		this.container.style.cursor = 'default';
-		this.scheduleRender();
 	}
 	
 	private onWheel(e: WheelEvent): void {
 		e.preventDefault();
 		
 		const rect = this.canvas.getBoundingClientRect();
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
+		const sx = e.clientX - rect.left;
+		const sy = e.clientY - rect.top;
 		
-		const worldBefore = this.screenToWorld(x, y);
+		const worldBefore = this.screenToWorld(sx, sy);
 		
 		// Zoom
-		const delta = e.deltaY > 0 ? 0.9 : 1.1;
-		this.camera.zoom = Math.max(0.1, Math.min(10, this.camera.zoom * delta));
+		const factor = e.deltaY > 0 ? 0.9 : 1.1;
+		this.zoom = Math.max(0.1, Math.min(10, this.zoom * factor));
 		
-		const worldAfter = this.screenToWorld(x, y);
+		const worldAfter = this.screenToWorld(sx, sy);
 		
-		// Adjust camera position to zoom towards cursor
-		this.camera.position[0] += worldBefore.x - worldAfter.x;
-		this.camera.position[1] += worldBefore.y - worldAfter.y;
-		
-		this.scheduleRender();
+		// Keep point under cursor
+		this.cameraX -= worldAfter.x - worldBefore.x;
+		this.cameraY -= worldAfter.y - worldBefore.y;
 	}
 	
 	private onKeyDown(e: KeyboardEvent): void {
-		switch (e.key) {
-			case 'Delete':
-			case 'Backspace':
-				// Delete selected entities
-				this.selectedIds.forEach(id => {
-					const idx = this.entities.findIndex(e => e.id === id);
-					if (idx !== -1) this.entities.splice(idx, 1);
-				});
-				this.selectedIds.clear();
-				this._onEntitySelected.fire(null);
-				this.scheduleRender();
-				break;
-				
-			case 'g':
-				this.gridEnabled = !this.gridEnabled;
-				this.scheduleRender();
-				break;
-				
-			case 'c':
-				this.showColliders = !this.showColliders;
-				this.scheduleRender();
-				break;
-				
-			case 'b':
-				this.showCameraBounds = !this.showCameraBounds;
-				this.scheduleRender();
-				break;
+		if (e.key === 'Delete' || e.key === 'Backspace') {
+			for (const id of this.selectedIds) {
+				const idx = this.entities.findIndex(e => e.id === id);
+				if (idx !== -1) this.entities.splice(idx, 1);
+			}
+			this.selectedIds.clear();
+			this._onEntitySelected.fire(null);
 		}
 	}
 	
@@ -737,65 +614,38 @@ export class Viewport2D extends Disposable {
 	// HELPERS
 	// ════════════════════════════════════════════════════════════════
 	
-	private screenToWorld(screenX: number, screenY: number): Vec2 {
+	private handleResize(): void {
+		const rect = this.container.getBoundingClientRect();
+		const dpr = window.devicePixelRatio || 1;
+		this.canvas.width = rect.width * dpr;
+		this.canvas.height = rect.height * dpr;
+		this.ctx.scale(dpr, dpr);
+	}
+	
+	private screenToWorld(sx: number, sy: number): Vec2 {
 		const rect = this.canvas.getBoundingClientRect();
 		return {
-			x: (screenX - rect.width / 2) / this.camera.zoom + this.camera.position[0],
-			y: (screenY - rect.height / 2) / this.camera.zoom + this.camera.position[1],
+			x: (sx - rect.width / 2) / this.zoom + this.cameraX,
+			y: (sy - rect.height / 2) / this.zoom + this.cameraY,
 		};
 	}
 	
-	private worldToScreen(worldX: number, worldY: number): Vec2 {
-		const rect = this.canvas.getBoundingClientRect();
-		return {
-			x: (worldX - this.camera.position[0]) * this.camera.zoom + rect.width / 2,
-			y: (worldY - this.camera.position[1]) * this.camera.zoom + rect.height / 2,
-		};
-	}
-	
-	private hitTest(worldX: number, worldY: number): SceneEntity2D | null {
-		// Test entities in reverse order (top to bottom in render)
+	private hitTest(wx: number, wy: number): SceneEntity2D | null {
 		for (let i = this.entities.length - 1; i >= 0; i--) {
-			const entity = this.entities[i];
-			if (!entity.visible) continue;
+			const e = this.entities[i];
+			if (!e.visible || !e.sprite) continue;
 			
-			const { transform, sprite } = entity;
-			if (!sprite) continue;
+			const sw = e.sprite.size[0] * e.transform.scale[0];
+			const sh = e.sprite.size[1] * e.transform.scale[1];
 			
-			const halfW = sprite.size[0] / 2 * transform.scale[0];
-			const halfH = sprite.size[1] / 2 * transform.scale[1];
-			
-			const dx = worldX - transform.position[0];
-			const dy = worldY - transform.position[1];
-			
-			if (Math.abs(dx) <= halfW && Math.abs(dy) <= halfH) {
-				return entity;
+			if (wx >= e.transform.position[0] - sw/2 &&
+			    wx <= e.transform.position[0] + sw/2 &&
+			    wy >= e.transform.position[1] - sh/2 &&
+			    wy <= e.transform.position[1] + sh/2) {
+				return e;
 			}
 		}
 		return null;
-	}
-	
-	private selectInBox(box: { start: Vec2; end: Vec2 }): void {
-		const x1 = Math.min(box.start.x, box.end.x);
-		const y1 = Math.min(box.start.y, box.end.y);
-		const x2 = Math.max(box.start.x, box.end.x);
-		const y2 = Math.max(box.start.y, box.end.y);
-		
-		this.selectedIds.clear();
-		
-		for (const entity of this.entities) {
-			const screenPos = this.worldToScreen(entity.transform.position[0], entity.transform.position[1]);
-			if (screenPos.x >= x1 && screenPos.x <= x2 && screenPos.y >= y1 && screenPos.y <= y2) {
-				this.selectedIds.add(entity.id);
-			}
-		}
-	}
-	
-	public resize(): void {
-		const rect = this.container.getBoundingClientRect();
-		this.canvas.width = rect.width * (window.devicePixelRatio || 1);
-		this.canvas.height = rect.height * (window.devicePixelRatio || 1);
-		this.scheduleRender();
 	}
 	
 	// ════════════════════════════════════════════════════════════════
