@@ -280,7 +280,7 @@ class PlayControls extends Disposable {
 	
 	private createButton(icon: string, tooltip: string): HTMLButtonElement {
 		const btn = document.createElement('button');
-		btn.innerHTML = icon;
+		btn.textContent = icon;
 		btn.title = tooltip;
 		btn.style.cssText = `
 			display: flex;
