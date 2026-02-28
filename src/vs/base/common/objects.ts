@@ -72,7 +72,7 @@ function _cloneAndChange(obj: any, changer: (orig: any) => any, seen: Set<any>):
 		const r2: Record<string, unknown> = {};
 		for (const i2 in obj) {
 			if (_hasOwnProperty.call(obj, i2)) {
-				r2[i2] = _cloneAndChange(obj[i2], changer, seen);
+				r2[i2] = _cloneAndChange((obj as any)[i2], changer, seen);
 			}
 		}
 		seen.delete(obj);
@@ -95,14 +95,14 @@ export function mixin(destination: any, source: any, overwrite: boolean = true):
 		Object.keys(source).forEach(key => {
 			if (key in destination) {
 				if (overwrite) {
-					if (isObject(destination[key]) && isObject(source[key])) {
-						mixin(destination[key], source[key], overwrite);
+					if (isObject((destination as any)[key]) && isObject((source as any)[key])) {
+						mixin((destination as any)[key], (source as any)[key], overwrite);
 					} else {
-						destination[key] = source[key];
+						(destination as any)[key] = (source as any)[key];
 					}
 				}
 			} else {
-				destination[key] = source[key];
+				(destination as any)[key] = (source as any)[key];
 			}
 		});
 	}

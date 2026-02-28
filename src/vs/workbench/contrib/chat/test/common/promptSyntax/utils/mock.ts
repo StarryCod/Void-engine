@@ -38,7 +38,7 @@ export function mockObject<TObject extends object>(
 			): TObject[T] => {
 				assert(
 					isOneOf(key, keys),
-					`The '${key}' is not mocked.`,
+					`The '${String(key)}' is not mocked.`,
 				);
 
 				// note! it's ok to type assert here, because of the explicit runtime

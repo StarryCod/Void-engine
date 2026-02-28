@@ -7,20 +7,10 @@
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import * as DOM from '../../../../base/browser/dom.js';
-import { VecnParser, VecnScene } from '../common/vecnParser.js';
-import { Entity, Component } from '../common/vecnTypes.js';
+import { VecnScene } from '../common/vecnParser.js';
+import { Entity } from '../common/vecnTypes.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import {
-	createNode2DGeometry,
-	createCollisionShape2DGeometry,
-	createCharacterBody2DGeometry,
-	createRigidBody2DGeometry,
-	createStaticBody2DGeometry,
-	createRayCast2DGeometry,
-	createNavigationAgent2DGeometry,
-	createNavigationObstacle2DGeometry,
-	createPathFollow2DGeometry
-} from './gizmoHelpers.js';
+
 
 // ============================================================================
 // DESIGN SYSTEM - Godot + AI-IDE Orange Accent
@@ -74,22 +64,6 @@ function v2(x: number, y: number): Vec2 {
 
 function v2Copy(out: Vec2, a: Vec2): Vec2 {
 	out[0] = a[0]; out[1] = a[1]; return out;
-}
-
-function v2Add(out: Vec2, a: Vec2, b: Vec2): Vec2 {
-	out[0] = a[0] + b[0]; out[1] = a[1] + b[1]; return out;
-}
-
-function v2Sub(out: Vec2, a: Vec2, b: Vec2): Vec2 {
-	out[0] = a[0] - b[0]; out[1] = a[1] - b[1]; return out;
-}
-
-function v2Scale(out: Vec2, a: Vec2, s: number): Vec2 {
-	out[0] = a[0] * s; out[1] = a[1] * s; return out;
-}
-
-function v2Len(a: Vec2): number {
-	return Math.sqrt(a[0] * a[0] + a[1] * a[1]);
 }
 
 function m3Create(): Mat3 { return new Float32Array(9); }
@@ -289,56 +263,7 @@ void main() {
 	fragColor = vec4(uColor.rgb, uColor.a * uAlpha);
 }`;
 
-const SPRITE_VERT = `#version 300 es
-precision highp float;
-layout(location = 0) in vec2 aPosition;
-layout(location = 1) in vec2 aTexCoord;
-uniform mat3 uMVP;
-out vec2 vTexCoord;
-void main() {
-	vTexCoord = aTexCoord;
-	vec3 pos = uMVP * vec3(aPosition, 1.0);
-	gl_Position = vec4(pos.xy, 0.0, 1.0);
-}`;
 
-const SPRITE_FRAG = `#version 300 es
-precision highp float;
-in vec2 vTexCoord;
-uniform sampler2D uTexture;
-uniform vec4 uColor;
-out vec4 fragColor;
-void main() {
-	vec4 tex = texture(uTexture, vTexCoord);
-	if (tex.a < 0.01) discard;
-	fragColor = tex * uColor;
-}`;
-
-const RECT_OUTLINE_VERT = `#version 300 es
-precision highp float;
-layout(location = 0) in vec2 aPosition;
-uniform mat3 uMVP;
-uniform vec2 uSize;
-uniform vec2 uOffset;
-uniform float uLineWidth;
-void main() {
-	// Expand rect for outline
-	vec2 dir = sign(aPosition);
-	vec2 expanded = aPosition + dir * uLineWidth * 0.5;
-	vec3 pos = uMVP * vec3(expanded * uSize + uOffset, 1.0);
-	gl_Position = vec4(pos.xy, 0.0, 1.0);
-}`;
-
-const CIRCLE_VERT = `#version 300 es
-precision highp float;
-layout(location = 0) in vec2 aPosition;
-uniform mat3 uMVP;
-uniform vec2 uCenter;
-uniform float uRadius;
-void main() {
-	vec2 pos = uCenter + aPosition * uRadius;
-	vec3 clipPos = uMVP * vec3(pos, 1.0);
-	gl_Position = vec4(clipPos.xy, 0.0, 1.0);
-}`;
 
 // ============================================================================
 // GEOMETRY GENERATORS
@@ -409,24 +334,6 @@ function createCircleVAO(gl: WebGL2RenderingContext, segments: number = 32): GLB
 	gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 	
 	return { vao, vertexCount: segments + 1 };
-}
-
-function createLineVAO(gl: WebGL2RenderingContext, points: Vec2[]): GLBuffer {
-	const vertices: number[] = [];
-	for (const p of points) {
-		vertices.push(p[0], p[1]);
-	}
-	
-	const vao = gl.createVertexArray()!;
-	gl.bindVertexArray(vao);
-	
-	const vbo = gl.createBuffer()!;
-	gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-	gl.enableVertexAttribArray(0);
-	gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-	
-	return { vao, vertexCount: points.length };
 }
 
 // ============================================================================
@@ -522,7 +429,6 @@ export class Viewport2DWebGL extends Disposable {
 	
 	// Scene data
 	private objects: Object2D[] = [];
-	private selectedId: string | null = null;
 	
 	// Interaction
 	private isPanning: boolean = false;
@@ -579,8 +485,6 @@ export class Viewport2DWebGL extends Disposable {
 	}
 	
 	private initShaders(): void {
-		const gl = this.gl;
-		
 		this.gridProgram = this.createProgram(GRID_VERT, GRID_FRAG);
 		this.flatProgram = this.createProgram(FLAT_VERT, FLAT_FRAG);
 		this.lineProgram = this.createProgram(LINE_VERT, LINE_FRAG);
@@ -717,8 +621,6 @@ export class Viewport2DWebGL extends Disposable {
 	}
 	
 	private renderObjects(): void {
-		const gl = this.gl;
-		
 		for (const obj of this.objects) {
 			if (!obj.visible) continue;
 			
@@ -839,7 +741,6 @@ export class Viewport2DWebGL extends Disposable {
 				this.frameSelected();
 				break;
 			case 'Escape':
-				this.selectedId = null;
 				for (const obj of this.objects) obj.selected = false;
 				this._onObjectSelected.fire(null);
 				break;
@@ -915,7 +816,6 @@ export class Viewport2DWebGL extends Disposable {
 	// ===== PUBLIC API =====
 	
 	public selectObject(id: string | null): void {
-		this.selectedId = id;
 		for (const obj of this.objects) {
 			obj.selected = obj.id === id;
 		}

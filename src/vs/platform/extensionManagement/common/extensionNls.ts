@@ -77,7 +77,7 @@ function replaceNLStrings(logger: ILogger, extensionManifest: IExtensionManifest
 			}
 		} else if (Array.isArray(value)) {
 			for (let i = 0; i < (value as Array<unknown>).length; i++) {
-				processEntry(value, i, command);
+				processEntry(value as any, i, command);
 			}
 		}
 	};

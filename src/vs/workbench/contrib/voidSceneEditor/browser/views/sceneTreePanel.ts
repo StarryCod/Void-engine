@@ -7,7 +7,7 @@
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import * as DOM from '../../../../../base/browser/dom.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
-import { Entity, Component } from '../../common/vecnTypes.js';
+import { Entity } from '../../common/vecnTypes.js';
 
 // ============================================================================
 // DESIGN SYSTEM COLORS

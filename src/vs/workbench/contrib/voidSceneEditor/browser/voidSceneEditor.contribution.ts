@@ -15,9 +15,8 @@ import * as DOM from '../../../../base/browser/dom.js';
 import { VoidSceneEditorToolbar } from './voidSceneEditorToolbar.js';
 import { SceneEditorMode } from '../common/voidSceneEditor.js';
 import { ThreeViewport } from './threeViewport.js';
-import { InspectorView } from './inspectorView.js';
-import { sceneBridge } from '../common/voidScenebridge.js';
-import { SceneEditorContainer, EditorMode } from './views/sceneEditorContainer.js';
+import { sceneBridge } from '../common/voidSceneBridge.js';
+import { SceneEditorContainer } from './views/sceneEditorContainer.js';
 import { VecnParser } from '../common/vecnParser.js';
 
 class VoidSceneEditorContribution extends Disposable implements IWorkbenchContribution {
@@ -25,24 +24,15 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 
 	private toolbar: VoidSceneEditorToolbar | null = null;
 	private viewport: ThreeViewport | null = null;
-	private inspector: InspectorView | null = null;
 	
 	// NEW: Godot-style container
 	private sceneEditorContainer: SceneEditorContainer | null = null;
 
 	private layoutContainer: HTMLElement | null = null;
-	private viewportContainer: HTMLElement | null = null;
-	private inspectorDock: HTMLElement | null = null;
-	private inspectorHandle: HTMLElement | null = null;
-	private inspectorVisible: boolean = true;
 
 	private modelListener: IDisposable | null = null;
 	private fileWatcher: IDisposable | null = null;
 	private suppressModelUntil: number = 0;
-	private _resizing = false;
-	
-	// Current mode
-	private currentMode: SceneEditorMode = SceneEditorMode.Scene3D;
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -245,7 +235,6 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	// ════════════════════════════════════════════════════════════════
 
 	private async handleModeChange(mode: SceneEditorMode): Promise<void> {
-		this.currentMode = mode;
 		
 		const editorPart = document.querySelector('.part.editor') as HTMLElement | null;
 		if (!editorPart) return;
@@ -305,7 +294,9 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			if (raw) {
 				try {
 					const scene = VecnParser.parse(raw);
-					this.sceneEditorContainer.loadScene(scene);
+					if (scene) {
+						this.sceneEditorContainer.loadScene(scene);
+					}
 				} catch (e) {
 					console.error('[VoidSceneEditor] Failed to parse scene:', e);
 				}
@@ -347,7 +338,9 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			if (raw) {
 				try {
 					const scene = VecnParser.parse(raw);
-					this.sceneEditorContainer.loadScene(scene);
+					if (scene) {
+						this.sceneEditorContainer.loadScene(scene);
+					}
 				} catch (e) {
 					console.error('[VoidSceneEditor] Failed to parse scene:', e);
 				}
@@ -385,7 +378,9 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			if (this.sceneEditorContainer) {
 				try {
 					const scene = VecnParser.parse(u.raw);
-					this.sceneEditorContainer.loadScene(scene);
+					if (scene) {
+						this.sceneEditorContainer.loadScene(scene);
+					}
 				} catch (e) {
 					console.error('[VoidSceneEditor] Failed to update scene:', e);
 				}
@@ -395,133 +390,6 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		console.log('[VoidSceneEditor] Godot-style layout created');
 	}
 
-	// ════════════════════════════════════════════════════════════════
-	// LEGACY: 3D Layout (kept for fallback)
-	// ════════════════════════════════════════════════════════════════
-
-	private createLegacyLayout(editorContainer: HTMLElement): void {
-		this.layoutContainer = DOM.append(editorContainer, DOM.$('.void-scene-layout'));
-		this.layoutContainer.style.cssText = `
-			position:absolute;top:32px;left:0;right:0;bottom:0;
-			background:#1e1e1e;z-index:50;overflow:hidden;
-			display:flex;flex-direction:row;
-		`;
-
-		this.viewportContainer = DOM.append(this.layoutContainer, DOM.$('.void-vp'));
-		this.viewportContainer.style.cssText = 'flex:1;position:relative;min-width:200px;overflow:hidden;';
-
-		this.inspectorDock = DOM.append(this.layoutContainer, DOM.$('.void-insp-dock'));
-		this.inspectorDock.style.cssText = `
-			width:280px;min-width:220px;max-width:400px;
-			background:#1e1e1e;border-left:1px solid #333;
-			display:flex;flex-direction:column;overflow:hidden;
-			transition: width 0.2s ease, opacity 0.2s ease, margin-right 0.2s ease;
-		`;
-
-		const toggleBtn = DOM.append(this.viewportContainer, DOM.$('.void-inspector-toggle'));
-		toggleBtn.style.cssText = `
-			position:absolute;top:8px;right:8px;z-index:100;
-			width:32px;height:32px;border-radius:4px;
-			background:#2d2d30;border:1px solid #3c3c3c;
-			color:#ccc;cursor:pointer;
-			display:flex;align-items:center;justify-content:center;
-			font-size:14px;transition:all 0.15s;
-		`;
-		toggleBtn.textContent = '⋮';
-		toggleBtn.title = 'Toggle Inspector (I)';
-		toggleBtn.addEventListener('click', () => this.toggleInspector());
-		
-		this._register(DOM.addDisposableListener(window, 'keydown', (e: KeyboardEvent) => {
-			if (e.key === 'i' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-				const activeEl = document.activeElement;
-				if (activeEl?.tagName !== 'INPUT' && activeEl?.tagName !== 'TEXTAREA') {
-					this.toggleInspector();
-				}
-			}
-		}));
-
-		this.inspectorHandle = DOM.append(this.layoutContainer, DOM.$('.void-resize-i'));
-		this.inspectorHandle.style.cssText = `
-			width:4px;cursor:col-resize;background:transparent;
-			position:absolute;top:0;bottom:0;right:280px;z-index:60;
-		`;
-
-		this.setupResizer(this.inspectorHandle, this.inspectorDock, 'right');
-
-		const content = sceneBridge.getRaw() || '';
-		this.viewport = new ThreeViewport(this.viewportContainer, content);
-		this._register(this.viewport);
-
-		this._register(this.viewport.onTransformEditedTRS(e => {
-			sceneBridge.updateTransform({
-				entityId: e.entityId,
-				translation: e.translation,
-				rotation: e.rotation,
-				scale: e.scale,
-			});
-		}));
-
-		this._register(this.viewport.onEntityPicked(id => {
-			sceneBridge.selectEntity(id);
-		}));
-
-		this._register(sceneBridge.onSceneUpdated(u => {
-			if (u.source !== 'viewport' && this.viewport) {
-				this.viewport.updateScene(u.raw);
-			}
-		}));
-
-		this._register(sceneBridge.onEntitySelected(id => {
-			if (this.viewport) {
-				(this.viewport as any).selectEntityById?.(id);
-			}
-		}));
-
-		this.inspector = new InspectorView(this.inspectorDock);
-		this._register(this.inspector);
-	}
-	
-	private toggleInspector(): void {
-		if (!this.inspectorDock || !this.inspectorHandle) return;
-		
-		this.inspectorVisible = !this.inspectorVisible;
-		
-		if (this.inspectorVisible) {
-			this.inspectorDock.style.width = '280px';
-			this.inspectorDock.style.marginRight = '0';
-			this.inspectorHandle.style.right = '280px';
-			this.inspectorHandle.style.display = 'block';
-		} else {
-			this.inspectorDock.style.width = '0';
-			this.inspectorDock.style.marginRight = '-280px';
-			this.inspectorHandle.style.display = 'none';
-		}
-	}
-
-	private setupResizer(handle: HTMLElement, panel: HTMLElement, side: 'left' | 'right'): void {
-		handle.onmouseenter = () => { if (!this._resizing) handle.style.background = '#444'; };
-		handle.onmouseleave = () => { if (!this._resizing) handle.style.background = 'transparent'; };
-		handle.onmousedown = (e: MouseEvent) => {
-			e.preventDefault(); this._resizing = true; handle.style.background = '#555';
-			const startX = e.clientX;
-			const startW = panel.offsetWidth;
-			const onMove = (ev: MouseEvent) => {
-				const delta = side === 'left' ? (ev.clientX - startX) : (startX - ev.clientX);
-				const w = Math.max(150, Math.min(350, startW + delta));
-				panel.style.width = w + 'px';
-				handle.style[side] = w + 'px';
-			};
-			const onUp = () => {
-				this._resizing = false; handle.style.background = 'transparent';
-				window.removeEventListener('mousemove', onMove);
-				window.removeEventListener('mouseup', onUp);
-			};
-			window.addEventListener('mousemove', onMove);
-			window.addEventListener('mouseup', onUp);
-		};
-	}
-
-	// ════════════════════════════════════════════════════════════════
 
 	override dispose(): void {
 		this.disposeModelListener();

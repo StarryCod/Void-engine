@@ -54,7 +54,7 @@ export class NativeHostColorSchemeService extends Disposable implements IHostCol
 		if (stored) {
 			try {
 				const scheme = JSON.parse(stored);
-				if (isObject(scheme) && isBoolean(scheme.highContrast) && isBoolean(scheme.dark)) {
+				if (isObject(scheme) && isBoolean((scheme as any).highContrast) && isBoolean((scheme as any).dark)) {
 					return scheme as IColorScheme;
 				}
 			} catch (e) {

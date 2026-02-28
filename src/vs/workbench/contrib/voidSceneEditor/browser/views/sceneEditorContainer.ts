@@ -11,7 +11,7 @@ import { Viewport2DWebGL } from '../viewport2DWebGL.js';
 import { SceneTreePanel } from './sceneTreePanel.js';
 import { FileSystemPanel } from './fileSystemPanel.js';
 import { InspectorPanel } from './inspectorPanel.js';
-import { VecnParser, VecnScene } from '../../common/vecnParser.js';
+import { VecnScene } from '../../common/vecnParser.js';
 import { Entity } from '../../common/vecnTypes.js';
 
 // ============================================================================
@@ -55,7 +55,6 @@ class Splitter extends Disposable {
 	private element: HTMLElement;
 	private isDragging: boolean = false;
 	private startPos: number = 0;
-	private startSize: number = 0;
 	private direction: 'horizontal' | 'vertical';
 	private onResize: (delta: number) => void;
 	

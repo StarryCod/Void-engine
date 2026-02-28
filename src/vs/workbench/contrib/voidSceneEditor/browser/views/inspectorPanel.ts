@@ -741,7 +741,6 @@ export class InspectorPanel extends Disposable {
 		container.appendChild(preview);
 		
 		// RGBA inputs
-		const labels = ['R', 'G', 'B', 'A'];
 		value.forEach((v, i) => {
 			const input = document.createElement('input');
 			input.type = 'number';
@@ -854,8 +853,9 @@ export class InspectorPanel extends Disposable {
 		this.addPropertyRow(content, { label: 'Стоп на склоне', key: 'floor_stop_on_slope', type: 'boolean', value: component.floor_stop_on_slope, onChange: (v) => { component.floor_stop_on_slope = v as boolean; } });
 	}
 	
-	private renderGenericProperties(content: HTMLElement, component: Record<string, unknown>): void {
-		for (const [key, value] of Object.entries(component)) {
+	private renderGenericProperties(content: HTMLElement, component: Component): void {
+		const componentData = component as unknown as Record<string, unknown>;
+		for (const [key, value] of Object.entries(componentData)) {
 			if (key === 'type') continue;
 			
 			let type: PropertyEditor['type'] = 'string';
@@ -872,7 +872,7 @@ export class InspectorPanel extends Disposable {
 				key,
 				type,
 				value,
-				onChange: (v) => { component[key] = v; }
+				onChange: (v) => { componentData[key] = v; }
 			});
 		}
 	}

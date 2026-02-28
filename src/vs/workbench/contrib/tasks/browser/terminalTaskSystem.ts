@@ -1718,7 +1718,7 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			definition.forEach((element: any) => this._collectDefinitionVariables(variables, element));
 		} else if (Types.isObject(definition)) {
 			for (const key in definition) {
-				this._collectDefinitionVariables(variables, definition[key]);
+				this._collectDefinitionVariables(variables, (definition as any)[key]);
 			}
 		}
 	}

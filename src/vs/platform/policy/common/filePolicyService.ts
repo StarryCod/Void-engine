@@ -57,8 +57,8 @@ export class FilePolicyService extends AbstractPolicyService implements IPolicyS
 			}
 
 			for (const key of Object.keys(raw)) {
-				if (this.policyDefinitions[key]) {
-					policies.set(key, raw[key]);
+				if ((this.policyDefinitions as any)[key]) {
+					policies.set(key, (raw as any)[key]);
 				}
 			}
 		} catch (error) {

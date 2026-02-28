@@ -1790,7 +1790,6 @@ export class ThreeViewport extends Disposable {
         private pointLightRaysVAO: WireframeBuffers | null = null;
         private sunRaysVAO: WireframeBuffers | null = null;
         private characterBodyVAO: WireframeBuffers | null = null;
-        private rayCastVAO: WireframeBuffers | null = null;
         private areaWireframeVAO: WireframeBuffers | null = null;
         private speakerVAO: WireframeBuffers | null = null;
         private filmReelVAO: WireframeBuffers | null = null;
@@ -2027,7 +2026,7 @@ export class ThreeViewport extends Disposable {
                 this.pointLightRaysVAO = createPointLightRaysVAO(gl);
                 this.sunRaysVAO = createSunRaysVAO(gl);
                 this.characterBodyVAO = createCharacterBodyVAO(gl, 0.4, 1.6);
-                this.rayCastVAO = createRayCastVAO(gl, 2);
+                this.rayCast2DVAO = createRayCastVAO(gl, 2);
                 this.areaWireframeVAO = createAreaWireframeVAO(gl, [1, 1, 1]);
                 this.speakerVAO = createSpeakerVAO(gl);
                 this.filmReelVAO = createFilmReelVAO(gl);
@@ -3740,7 +3739,6 @@ export class ThreeViewport extends Disposable {
                         // WorldEnvironment - Sky dome icon with sun rays
                         // Show as a hemisphere with gradient-like appearance (sky colors)
                         const skyTopColor: [number, number, number] = [0.35, 0.55, 0.85];    // Sky blue
-                        const skyHorizonColor: [number, number, number] = [0.65, 0.78, 0.90]; // Light blue
                         
                         // Wireframe sphere (sky dome)
                         if (!pickMode && this.wireframeSphereVAO) {

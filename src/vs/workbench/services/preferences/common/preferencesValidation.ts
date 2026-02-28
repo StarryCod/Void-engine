@@ -351,9 +351,9 @@ function getObjectValidator(prop: IConfigurationPropertySchema): ((value: any) =
 				errors.push(nls.localize('validations.objectIncorrectType', 'Incorrect type. Expected an object.'));
 			} else {
 				Object.keys(value).forEach((key: string) => {
-					const data = value[key];
+					const data = (value as any)[key];
 					if (properties && key in properties) {
-						const errorMessage = getErrorsForSchema(properties[key], data);
+						const errorMessage = getErrorsForSchema((properties as any)[key], data);
 						if (errorMessage) {
 							errors.push(`${key}: ${errorMessage}\n`);
 						}

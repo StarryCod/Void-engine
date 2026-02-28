@@ -138,7 +138,7 @@ export class ProductIconThemeData implements IWorkbenchProductIconTheme {
 					const { id, fontCharacter, fontId } = entry;
 					if (isString(id) && isString(fontCharacter)) {
 						if (isString(fontId)) {
-							const iconFontDefinition = IconFontDefinition.fromJSONObject(iconFontDefinitions[fontId]);
+							const iconFontDefinition = IconFontDefinition.fromJSONObject((iconFontDefinitions as any)[fontId]);
 							if (iconFontDefinition) {
 								restoredIconDefinitions.set(id, { fontCharacter, font: { id: fontId, definition: iconFontDefinition } });
 							}

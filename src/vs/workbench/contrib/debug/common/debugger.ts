@@ -64,19 +64,19 @@ export class Debugger implements IDebugger, IDebuggerMetadata {
 			if (isObject(source)) {
 				Object.keys(source).forEach(key => {
 					if (key !== '__proto__') {
-						if (isObject(destination[key]) && isObject(source[key])) {
-							mixin(destination[key], source[key], overwrite, level + 1);
+						if (isObject((destination as any)[key]) && isObject((source as any)[key])) {
+							mixin((destination as any)[key], (source as any)[key], overwrite, level + 1);
 						} else {
 							if (key in destination) {
 								if (overwrite) {
 									if (level === 0 && key === 'type') {
 										// don't merge the 'type' property
 									} else {
-										destination[key] = source[key];
+										(destination as any)[key] = (source as any)[key];
 									}
 								}
 							} else {
-								destination[key] = source[key];
+								(destination as any)[key] = (source as any)[key];
 							}
 						}
 					}

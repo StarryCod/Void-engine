@@ -161,8 +161,8 @@ export interface IUserDataSyncStore {
 export function isAuthenticationProvider(thing: any): thing is IAuthenticationProvider {
 	return thing
 		&& isObject(thing)
-		&& isString(thing.id)
-		&& Array.isArray(thing.scopes);
+		&& isString((thing as any).id)
+		&& Array.isArray((thing as any).scopes);
 }
 
 export const enum SyncResource {
