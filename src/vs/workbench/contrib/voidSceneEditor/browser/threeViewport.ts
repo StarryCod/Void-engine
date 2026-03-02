@@ -406,6 +406,15 @@ uniform float uFogDensity;
 uniform float uFogDepthBegin;
 uniform float uFogDepthEnd;
 
+// Post-process controls from WorldEnvironment
+uniform vec3 uAmbientLightColor;
+uniform float uAmbientLightEnergy;
+uniform float uTonemapExposure;
+uniform int uTonemapMode;      // 0=Linear,1=Reinhard,2=Filmic,3=ACES
+uniform float uTonemapWhite;
+uniform float uGlowIntensity;
+uniform float uGlowThreshold;
+
 out vec4 fragColor;
 
 // ========================================
@@ -475,24 +484,8 @@ float fbm3D(vec3 p) {
 // ATMOSPHERIC SCATTERING (Simplified)
 // ========================================
 
-// Rayleigh scattering coefficient (sky blue)
-vec3 rayleighScatter(vec3 dir, vec3 sunDir) {
-        float cosTheta = max(dot(dir, sunDir), 0.0);
-        // Rayleigh phase function: 3/16pi * (1 + cos^2)
-        float phase = (3.0 / 16.0 * 3.14159) * (1.0 + cosTheta * cosTheta);
-        // Wavelength-dependent scattering (more blue)
-        vec3 betaR = vec3(5.8e-6, 13.5e-6, 33.1e-6);
-        return betaR * phase;
-}
-
-// Mie scattering coefficient (sun glow)
-float mieScatter(vec3 dir, vec3 sunDir, float g) {
-        float cosTheta = dot(dir, sunDir);
-        // Henyey-Greenstein phase function
-        float g2 = g * g;
-        float num = (1.0 - g2);
-        float denom = 4.0 * 3.14159 * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5);
-        return num / denom;
+float saturate(float v) {
+        return clamp(v, 0.0, 1.0);
 }
 
 // ========================================
@@ -500,44 +493,31 @@ float mieScatter(vec3 dir, vec3 sunDir, float g) {
 // ========================================
 
 vec3 getAtmosphericSkyColor(vec3 dir, vec3 sunDir) {
-        // Base sky gradient
-        float elevation = dir.y;
-        
-        // Sky contribution
-        float skyMix = pow(max(0.0, elevation), uSkyCurve);
-        vec3 sky = mix(uSkyHorizonColor, uSkyTopColor, skyMix);
-        
-        // Ground contribution (for negative elevation)
-        float groundMix = pow(max(0.0, -elevation), uGroundCurve);
+        vec3 nDir = normalize(dir);
+        vec3 nSun = normalize(sunDir);
+
+        float viewUp = saturate(nDir.y * 0.5 + 0.5);
+        float horizonBand = 1.0 - smoothstep(0.03, 0.45, abs(nDir.y));
+        float sunHeight = saturate(nSun.y * 0.5 + 0.5);
+        float dusk = pow(1.0 - sunHeight, 1.7);
+
+        vec3 zenith = mix(uSkyTopColor, uSkyTopColor * vec3(0.76, 0.72, 0.70), dusk * 0.55);
+        vec3 horizon = mix(uSkyHorizonColor, vec3(0.93, 0.62, 0.45), dusk * 0.30);
+        vec3 sky = mix(horizon, zenith, pow(viewUp, max(0.25, uSkyCurve)));
+
+        float groundMix = pow(saturate(-nDir.y), max(0.2, uGroundCurve));
         vec3 ground = mix(uGroundHorizonColor, uGroundBottomColor, groundMix);
-        
-        // Blend based on elevation
-        vec3 result;
-        if (elevation > 0.0) {
-                result = mix(uSkyHorizonColor, sky, pow(elevation, 0.5));
-        } else {
-                result = mix(uSkyHorizonColor, ground, pow(-elevation, 0.5));
+        vec3 base = nDir.y >= 0.0 ? sky : mix(horizon, ground, groundMix);
+
+        if (uSunEnabled && nDir.y > -0.2) {
+                float sunView = saturate(dot(nDir, nSun));
+                float rayleigh = pow(sunView, 3.0) * (0.04 + horizonBand * 0.05);
+                float mie = pow(sunView, 18.0) * (0.05 + 0.16 * (1.0 - sunHeight));
+                vec3 scatter = vec3(0.42, 0.53, 0.72) * rayleigh + vec3(1.0, 0.84, 0.66) * mie;
+                base += scatter;
         }
-        
-        // Add atmospheric scattering for realism
-        if (uSunEnabled && elevation > -0.1) {
-                vec3 sunDirNorm = normalize(sunDir);
-                
-                // Rayleigh scattering (blue sky tint near sun)
-                vec3 rayleigh = rayleighScatter(dir, sunDirNorm) * 15.0;
-                
-                // Mie scattering (sun glow/halo)
-                float mie = mieScatter(dir, sunDirNorm, 0.76) * 0.001;
-                
-                // Apply scattering near horizon and towards sun
-                float horizonFade = 1.0 - pow(abs(elevation), 0.3);
-                float sunInfluence = max(dot(dir, sunDirNorm), 0.0);
-                
-                result += rayleigh * sunInfluence * horizonFade * 0.5;
-                result += vec3(1.0, 0.95, 0.8) * mie * sunInfluence * uSunEnergy * 0.1;
-        }
-        
-        return result * uSkyEnergy;
+
+        return max(vec3(0.0), base * max(0.1, uSkyEnergy));
 }
 
 // ========================================
@@ -546,35 +526,62 @@ vec3 getAtmosphericSkyColor(vec3 dir, vec3 sunDir) {
 
 vec3 getSun(vec3 dir, vec3 sunDir) {
         if (!uSunEnabled) return vec3(0.0);
-        
-        float sunDist = distance(dir, normalize(sunDir));
-        float sunAngle = radians(uSunAngleMin) * 0.5;
-        float glowAngle = radians(uSunAngleMax);
-        
-        // Sun disk with limb darkening (more realistic)
-        float disk = 0.0;
-        if (sunDist < sunAngle) {
-                // Normalized distance from center (0 at center, 1 at edge)
-                float r = sunDist / sunAngle;
-                // Limb darkening: I(r) = I0 * (1 - (1 - u) * (1 - sqrt(1 - r^2)))
-                // where u ≈ 0.6 for the Sun
-                float u = 0.6;
-                float limbDarkening = 1.0 - (1.0 - u) * (1.0 - sqrt(1.0 - r * r));
-                disk = limbDarkening;
-        }
-        
-        // Soft sun glow (multiple layers for realism)
-        float glow1 = exp(-sunDist * 8.0) * 0.6;   // Inner bright glow
-        float glow2 = exp(-sunDist * 2.5) * 0.3;   // Medium glow
-        float glow3 = exp(-sunDist * 1.0) * 0.1;   // Outer soft glow
-        
-        float totalGlow = (glow1 + glow2 + glow3) * uSunEnergy;
-        
-        // Combine disk and glow
-        float intensity = (disk + totalGlow);
-        
-        // Sun color with energy
-        return uSunColor * intensity;
+
+        vec3 nDir = normalize(dir);
+        vec3 nSun = normalize(sunDir);
+        float cosTheta = dot(nDir, nSun);
+
+        float diskRadius = radians(clamp(uSunAngleMin, 0.05, 4.0)) * 0.5;
+        float glowRadius = radians(max(uSunAngleMax, uSunAngleMin * 1.6));
+        float cosDisk = cos(diskRadius);
+        float cosGlow = cos(glowRadius);
+
+        float disk = smoothstep(cosDisk, 1.0, cosTheta);
+        float glow = smoothstep(cosGlow, cosDisk, cosTheta);
+        float core = pow(max(cosTheta, 0.0), 128.0);
+        float horizonAttenuation = smoothstep(-0.20, 0.34, nSun.y);
+        float atmosphericExtinction = mix(0.42, 1.0, smoothstep(-0.05, 0.30, nSun.y));
+
+        float energy = clamp(uSunEnergy, 0.0, 32.0);
+        float radiance = 0.62 + energy * 0.16;
+
+        vec3 diskColor = uSunColor * radiance * disk * horizonAttenuation * atmosphericExtinction;
+        vec3 glowColor = uSunColor * (0.18 + energy * 0.028) * glow * horizonAttenuation;
+        vec3 coreColor = uSunColor * core * (0.14 + energy * 0.016) * atmosphericExtinction;
+
+        return diskColor + glowColor + coreColor;
+}
+
+vec3 getSunRays(vec3 dir, vec3 sunDir) {
+        if (!uSunEnabled) return vec3(0.0);
+
+        vec3 nDir = normalize(dir);
+        vec3 nSun = normalize(sunDir);
+        float sunDot = saturate(dot(nDir, nSun));
+
+        vec3 refUp = abs(nSun.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+        vec3 right = normalize(cross(refUp, nSun));
+        vec3 up = normalize(cross(nSun, right));
+
+        float x = dot(nDir, right);
+        float y = dot(nDir, up);
+        float angle = atan(y, x);
+
+        float spokeA = pow(abs(sin(angle * 12.0 + uTime * 0.12)), 10.0);
+        float spokeB = pow(abs(sin(angle * 24.0 - uTime * 0.08)), 18.0);
+        float spokes = spokeA * 0.75 + spokeB * 0.25;
+        float nearSun = smoothstep(0.80, 0.998, sunDot);
+        float farHalo = smoothstep(0.55, 0.94, sunDot);
+        float radial = max(nearSun, farHalo * 0.45);
+        float coreHalo = pow(max(sunDot, 0.0), 30.0);
+        float spokeMask = smoothstep(0.80, 0.998, sunDot);
+        float horizonAttenuation = smoothstep(-0.18, 0.30, nSun.y) * smoothstep(-0.30, 0.08, nDir.y);
+
+        float energy = clamp(uSunEnergy, 0.0, 32.0);
+        float raysStrength = (0.010 + energy * 0.0034) * horizonAttenuation;
+        vec3 raysColor = mix(vec3(1.0, 0.90, 0.76), uSunColor, 0.68);
+
+        return raysColor * raysStrength * (spokeMask * spokes + coreHalo * 0.38) * radial;
 }
 
 // ========================================
@@ -583,50 +590,59 @@ vec3 getSun(vec3 dir, vec3 sunDir) {
 
 float getClouds(vec3 dir, float depth) {
         if (!uCloudsEnabled) return 0.0;
-        
-        // Project to cloud height
-        if (abs(dir.y) < 0.01) return 0.0;
-        
-        float t = uCloudsHeight / dir.y;
-        if (t < 0.0) return 0.0; // Clouds only above
-        
+
+        if (dir.y < 0.02) return 0.0;
+        float t = uCloudsHeight / max(dir.y, 0.02);
+        if (t < 0.0) return 0.0;
+
         vec3 cloudPos = dir * t;
-        
-        // Animate clouds (different speeds for different layers)
         float time = uTime * uCloudsSpeed;
-        vec2 wind1 = vec2(time * 10.0, time * 3.0);
-        vec2 wind2 = vec2(time * 7.0, -time * 2.0);
-        
-        // Multi-layer cloud noise
-        vec2 p1 = cloudPos.xz * 0.003 + wind1 * 0.5;
-        vec2 p2 = cloudPos.xz * 0.008 + wind2 * 0.3;
-        vec2 p3 = cloudPos.xz * 0.0015;
-        
-        float n1 = fbm(p1);
-        float n2 = fbm(p2);
-        float n3 = fbm(p3);
-        
-        // Combine layers with detail
-        float cloudNoise = n1 * 0.6 + n2 * 0.3 + n3 * 0.1;
-        
-        // Coverage threshold
-        float coverage = 1.0 - uCloudsCoverage;
-        cloudNoise = smoothstep(coverage, coverage + 0.4, cloudNoise);
-        
-        // Cloud thickness/density variation
-        float thickness = fbm(p1 * 2.0) * uCloudsThickness * 0.01;
-        cloudNoise *= (0.5 + thickness);
-        
-        // Distance fade
-        float dist = length(cloudPos.xz);
-        float fadeNear = smoothstep(0.0, 200.0, dist);
-        float fadeFar = 1.0 - smoothstep(800.0, 2000.0, dist);
-        float fade = fadeNear * fadeFar;
-        
-        // Height-based density (clouds are more dense at certain altitudes)
-        float heightDensity = exp(-abs(cloudPos.y - uCloudsHeight) / (uCloudsThickness * 2.0));
-        
-        return cloudNoise * uCloudsDensity * fade * heightDensity;
+
+        vec2 baseUv = cloudPos.xz * (0.0024 + 0.0010 * saturate(1.0 - dir.y));
+        vec2 windA = vec2(0.013, 0.005) * (time * 120.0);
+        vec2 windB = vec2(-0.008, 0.011) * (time * 90.0);
+        vec2 windC = vec2(0.021, -0.014) * (time * 70.0);
+
+        float shapeNoise = fbm(baseUv + windA);
+        float detailNoise = fbm(baseUv * 3.6 + windB);
+        float erosionNoise = fbm(baseUv * 6.5 + windC);
+
+        float shape = mix(shapeNoise, detailNoise, 0.35);
+        float coverage = clamp(uCloudsCoverage, 0.05, 0.95);
+        float density = smoothstep(coverage - 0.22, coverage + 0.18, shape);
+
+        float erosion = smoothstep(0.25, 0.78, erosionNoise);
+        density *= mix(0.62, 1.22, erosion);
+
+        float thicknessFactor = clamp(uCloudsThickness / 180.0, 0.25, 6.0);
+        density *= mix(0.78, 1.20, saturate(thicknessFactor * 0.45));
+
+        float verticalFade = smoothstep(0.02, 0.25, dir.y) * (1.0 - smoothstep(0.75, 1.0, dir.y));
+        float distanceFade = 1.0 - smoothstep(900.0, 3200.0, length(cloudPos.xz));
+
+        float cloud = density * clamp(uCloudsDensity, 0.0, 1.0) * verticalFade * distanceFade;
+        return clamp(cloud, 0.0, 0.82);
+}
+
+vec3 applyTonemap(vec3 color) {
+        if (uTonemapMode == 0) {
+                return color; // Linear
+        }
+        if (uTonemapMode == 1) {
+                return color / (vec3(1.0) + color); // Reinhard
+        }
+        if (uTonemapMode == 2) {
+                // Filmic curve
+                color = max(vec3(0.0), color - 0.004);
+                return (color * (6.2 * color + 0.5)) / (color * (6.2 * color + 1.7) + 0.06);
+        }
+        // ACES
+        float a = 2.51;
+        float b = 0.03;
+        float c = 2.43;
+        float d = 0.59;
+        float e = 0.14;
+        return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, uTonemapWhite);
 }
 
 // ========================================
@@ -662,19 +678,18 @@ void main() {
                 // Add realistic sun
                 vec3 sunContrib = getSun(rayDir, sunDir);
                 color += sunContrib;
+                color += getSunRays(rayDir, sunDir);
                 
                 // Add volumetric clouds
                 float clouds = getClouds(rayDir, 1000.0);
                 if (clouds > 0.01) {
-                        // Clouds with lighting (sun-facing side brighter)
                         float sunLight = max(dot(rayDir, sunDir), 0.0);
-                        vec3 cloudCol = mix(uCloudsColor * 0.7, uCloudsColor * 1.3, sunLight);
-                        
-                        // Darken clouds on back side
-                        if (uSunEnabled) {
-                                cloudCol = mix(cloudCol * 0.6, cloudCol, sunLight);
-                        }
-                        color = mix(color, cloudCol, clouds * 0.9);
+                        vec3 cloudCol = mix(uCloudsColor * 0.72, uCloudsColor * 1.04, pow(sunLight, 0.55));
+
+                        // Cloud self-shadow + sunlight transmission (never fully blocks sun)
+                        float transmission = 1.0 - clouds * (0.55 + 0.25 * sunLight);
+                        color *= transmission;
+                        color = mix(color, cloudCol, clouds * 0.72);
                 }
                 
                 // Add fog (depth-based)
@@ -690,16 +705,19 @@ void main() {
                         color = mix(color, uFogColor, fogFactor * 0.6);
                 }
                 
-                // Tone mapping (ACES Filmic - more cinematic)
-                float a = 2.51;
-                float b = 0.03;
-                float c = 2.43;
-                float d = 0.59;
-                float e = 0.14;
-                color = clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
         }
+
+        // Shared world-environment post-process
+        color += uAmbientLightColor * clamp(uAmbientLightEnergy, 0.0, 4.0) * 0.0035;
+        color *= clamp(uTonemapExposure, 0.35, 2.5);
+        if (uGlowIntensity > 0.001) {
+                vec3 glow = max(vec3(0.0), color - vec3(uGlowThreshold)) * (uGlowIntensity * 0.2);
+                color += glow;
+        }
+        color = min(color, vec3(64.0));
+        color = applyTonemap(color);
         
-        fragColor = vec4(color, 1.0);
+        fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }`;
 
 const GRID_VERT = `#version 300 es
@@ -1748,6 +1766,7 @@ function colorToEntityId(pixel: Uint8Array): number {
 
 export class ThreeViewport extends Disposable {
         private scene: VecnScene | null = null;
+        private lastDiagnosticsSignature: string = '';
         private glCanvas: HTMLCanvasElement | null = null;
         private overlayCanvas: HTMLCanvasElement | null = null;
         private info: HTMLElement | null = null;
@@ -1888,12 +1907,37 @@ export class ThreeViewport extends Disposable {
         private _onTransformEdited = this._register(new Emitter<{ entityId: string; translation: [number, number, number] }>());
         public readonly onTransformEdited: Event<{ entityId: string; translation: [number, number, number] }> = this._onTransformEdited.event;
 
+        private static readonly SUPPORTED_COMPONENT_TYPES = new Set<string>([
+                'Transform', 'Transform2D', 'Mesh', 'Material', 'Camera',
+                'PointLight', 'DirectionalLight', 'SpotLight',
+                'CollisionShape', 'CharacterBody', 'RigidBody', 'StaticBody', 'Area', 'RayCast', 'ShapeCast',
+                'Sprite3D', 'AnimatedSprite3D', 'Label3D', 'GPUParticles3D', 'CPUParticles3D', 'MultiMeshInstance3D',
+                'Node2D', 'Sprite2D', 'AnimatedSprite2D', 'Marker2D',
+                'CharacterBody2D', 'RigidBody2D', 'StaticBody2D', 'Area2D', 'CollisionShape2D', 'RayCast2D',
+                'AudioStreamPlayer', 'AudioStreamPlayer2D', 'AudioStreamPlayer3D',
+                'AnimationPlayer', 'AnimationTree', 'Tween',
+                'NavigationRegion3D', 'NavigationAgent3D', 'NavigationObstacle3D',
+                'NavigationRegion2D', 'NavigationAgent2D', 'NavigationObstacle2D',
+                'WorldEnvironment', 'Sky', 'FogVolume', 'ReflectionProbe',
+                'Timer', 'Path3D', 'PathFollow3D', 'Path2D', 'PathFollow2D',
+                'RemoteTransform3D', 'RemoteTransform2D',
+                'Marker3D', 'VisibleOnScreenNotifier3D', 'VisibleOnScreenNotifier2D',
+                'Viewport', 'SubViewport', 'CanvasLayer',
+                'Skeleton3D', 'BoneAttachment3D',
+        ]);
+
+        private static readonly RAY_TARGET_TYPES = new Set<string>([
+                'CollisionShape', 'CharacterBody', 'RigidBody', 'StaticBody', 'Area',
+                'CollisionShape2D', 'CharacterBody2D', 'RigidBody2D', 'StaticBody2D', 'Area2D',
+        ]);
+
         constructor(
                 private container: HTMLElement,
                 vecnContent: string
         ) {
                 super();
                 this.scene = VecnParser.parse(vecnContent);
+                this.logSceneDiagnostics(this.scene);
                 this.createViewport();
         }
 
@@ -1925,6 +1969,56 @@ export class ThreeViewport extends Disposable {
                 }
 
                 this.scene = parsed;
+                this.logSceneDiagnostics(parsed);
+        }
+
+        private flattenEntities(entities: Entity[], out: Entity[] = []): Entity[] {
+                for (const entity of entities) {
+                        out.push(entity);
+                        if (entity.children.length > 0) {
+                                this.flattenEntities(entity.children, out);
+                        }
+                }
+                return out;
+        }
+
+        private buildDiagnosticsSignature(entities: Entity[]): string {
+                return entities
+                        .map(entity => `${entity.id}:${entity.components.map(c => c.type).sort().join(',')}`)
+                        .join('|');
+        }
+
+        private logSceneDiagnostics(scene: VecnScene | null): void {
+                if (!scene) return;
+
+                const entities = this.flattenEntities(scene.entities);
+                const signature = this.buildDiagnosticsSignature(entities);
+                if (signature === this.lastDiagnosticsSignature) {
+                        return;
+                }
+                this.lastDiagnosticsSignature = signature;
+
+                const rayTargets = entities.filter(entity =>
+                        entity.components.some(component => ThreeViewport.RAY_TARGET_TYPES.has(component.type))
+                ).length;
+
+                console.info(`[Scene Diagnostics] entities=${entities.length}, ray_targets=${rayTargets}`);
+
+                for (const entity of entities) {
+                        for (const component of entity.components) {
+                                if (component.type === 'RayCast' || component.type === 'RayCast2D') {
+                                        const enabled = (component as any).enabled !== false;
+                                        const raycastStatus = enabled ? (rayTargets > 0 ? 'true work' : 'true false') : 'disabled';
+                                        console.info(`[Scene Diagnostics] ${component.type.toLowerCase()} ${raycastStatus} entity=${entity.name}`);
+                                        continue;
+                                }
+
+                                const status = ThreeViewport.SUPPORTED_COMPONENT_TYPES.has(component.type)
+                                        ? 'true work'
+                                        : 'false unsupported';
+                                console.info(`[Scene Diagnostics] ${component.type} ${status} entity=${entity.name}`);
+                        }
+                }
         }
 
 
@@ -1954,15 +2048,13 @@ export class ThreeViewport extends Disposable {
                         min-width:190px;
                         max-width:220px;
                         background:rgba(28,28,29,0.94);
-                        border:1px solid #33333c;
-                        border-radius:6px;
-                        backdrop-filter:blur(20px);
+                        border:1px solid #2d2d2d;
+                        border-radius:2px;
                         color:#999;
                         font:10px/1.5 'Consolas','Courier New',monospace;
                         z-index:30;
                         pointer-events:none;
                         display:none;
-                        box-shadow:0 4px 16px rgba(0,0,0,0.4);
                 `;
                 // hudText removed - inspector is docked
 
@@ -2305,167 +2397,194 @@ export class ThreeViewport extends Disposable {
 
         private renderBackground(gl: WebGL2RenderingContext, w: number, h: number): void {
                 if (!this.bgProgram) return;
+
+                const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
+                const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
+                const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+                const normalize3 = (x: number, y: number, z: number): [number, number, number] => {
+                        const l = Math.hypot(x, y, z) || 1.0;
+                        return [x / l, y / l, z / l];
+                };
+
+                const entities = this.scene?.entities ?? [];
+                const resources = this.scene?.resources ?? [];
+                const ambientResource = resources.find((r: any) => r?.type === 'AmbientLight') as any;
+                const clearColorResource = resources.find((r: any) => r?.type === 'ClearColor') as any;
+
+                let worldEnv: any = null;
+                let sky: any = null;
+                let sunDirectionFromLight: [number, number, number] | null = null;
+                let sunColorFromLight: [number, number, number] | null = null;
+                let sunEnergyFromLight: number | null = null;
+                let hasSkyHint = false;
+
+                const findEnvComponents = (list: Entity[]): void => {
+                        for (const e of list) {
+                                const lname = (e.name || '').toLowerCase();
+                                if (lname.includes('sky') || lname.includes('небо') || lname.includes('worldenvironment')) {
+                                        hasSkyHint = true;
+                                }
+
+                                let transformRotation: [number, number, number, number] | null = null;
+                                for (const c of e.components) {
+                                        if (c.type === 'Transform') {
+                                                transformRotation = c.rotation;
+                                        } else if (c.type === 'WorldEnvironment' && !worldEnv) {
+                                                worldEnv = c;
+                                        } else if (c.type === 'Sky' && !sky) {
+                                                sky = c;
+                                        } else if (c.type === 'DirectionalLight' && !sunDirectionFromLight) {
+                                                if (transformRotation) {
+                                                        const rm = m4Create();
+                                                        m4FromQuat(rm, transformRotation);
+                                                        sunDirectionFromLight = normalize3(-rm[8], -rm[9], -rm[10]);
+                                                }
+                                                sunColorFromLight = [c.color[0], c.color[1], c.color[2]];
+                                                // Convert lux-like intensity into shader-space energy.
+                                                sunEnergyFromLight = clamp((c.illuminance ?? 12000.0) / 12000.0, 0.5, 24.0);
+                                        }
+                                }
+                                if (e.children.length) {
+                                        findEnvComponents(e.children);
+                                }
+                        }
+                };
+                findEnvComponents(entities);
+
+                const skySource = worldEnv ?? sky;
+                const clearColor = clearColorResource?.color ?? [0.17, 0.17, 0.17, 1.0];
+                const useSkyBackground = worldEnv
+                        ? (worldEnv.background_mode ?? 'Sky') === 'Sky'
+                        : Boolean(skySource || hasSkyHint || sunDirectionFromLight);
+
                 gl.useProgram(this.bgProgram);
                 gl.disable(gl.DEPTH_TEST);
                 gl.bindVertexArray(this.emptyVAO);
                 gl.uniform2f(gl.getUniformLocation(this.bgProgram, 'uResolution'), w, h);
-                
-                // Find WorldEnvironment and Sky components in scene
-                const entities = this.scene?.entities ?? [];
-                let worldEnv: any = null;
-                let sky: any = null;
-                
-                const findEnvComponents = (list: Entity[]) => {
-                        for (const e of list) {
-                                for (const c of e.components) {
-                                        if (c.type === 'WorldEnvironment') worldEnv = c;
-                                        if (c.type === 'Sky') sky = c;
-                                }
-                                findEnvComponents(e.children);
-                        }
-                };
-                findEnvComponents(entities);
-                
-                // Apply WorldEnvironment settings
+
                 if (worldEnv) {
-                        // Background mode: Sky, Color, Gradient, Canvas, Keep
                         const bgMode = worldEnv.background_mode ?? 'Sky';
-                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uBackgroundMode'), 
-                                bgMode === 'Sky' ? 0 : bgMode === 'Color' ? 1 : bgMode === 'Gradient' ? 2 : 3);
-                        
-                        // Background color for Color mode
-                        const bgColor = worldEnv.background_color ?? [0.2, 0.2, 0.2, 1.0];
-                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uBackgroundColor'), 
-                                bgColor[0], bgColor[1], bgColor[2], bgColor[3]);
-                        
-                        // Gradient colors for Gradient mode
-                        const gradTop = worldEnv.gradient_top ?? [0.4, 0.4, 0.5, 1.0];
-                        const gradBottom = worldEnv.gradient_bottom ?? [0.15, 0.15, 0.18, 1.0];
-                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uGradientTop'),
-                                gradTop[0], gradTop[1], gradTop[2], gradTop[3]);
-                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uGradientBottom'),
-                                gradBottom[0], gradBottom[1], gradBottom[2], gradBottom[3]);
-                        
-                        // Ambient light
-                        const ambEnergy = worldEnv.ambient_light_energy ?? 1.0;
-                        const ambColor = worldEnv.ambient_light_color ?? [0.5, 0.5, 0.5, 1.0];
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uAmbientLightColor'),
-                                ambColor[0] * ambEnergy, ambColor[1] * ambEnergy, ambColor[2] * ambEnergy);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uAmbientLightEnergy'), ambEnergy);
-                        
-                        // Tonemap
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uTonemapExposure'), worldEnv.tonemap_exposure ?? 1.0);
-                        
-                        // Glow/Bloom
+                        const resolvedMode = (bgMode === 'Canvas' || bgMode === 'Keep') ? 'Color' : bgMode;
+                        const bgModeInt = resolvedMode === 'Sky' ? 0 : resolvedMode === 'Color' ? 1 : resolvedMode === 'Gradient' ? 2 : 1;
+                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uBackgroundMode'), bgModeInt);
+
+                        const bgColor = worldEnv.background_color ?? clearColor;
+                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uBackgroundColor'), bgColor[0], bgColor[1], bgColor[2], bgColor[3] ?? 1.0);
+
+                        const gradTop = worldEnv.gradient_top ?? [0.22, 0.30, 0.41, 1.0];
+                        const gradBottom = worldEnv.gradient_bottom ?? [0.56, 0.61, 0.67, 1.0];
+                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uGradientTop'), gradTop[0], gradTop[1], gradTop[2], gradTop[3] ?? 1.0);
+                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uGradientBottom'), gradBottom[0], gradBottom[1], gradBottom[2], gradBottom[3] ?? 1.0);
+
+                        const ambColor = worldEnv.ambient_light_color ?? ambientResource?.color ?? [0.44, 0.47, 0.52, 1.0];
+                        const ambEnergy = worldEnv.ambient_light_energy ?? ambientResource?.brightness ?? 0.42;
+                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uAmbientLightColor'), ambColor[0], ambColor[1], ambColor[2]);
+                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uAmbientLightEnergy'), clamp(ambEnergy, 0.0, 4.0));
+
+                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uTonemapExposure'), clamp(worldEnv.tonemap_exposure ?? 0.88, 0.35, 2.5));
+                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uTonemapWhite'), clamp(worldEnv.tonemap_white ?? 1.25, 0.6, 4.0));
+                        const tonemapMode = worldEnv.tonemap_mode ?? 'Filmic';
+                        const tonemapModeInt =
+                                tonemapMode === 'Linear' ? 0 :
+                                tonemapMode === 'Reinhard' ? 1 :
+                                tonemapMode === 'Filmic' ? 2 : 3;
+                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uTonemapMode'), tonemapModeInt);
+
                         if (worldEnv.glow_enabled) {
-                                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGlowIntensity'), worldEnv.glow_intensity ?? 0.8);
-                                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGlowThreshold'), worldEnv.glow_threshold ?? 0.9);
+                                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGlowIntensity'), clamp(worldEnv.glow_intensity ?? 0.3, 0.0, 1.0));
+                                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGlowThreshold'), clamp(worldEnv.glow_threshold ?? 1.1, 0.2, 2.0));
+                        } else {
+                                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGlowIntensity'), 0.0);
+                                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGlowThreshold'), 1.0);
                         }
                 } else {
-                        // No WorldEnvironment - use neutral gray background (no sky/sun)
-                        // Background mode 1 = solid color
-                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uBackgroundMode'), 1);
-                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uBackgroundColor'), 0.18, 0.18, 0.18, 1.0);
-                        // Gradient uniforms (not used but must be set)
-                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uGradientTop'), 0.3, 0.3, 0.35, 1.0);
-                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uGradientBottom'), 0.15, 0.15, 0.18, 1.0);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uAmbientLightColor'), 0.4, 0.4, 0.4);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uAmbientLightEnergy'), 1.0);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uTonemapExposure'), 1.0);
+                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uBackgroundMode'), useSkyBackground ? 0 : 1);
+                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uBackgroundColor'), clearColor[0], clearColor[1], clearColor[2], clearColor[3] ?? 1.0);
+                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uGradientTop'), 0.20, 0.30, 0.46, 1.0);
+                        gl.uniform4f(gl.getUniformLocation(this.bgProgram, 'uGradientBottom'), 0.56, 0.63, 0.73, 1.0);
+
+                        const ambColor = ambientResource?.color ?? [0.42, 0.46, 0.52];
+                        const ambEnergy = ambientResource?.brightness ?? 0.42;
+                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uAmbientLightColor'), ambColor[0], ambColor[1], ambColor[2]);
+                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uAmbientLightEnergy'), clamp(ambEnergy, 0.0, 3.0));
+                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uTonemapExposure'), 0.86);
+                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uTonemapWhite'), 1.2);
+                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uTonemapMode'), 2);
                         gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGlowIntensity'), 0.0);
                         gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGlowThreshold'), 1.0);
                 }
-                
-                // Camera uniforms
-                gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uCameraPos'), 
+
+                gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uCameraPos'),
                         this.camera.position[0], this.camera.position[1], this.camera.position[2]);
                 gl.uniformMatrix4fv(gl.getUniformLocation(this.bgProgram, 'uInvViewProj'), false, this.camera.invVpMatrix);
-                
-                // Sky colors
-                if (sky) {
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSkyTopColor'), 
-                                sky.sky_top_color?.[0] ?? 0.35, sky.sky_top_color?.[1] ?? 0.55, sky.sky_top_color?.[2] ?? 0.85);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSkyHorizonColor'),
-                                sky.sky_horizon_color?.[0] ?? 0.65, sky.sky_horizon_color?.[1] ?? 0.78, sky.sky_horizon_color?.[2] ?? 0.90);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSkyCurve'), sky.sky_curve ?? 0.15);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSkyEnergy'), sky.sky_energy ?? 1.0);
-                        
-                        // Ground colors
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uGroundBottomColor'),
-                                sky.ground_bottom_color?.[0] ?? 0.12, sky.ground_bottom_color?.[1] ?? 0.10, sky.ground_bottom_color?.[2] ?? 0.08);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uGroundHorizonColor'),
-                                sky.ground_horizon_color?.[0] ?? 0.35, sky.ground_horizon_color?.[1] ?? 0.30, sky.ground_horizon_color?.[2] ?? 0.25);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGroundCurve'), sky.ground_curve ?? 0.1);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGroundEnergy'), sky.ground_energy ?? 1.0);
-                        
-                        // Sun - with enable/disable toggle
-                        const sunEnabled = sky.sun_enabled !== false; // Default true
-                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uSunEnabled'), sunEnabled ? 1 : 0);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSunDirection'),
-                                sky.sun_position?.[0] ?? 0.5, sky.sun_position?.[1] ?? 0.8, sky.sun_position?.[2] ?? -0.3);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSunColor'),
-                                sky.sun_color?.[0] ?? 1.0, sky.sun_color?.[1] ?? 0.95, sky.sun_color?.[2] ?? 0.85);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSunEnergy'), sunEnabled ? (sky.sun_energy ?? 16.0) : 0.0);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSunAngleMin'), sky.sun_angle_min ?? 0.5);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSunAngleMax'), sky.sun_angle_max ?? 2.0);
-                        
-                        // Clouds
-                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uCloudsEnabled'), sky.clouds_enabled ? 1 : 0);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uCloudsColor'),
-                                sky.clouds_color?.[0] ?? 1.0, sky.clouds_color?.[1] ?? 1.0, sky.clouds_color?.[2] ?? 1.0);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsDensity'), sky.clouds_density ?? 0.5);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsSpeed'), sky.clouds_speed ?? 0.1);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsHeight'), sky.clouds_height ?? 500.0);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsCoverage'), sky.clouds_coverage ?? 0.5);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsThickness'), sky.clouds_thickness ?? 100.0);
-                        
-                        // Fog
-                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uFogEnabled'), sky.fog_enabled ? 1 : 0);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uFogColor'),
-                                sky.fog_color?.[0] ?? 0.7, sky.fog_color?.[1] ?? 0.75, sky.fog_color?.[2] ?? 0.80);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uFogDensity'), sky.fog_density ?? 0.001);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uFogDepthBegin'), sky.fog_depth_begin ?? 10.0);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uFogDepthEnd'), sky.fog_depth_end ?? 100.0);
-                } else {
-                        // Default sky values (nice blue sky)
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSkyTopColor'), 0.35, 0.55, 0.85);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSkyHorizonColor'), 0.65, 0.78, 0.90);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSkyCurve'), 0.15);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSkyEnergy'), 1.0);
-                        
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uGroundBottomColor'), 0.12, 0.10, 0.08);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uGroundHorizonColor'), 0.35, 0.30, 0.25);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGroundCurve'), 0.1);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGroundEnergy'), 1.0);
-                        
-                        // Default sun (enabled by default)
-                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uSunEnabled'), 1);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSunDirection'), 0.5, 0.8, -0.3);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSunColor'), 1.0, 0.95, 0.85);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSunEnergy'), 16.0);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSunAngleMin'), 0.5);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSunAngleMax'), 2.0);
-                        
-                        // No clouds by default
-                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uCloudsEnabled'), 0);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uCloudsColor'), 1.0, 1.0, 1.0);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsDensity'), 0.5);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsSpeed'), 0.1);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsHeight'), 500.0);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsCoverage'), 0.5);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsThickness'), 100.0);
-                        
-                        // No fog by default
-                        gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uFogEnabled'), 0);
-                        gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uFogColor'), 0.7, 0.75, 0.80);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uFogDensity'), 0.001);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uFogDepthBegin'), 10.0);
-                        gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uFogDepthEnd'), 100.0);
-                }
-                
-                // Time for animations
+
+                const sunDirection = skySource?.sun_position
+                        ? normalize3(skySource.sun_position[0], skySource.sun_position[1], skySource.sun_position[2])
+                        : (sunDirectionFromLight ?? [0.35, 0.78, -0.22]);
+                const sunHeight = clamp01(sunDirection[1] * 0.5 + 0.5);
+                const dusk = Math.pow(1.0 - sunHeight, 1.35);
+
+                const defaultSkyTop: [number, number, number] = [
+                        lerp(0.20, 0.14, dusk),
+                        lerp(0.33, 0.22, dusk),
+                        lerp(0.56, 0.32, dusk),
+                ];
+                const defaultSkyHorizon: [number, number, number] = [
+                        lerp(0.66, 0.50, dusk),
+                        lerp(0.74, 0.44, dusk),
+                        lerp(0.84, 0.33, dusk),
+                ];
+                const defaultGroundBottom: [number, number, number] = [0.10, 0.09, 0.08];
+                const defaultGroundHorizon: [number, number, number] = [
+                        lerp(0.32, 0.28, dusk),
+                        lerp(0.30, 0.23, dusk),
+                        lerp(0.26, 0.17, dusk),
+                ];
+
+                const skyTop = skySource?.sky_top_color ?? [...defaultSkyTop, 1.0];
+                const skyHorizon = skySource?.sky_horizon_color ?? [...defaultSkyHorizon, 1.0];
+                const groundBottom = skySource?.ground_bottom_color ?? [...defaultGroundBottom, 1.0];
+                const groundHorizon = skySource?.ground_horizon_color ?? [...defaultGroundHorizon, 1.0];
+
+                gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSkyTopColor'), skyTop[0], skyTop[1], skyTop[2]);
+                gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSkyHorizonColor'), skyHorizon[0], skyHorizon[1], skyHorizon[2]);
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSkyCurve'), clamp(skySource?.sky_curve ?? 0.58, 0.2, 2.0));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSkyEnergy'), clamp(skySource?.sky_energy ?? 1.02, 0.2, 2.0));
+
+                gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uGroundBottomColor'), groundBottom[0], groundBottom[1], groundBottom[2]);
+                gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uGroundHorizonColor'), groundHorizon[0], groundHorizon[1], groundHorizon[2]);
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGroundCurve'), clamp(skySource?.ground_curve ?? 0.52, 0.1, 2.0));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGroundEnergy'), clamp(skySource?.ground_energy ?? 0.96, 0.2, 2.0));
+
+                const sunEnabled = skySource ? (skySource.sun_enabled !== false) : useSkyBackground;
+                const sunColor = skySource?.sun_color ?? [...(sunColorFromLight ?? [1.0, 0.96, 0.88]), 1.0];
+                const mappedSunEnergy = skySource?.sun_energy ?? sunEnergyFromLight ?? 3.6;
+                gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uSunEnabled'), sunEnabled ? 1 : 0);
+                gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSunDirection'), sunDirection[0], sunDirection[1], sunDirection[2]);
+                gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSunColor'), sunColor[0], sunColor[1], sunColor[2]);
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSunEnergy'), sunEnabled ? clamp(mappedSunEnergy, 0.0, 24.0) : 0.0);
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSunAngleMin'), clamp(skySource?.sun_angle_min ?? 0.28, 0.05, 4.0));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uSunAngleMax'), clamp(skySource?.sun_angle_max ?? 1.45, 0.1, 6.0));
+
+                const cloudsEnabled = skySource ? Boolean(skySource.clouds_enabled) : useSkyBackground;
+                const cloudsColor = skySource?.clouds_color ?? [0.95, 0.94, 0.92, 1.0];
+                gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uCloudsEnabled'), cloudsEnabled ? 1 : 0);
+                gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uCloudsColor'), cloudsColor[0], cloudsColor[1], cloudsColor[2]);
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsDensity'), clamp(skySource?.clouds_density ?? 0.42, 0.0, 1.0));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsSpeed'), clamp(skySource?.clouds_speed ?? 0.015, 0.0, 1.0));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsHeight'), clamp(skySource?.clouds_height ?? 1300.0, 50.0, 8000.0));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsCoverage'), clamp(skySource?.clouds_coverage ?? 0.58, 0.05, 0.95));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsThickness'), clamp(skySource?.clouds_thickness ?? 260.0, 20.0, 1500.0));
+
+                gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uFogEnabled'), skySource?.fog_enabled ? 1 : 0);
+                const fogColor = skySource?.fog_color ?? [0.68, 0.72, 0.78, 1.0];
+                gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uFogColor'), fogColor[0], fogColor[1], fogColor[2]);
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uFogDensity'), clamp(skySource?.fog_density ?? 0.00035, 0.0, 0.05));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uFogDepthBegin'), clamp(skySource?.fog_depth_begin ?? 80.0, 0.0, 10000.0));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uFogDepthEnd'), clamp(skySource?.fog_depth_end ?? 3500.0, 1.0, 100000.0));
+
                 gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uTime'), performance.now() / 1000.0);
-                
+
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
                 gl.enable(gl.DEPTH_TEST);
                 gl.bindVertexArray(null);
@@ -2570,7 +2689,7 @@ export class ThreeViewport extends Disposable {
                                         // Type guard: now TypeScript knows pl is PointLightComponent
                                         lightPos = v3(item.worldMatrix[12], item.worldMatrix[13], item.worldMatrix[14]);
                                         lightColor = v3(pl.color[0], pl.color[1], pl.color[2]);
-                                        lightIntensity = pl.intensity / 1000.0;
+                                        lightIntensity = Math.max(0.05, Math.min((pl.intensity ?? 1000) / 1200.0, 6.0));
                                         hasLight = true;
                                         break;
                                 }
@@ -2583,7 +2702,8 @@ export class ThreeViewport extends Disposable {
                                         v3Normalize(fwd, fwd);
                                         lightPos = fwd; // Reuse as direction
                                         lightColor = v3(dl.color[0], dl.color[1], dl.color[2]);
-                                        lightIntensity = dl.illuminance;
+                                        // Convert large lux-like values to shader-space intensity to avoid white clipping.
+                                        lightIntensity = Math.max(0.08, Math.min((dl.illuminance ?? 12000) / 20000.0, 4.0));
                                         hasLight = true;
                                         break;
                                 }
@@ -2953,6 +3073,10 @@ export class ThreeViewport extends Disposable {
                         drawMatrix[4] *= shapeScale[1]; drawMatrix[5] *= shapeScale[1]; drawMatrix[6] *= shapeScale[1];
                         drawMatrix[8] *= shapeScale[2]; drawMatrix[9] *= shapeScale[2]; drawMatrix[10] *= shapeScale[2];
 
+                        // Helper passes may switch shaders inside this loop.
+                        // Re-bind mesh/pick program right before writing uniforms for this entity.
+                        gl.useProgram(prog);
+
                         if (pickMode) {
                                 m4Multiply(mvp, this.camera.vpMatrix, drawMatrix);
                                 gl.uniformMatrix4fv(gl.getUniformLocation(prog, 'uMVP'), false, mvp);
@@ -3092,10 +3216,8 @@ export class ThreeViewport extends Disposable {
                         this.renderWireframeHelper(gl, rangeM, this.wireframeSphereVAO, GIZMO_COLORS.pointLight, 0.4);
                 }
                 
-                // Light rays (Godot-style)
-                if (!pickMode && this.pointLightRaysVAO) {
-                        this.renderWireframeHelper(gl, worldMatrix, this.pointLightRaysVAO, GIZMO_COLORS.pointLight, 0.8);
-                }
+                // Keep a read so TS doesn't treat the helper buffer as dead code while rays are disabled.
+                void this.pointLightRaysVAO;
         }
 
         private renderDirectionalLightHelper(gl: WebGL2RenderingContext, worldMatrix: Mat4, entityIndex: number, pickMode: boolean): void {
@@ -3116,10 +3238,10 @@ export class ThreeViewport extends Disposable {
 
                 this.renderHelperMesh(gl, prog, drawMatrix, this.sphereGeo, pickMode, pickColor, GIZMO_COLORS.directionalLight, 0.0, 0.2);
 
-                // Professional sun rays wireframe (Godot-style)
-                if (!pickMode && this.sunRaysVAO) {
-                        this.renderWireframeHelper(gl, worldMatrix, this.sunRaysVAO, GIZMO_COLORS.directionalLight, 0.9);
-                } else if (pickMode) {
+                // Keep a read so TS doesn't treat the helper buffer as dead code while rays are disabled.
+                void this.sunRaysVAO;
+                // Keep pick-only helper handles without rendering decorative rays.
+                if (pickMode) {
                         // Fallback for picking - use solid cubes
                         const rayScale = 0.06;
                         const rayDist = 0.55;

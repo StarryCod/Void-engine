@@ -265,17 +265,26 @@ export function setupCargoIPC(): void {
 
 			gameProcesses.set(windowId, watchProc);
 
+			let settled = false;
+			const resolveOnce = (result: { success: boolean; error?: string }) => {
+				if (!settled) {
+					settled = true;
+					resolve(result);
+				}
+			};
+
+			watchProc.once('spawn', () => {
+				event.sender.send('vscode:cargo-build-progress', {
+					stage: 'finished',
+					message: 'Cargo watch started',
+					progress: 100
+				});
+				resolveOnce({ success: true });
+			});
+
 			watchProc.stdout?.on('data', (data: Buffer) => {
 				const text = data.toString();
 				console.log(`[Cargo Watch] ${text}`);
-
-				if (text.includes('Watching')) {
-					event.sender.send('vscode:cargo-build-progress', {
-						stage: 'finished',
-						message: 'Cargo watch started',
-						progress: 100
-					});
-				}
 			});
 
 			watchProc.stderr?.on('data', (data: Buffer) => {
@@ -286,6 +295,17 @@ export function setupCargoIPC(): void {
 			watchProc.on('close', (code) => {
 				gameProcesses.delete(windowId);
 				console.log(`[Cargo IPC] cargo watch exited with code ${code}`);
+				if (code !== 0) {
+					event.sender.send('vscode:cargo-build-progress', {
+						stage: 'error',
+						message: `cargo watch exited with code ${code}`,
+						progress: 0
+					});
+				}
+				resolveOnce({
+					success: code === 0,
+					error: code === 0 ? undefined : `cargo watch exited with code ${code}`
+				});
 			});
 
 			watchProc.on('error', (error) => {
@@ -296,7 +316,7 @@ export function setupCargoIPC(): void {
 					progress: 0
 				});
 				console.error('[Cargo IPC] Watch error:', error);
-				resolve({ success: false, error: error.message });
+				resolveOnce({ success: false, error: error.message });
 			});
 		});
 	});

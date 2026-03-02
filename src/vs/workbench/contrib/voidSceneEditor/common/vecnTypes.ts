@@ -510,6 +510,36 @@ export interface WorldEnvironmentComponent {
         glow_enabled: boolean;
         glow_intensity: number;
         glow_threshold: number;
+        // Sky settings (merged from Sky node for single-node workflow)
+        sky_material?: 'ProceduralSky' | 'PanoramaSky' | 'PhysicalSky';
+        radiance_size?: 'Size256' | 'Size512' | 'Size1024' | 'Size2048';
+        sky_top_color?: [number, number, number, number];
+        sky_horizon_color?: [number, number, number, number];
+        sky_curve?: number;
+        sky_energy?: number;
+        ground_bottom_color?: [number, number, number, number];
+        ground_horizon_color?: [number, number, number, number];
+        ground_curve?: number;
+        ground_energy?: number;
+        sun_enabled?: boolean;
+        sun_angle_min?: number;
+        sun_angle_max?: number;
+        sun_curve?: number;
+        sun_energy?: number;
+        sun_color?: [number, number, number, number];
+        sun_position?: [number, number, number];
+        clouds_enabled?: boolean;
+        clouds_color?: [number, number, number, number];
+        clouds_density?: number;
+        clouds_speed?: number;
+        clouds_height?: number;
+        clouds_coverage?: number;
+        clouds_thickness?: number;
+        fog_enabled?: boolean;
+        fog_density?: number;
+        fog_depth_begin?: number;
+        fog_depth_end?: number;
+        fog_color?: [number, number, number, number];
 }
 
 export interface SkyComponent {

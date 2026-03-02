@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 // FILE: vscode/src/vs/workbench/contrib/voidSceneEditor/browser/inspectorView.ts
 // FULL REPLACEMENT - Godot-Style Inspector
 
@@ -17,56 +22,56 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 // ═══════════════════════════════════════════════════════════════════════════════
 const COLORS = {
         // Backgrounds
-        background: '#1e1e1e',
-        sectionHeader: '#2d2d30',
-        sectionBody: '#222222',
-        inputBg: '#2a2a2e',
-        inputFocus: '#1a1a1e',
-        
+        background: '#191919',
+        sectionHeader: '#202020',
+        sectionBody: '#1c1c1c',
+        inputBg: '#212121',
+        inputFocus: '#282828',
+
         // Borders
-        border: '#3a3a3e',
-        borderLight: '#404040',
-        focusBorder: '#4a9eff',
-        
+        border: '#353535',
+        borderLight: '#474747',
+        focusBorder: '#d47a4a',
+
         // Text
-        labelText: '#8a8a8a',
+        labelText: '#9a9a9a',
         valueText: '#dddddd',
-        dimmedText: '#555555',
+        dimmedText: '#676767',
         hoverText: '#ffffff',
-        
-        // Component Accents
-        transformAccent: '#4a9eff',
-        meshAccent: '#8bc34a',
-        materialAccent: '#e91e63',
-        cameraAccent: '#00bcd4',
-        pointLightAccent: '#ffeb3b',
-        directionalLightAccent: '#ff9800',
-        spotLightAccent: '#ffc107',
-        collisionAccent: '#9c27b0',
-        characterBodyAccent: '#2196f3',
-        rigidBodyAccent: '#4caf50',
-        staticBodyAccent: '#795548',
-        areaAccent: '#009688',
-        rayCastAccent: '#f44336',
-        worldEnvironmentAccent: '#3f51b5',
-        skyAccent: '#03a9f4',
-        particleAccent: '#ff5722',
-        audioAccent: '#9c27b0',
-        audio3DAccent: '#673ab7',
-        animationAccent: '#e91e63',
-        timerAccent: '#607d8b',
-        markerAccent: '#ff9800',
-        
-        // Axis Colors (RGB)
-        axisX: '#ff6b6b',
-        axisY: '#69db7c',
-        axisZ: '#74c0fc',
-        
-        // UI Elements
-        toggleOn: '#4a9eff',
+
+        // Component accents (warm + neutral, no blue)
+        transformAccent: '#d47a4a',
+        meshAccent: '#a5a072',
+        materialAccent: '#b28b74',
+        cameraAccent: '#8f8f8f',
+        pointLightAccent: '#d6aa66',
+        directionalLightAccent: '#c79658',
+        spotLightAccent: '#d1a06a',
+        collisionAccent: '#a07663',
+        characterBodyAccent: '#9b8b7a',
+        rigidBodyAccent: '#8ea06f',
+        staticBodyAccent: '#8c7b6d',
+        areaAccent: '#879b74',
+        rayCastAccent: '#ba7f66',
+        worldEnvironmentAccent: '#9a907f',
+        skyAccent: '#9b9687',
+        particleAccent: '#c27c5a',
+        audioAccent: '#9d866f',
+        audio3DAccent: '#8f7b6f',
+        animationAccent: '#b87d67',
+        timerAccent: '#8f8f8f',
+        markerAccent: '#c8965d',
+
+        // Axis colors
+        axisX: '#d47a4a',
+        axisY: '#8ea06f',
+        axisZ: '#a1a1a1',
+
+        // UI elements
+        toggleOn: '#d47a4a',
         toggleOff: '#3a3a3a',
-        sliderTrack: '#383838',
-        sliderThumb: '#4a9eff',
+        sliderTrack: '#3a3a3a',
+        sliderThumb: '#c88a67',
 };
 
 export class InspectorView extends Disposable {
@@ -218,12 +223,11 @@ export class InspectorView extends Disposable {
                         color: ${COLORS.labelText};
                         background: ${COLORS.inputBg};
                         border: 1px solid ${COLORS.borderLight};
-                        border-radius: 3px;
+                        border-radius: 8px;
                         cursor: pointer;
-                        transition: all 0.15s;
                 `;
                 addBtn.onmouseenter = () => {
-                        addBtn.style.background = COLORS.focusBorder;
+                        addBtn.style.background = '#272727';
                         addBtn.style.color = COLORS.hoverText;
                         addBtn.style.borderColor = COLORS.focusBorder;
                 };
@@ -361,23 +365,29 @@ export class InspectorView extends Disposable {
         // SECTION RENDERER - Collapsible Component Sections
         // ═══════════════════════════════════════════════════════════════════════════════
         private section(c: Component): void {
+                if (c.type === 'Sky') {
+                        return;
+                }
                 const accentColor = this.getComponentColor(c.type);
 
                 // Section container
                 const sec = this.div(this.body, `
-                        border-bottom: 1px solid ${COLORS.border};
+                        margin: 6px 8px;
+                        border: 1px solid ${COLORS.border};
+                        border-radius: 10px;
+                        overflow: hidden;
                 `);
 
                 // Header with colored left border
                 const hdr = this.div(sec, `
-                        padding: 6px 10px;
+                        padding: 7px 10px;
                         background: ${COLORS.sectionHeader};
                         display: flex;
                         align-items: center;
                         gap: 6px;
                         cursor: pointer;
                         user-select: none;
-                        border-left: 3px solid ${accentColor};
+                        border-left: 2px solid ${accentColor};
                         transition: background 0.1s;
                 `);
                 hdr.className = 'vi-section-header';
@@ -420,7 +430,7 @@ export class InspectorView extends Disposable {
 
                 // Section body
                 const bd = this.div(sec, `
-                        padding: 6px 10px 8px;
+                        padding: 8px 10px 10px;
                         background: ${COLORS.sectionBody};
                 `);
                 bd.className = 'vi-section-body';
@@ -434,7 +444,7 @@ export class InspectorView extends Disposable {
 
                 // Hover effect
                 hdr.onmouseenter = () => {
-                        hdr.style.background = '#353538';
+                        hdr.style.background = '#292929';
                 };
                 hdr.onmouseleave = () => {
                         hdr.style.background = COLORS.sectionHeader;
@@ -484,7 +494,6 @@ export class InspectorView extends Disposable {
                         case 'WorldEnvironment': this.trWorldEnvironment(bd, c, commit); break;
                         case 'FogVolume': this.trFogVolume(bd, c, commit); break;
                         case 'ReflectionProbe': this.trReflectionProbe(bd, c, commit); break;
-                        case 'Sky': this.trSky(bd, c, commit); break;
                         // Paths
                         case 'Path3D': this.trPath3D(bd, c, commit); break;
                         case 'PathFollow3D': this.trPathFollow3D(bd, c, commit); break;
@@ -500,7 +509,6 @@ export class InspectorView extends Disposable {
                         case 'Skeleton3D': this.trSkeleton3D(bd, c, commit); break;
                         case 'BoneAttachment3D': this.trBoneAttachment3D(bd, c, commit); break;
                         // Additional 2D nodes
-                        case 'Transform2D': this.trNode2D(bd, c, commit); break;
                         case 'CharacterBody2D': this.trCharacterBody2D(bd, c, commit); break;
                         case 'RigidBody2D': this.trRigidBody2D(bd, c, commit); break;
                         case 'StaticBody2D': this.trStaticBody2D(bd, c, commit); break;
@@ -882,15 +890,62 @@ export class InspectorView extends Disposable {
                         v => { c.background_mode = v; commit(); }
                 );
                 
-                // Color mode settings
-                if (c.background_mode === 'Color') {
+                if ((c.background_mode ?? 'Sky') === 'Color') {
                         this.colorRow(p, 'Color', c.background_color ?? [0.05, 0.05, 0.1, 1], v => { c.background_color = v; commit(); });
                 }
                 
-                // Gradient mode settings
-                if (c.background_mode === 'Gradient') {
+                if ((c.background_mode ?? 'Sky') === 'Gradient') {
                         this.colorRow(p, 'Top', c.gradient_top ?? [0.4, 0.4, 0.5, 1], v => { c.gradient_top = v; commit(); });
                         this.colorRow(p, 'Bottom', c.gradient_bottom ?? [0.15, 0.15, 0.18, 1], v => { c.gradient_bottom = v; commit(); });
+                }
+
+                if ((c.background_mode ?? 'Sky') === 'Sky') {
+                        this.sectionHeader(p, 'Sky');
+                        this.dropdownRow(p, 'Material', c.sky_material ?? 'ProceduralSky',
+                                ['ProceduralSky', 'PanoramaSky', 'PhysicalSky'],
+                                v => { c.sky_material = v; commit(); }
+                        );
+                        this.colorRow(p, 'Top Color', c.sky_top_color ?? [0.35, 0.55, 0.85, 1], v => { c.sky_top_color = v; commit(); });
+                        this.colorRow(p, 'Horizon', c.sky_horizon_color ?? [0.65, 0.78, 0.90, 1], v => { c.sky_horizon_color = v; commit(); });
+                        this.sliderRow(p, 'Curve', c.sky_curve ?? 0.15, 0, 2, 0.05, v => { c.sky_curve = v; commit(); });
+                        this.sliderRow(p, 'Energy', c.sky_energy ?? 1.0, 0, 8, 0.1, v => { c.sky_energy = v; commit(); });
+
+                        this.sectionHeader(p, 'Ground');
+                        this.colorRow(p, 'Bottom', c.ground_bottom_color ?? [0.12, 0.10, 0.08, 1], v => { c.ground_bottom_color = v; commit(); });
+                        this.colorRow(p, 'Horizon', c.ground_horizon_color ?? [0.35, 0.30, 0.25, 1], v => { c.ground_horizon_color = v; commit(); });
+                        this.sliderRow(p, 'Curve', c.ground_curve ?? 0.1, 0, 2, 0.05, v => { c.ground_curve = v; commit(); });
+                        this.sliderRow(p, 'Energy', c.ground_energy ?? 1.0, 0, 4, 0.1, v => { c.ground_energy = v; commit(); });
+
+                        this.sectionHeader(p, 'Sun');
+                        this.checkboxRow(p, 'Enabled', c.sun_enabled ?? true, v => { c.sun_enabled = v; commit(); });
+                        if (c.sun_enabled ?? true) {
+                                this.sliderRow(p, 'Angle Min', c.sun_angle_min ?? 0.5, 0, 90, 0.5, v => { c.sun_angle_min = v; commit(); });
+                                this.sliderRow(p, 'Angle Max', c.sun_angle_max ?? 2.0, 0, 90, 0.5, v => { c.sun_angle_max = v; commit(); });
+                                this.sliderRow(p, 'Curve', c.sun_curve ?? 0.05, 0, 1, 0.01, v => { c.sun_curve = v; commit(); });
+                                this.sliderRow(p, 'Energy', c.sun_energy ?? 16.0, 0, 100, 1, v => { c.sun_energy = v; commit(); });
+                                this.colorRow(p, 'Color', c.sun_color ?? [1.0, 0.95, 0.85, 1], v => { c.sun_color = v; commit(); });
+                                this.vec3Row(p, 'Direction', c.sun_position ?? [0.5, 0.8, -0.3], v => { c.sun_position = v; commit(); }, 2);
+                        }
+
+                        this.sectionHeader(p, 'Clouds');
+                        this.checkboxRow(p, 'Enabled', c.clouds_enabled ?? false, v => { c.clouds_enabled = v; commit(); });
+                        if (c.clouds_enabled ?? false) {
+                                this.colorRow(p, 'Color', c.clouds_color ?? [1.0, 1.0, 1.0, 1], v => { c.clouds_color = v; commit(); });
+                                this.sliderRow(p, 'Density', c.clouds_density ?? 0.5, 0, 2, 0.05, v => { c.clouds_density = v; commit(); });
+                                this.sliderRow(p, 'Speed', c.clouds_speed ?? 0.1, 0, 1, 0.01, v => { c.clouds_speed = v; commit(); });
+                                this.sliderRow(p, 'Height', c.clouds_height ?? 500, 100, 2000, 50, v => { c.clouds_height = v; commit(); });
+                                this.sliderRow(p, 'Coverage', c.clouds_coverage ?? 0.5, 0, 1, 0.05, v => { c.clouds_coverage = v; commit(); });
+                                this.sliderRow(p, 'Thickness', c.clouds_thickness ?? 100, 10, 500, 10, v => { c.clouds_thickness = v; commit(); });
+                        }
+
+                        this.sectionHeader(p, 'Fog');
+                        this.checkboxRow(p, 'Enabled', c.fog_enabled ?? false, v => { c.fog_enabled = v; commit(); });
+                        if (c.fog_enabled ?? false) {
+                                this.colorRow(p, 'Color', c.fog_color ?? [0.7, 0.75, 0.80, 1], v => { c.fog_color = v; commit(); });
+                                this.sliderRow(p, 'Density', c.fog_density ?? 0.001, 0, 0.1, 0.001, v => { c.fog_density = v; commit(); });
+                                this.sliderRow(p, 'Depth Begin', c.fog_depth_begin ?? 10, 0, 500, 10, v => { c.fog_depth_begin = v; commit(); });
+                                this.sliderRow(p, 'Depth End', c.fog_depth_end ?? 100, 0, 2000, 50, v => { c.fog_depth_end = v; commit(); });
+                        }
                 }
                 
                 // Ambient Light Section
@@ -906,6 +961,7 @@ export class InspectorView extends Disposable {
                         v => { c.tonemap_mode = v; commit(); }
                 );
                 this.sliderRow(p, 'Exposure', c.tonemap_exposure ?? 1.0, 0, 8, 0.1, v => { c.tonemap_exposure = v; commit(); });
+                this.sliderRow(p, 'White', c.tonemap_white ?? 1.0, 0.1, 8, 0.1, v => { c.tonemap_white = v; commit(); });
                 
                 // SSAO Section
                 this.sectionHeader(p, 'SSAO');
@@ -924,62 +980,6 @@ export class InspectorView extends Disposable {
                 }
         }
 
-        private trSky(p: HTMLElement, c: any, commit: () => void): void {
-                // Material Type
-                this.dropdownRow(p, 'Material', c.sky_material ?? 'ProceduralSky',
-                        ['ProceduralSky', 'PanoramaSky', 'PhysicalSky'],
-                        v => { c.sky_material = v; commit(); }
-                );
-                
-                // Sky Colors Section
-                this.sectionHeader(p, 'Sky');
-                this.colorRow(p, 'Top Color', c.sky_top_color ?? [0.35, 0.55, 0.85, 1], v => { c.sky_top_color = v; commit(); });
-                this.colorRow(p, 'Horizon', c.sky_horizon_color ?? [0.65, 0.78, 0.90, 1], v => { c.sky_horizon_color = v; commit(); });
-                this.sliderRow(p, 'Curve', c.sky_curve ?? 0.15, 0, 2, 0.05, v => { c.sky_curve = v; commit(); });
-                this.sliderRow(p, 'Energy', c.sky_energy ?? 1.0, 0, 8, 0.1, v => { c.sky_energy = v; commit(); });
-                
-                // Ground Section
-                this.sectionHeader(p, 'Ground');
-                this.colorRow(p, 'Bottom', c.ground_bottom_color ?? [0.12, 0.10, 0.08, 1], v => { c.ground_bottom_color = v; commit(); });
-                this.colorRow(p, 'Horizon', c.ground_horizon_color ?? [0.35, 0.30, 0.25, 1], v => { c.ground_horizon_color = v; commit(); });
-                this.sliderRow(p, 'Curve', c.ground_curve ?? 0.1, 0, 2, 0.05, v => { c.ground_curve = v; commit(); });
-                this.sliderRow(p, 'Energy', c.ground_energy ?? 1.0, 0, 4, 0.1, v => { c.ground_energy = v; commit(); });
-                
-                // Sun Section
-                this.sectionHeader(p, 'Sun');
-                this.checkboxRow(p, 'Enabled', c.sun_enabled ?? true, v => { c.sun_enabled = v; commit(); });
-                if (c.sun_enabled ?? true) {
-                        this.sliderRow(p, 'Angle Min', c.sun_angle_min ?? 0.5, 0, 90, 0.5, v => { c.sun_angle_min = v; commit(); });
-                        this.sliderRow(p, 'Angle Max', c.sun_angle_max ?? 2.0, 0, 90, 0.5, v => { c.sun_angle_max = v; commit(); });
-                        this.sliderRow(p, 'Curve', c.sun_curve ?? 0.05, 0, 1, 0.01, v => { c.sun_curve = v; commit(); });
-                        this.sliderRow(p, 'Energy', c.sun_energy ?? 16.0, 0, 100, 1, v => { c.sun_energy = v; commit(); });
-                        this.colorRow(p, 'Color', c.sun_color ?? [1.0, 0.95, 0.85, 1], v => { c.sun_color = v; commit(); });
-                        this.vec3Row(p, 'Direction', c.sun_position ?? [0.5, 0.8, -0.3], v => { c.sun_position = v; commit(); }, 2);
-                }
-                
-                // Clouds Section
-                this.sectionHeader(p, 'Clouds');
-                this.checkboxRow(p, 'Enabled', c.clouds_enabled ?? false, v => { c.clouds_enabled = v; commit(); });
-                if (c.clouds_enabled ?? false) {
-                        this.colorRow(p, 'Color', c.clouds_color ?? [1.0, 1.0, 1.0, 1], v => { c.clouds_color = v; commit(); });
-                        this.sliderRow(p, 'Density', c.clouds_density ?? 0.5, 0, 2, 0.05, v => { c.clouds_density = v; commit(); });
-                        this.sliderRow(p, 'Speed', c.clouds_speed ?? 0.1, 0, 1, 0.01, v => { c.clouds_speed = v; commit(); });
-                        this.sliderRow(p, 'Height', c.clouds_height ?? 500, 100, 2000, 50, v => { c.clouds_height = v; commit(); });
-                        this.sliderRow(p, 'Coverage', c.clouds_coverage ?? 0.5, 0, 1, 0.05, v => { c.clouds_coverage = v; commit(); });
-                        this.sliderRow(p, 'Thickness', c.clouds_thickness ?? 100, 10, 500, 10, v => { c.clouds_thickness = v; commit(); });
-                }
-                
-                // Fog Section
-                this.sectionHeader(p, 'Fog');
-                this.checkboxRow(p, 'Enabled', c.fog_enabled ?? false, v => { c.fog_enabled = v; commit(); });
-                if (c.fog_enabled ?? false) {
-                        this.colorRow(p, 'Color', c.fog_color ?? [0.7, 0.75, 0.80, 1], v => { c.fog_color = v; commit(); });
-                        this.sliderRow(p, 'Density', c.fog_density ?? 0.001, 0, 0.1, 0.001, v => { c.fog_density = v; commit(); });
-                        this.sliderRow(p, 'Depth Begin', c.fog_depth_begin ?? 10, 0, 500, 10, v => { c.fog_depth_begin = v; commit(); });
-                        this.sliderRow(p, 'Depth End', c.fog_depth_end ?? 100, 0, 2000, 50, v => { c.fog_depth_end = v; commit(); });
-                }
-        }
-        
         // Section header helper for organizing inspector
         private sectionHeader(p: HTMLElement, text: string): void {
                 const hdr = this.div(p, `
@@ -1045,7 +1045,7 @@ export class InspectorView extends Disposable {
                         min-height: 22px;
                         margin: 2px 0;
                         padding: 1px 0;
-                        border-radius: 2px;
+                        border-radius: 6px;
                 `);
                 r.className = 'vi-prop-row';
                 
@@ -1133,7 +1133,7 @@ export class InspectorView extends Disposable {
                                 align-items: center;
                                 justify-content: center;
                                 background: ${axisColors[i]};
-                                border-radius: 2px 0 0 2px;
+                                border-radius: 6px 0 0 6px;
                                 flex-shrink: 0;
                         `;
                         cell.appendChild(badge);
@@ -1152,7 +1152,7 @@ export class InspectorView extends Disposable {
                                 color: ${COLORS.valueText};
                                 border: 1px solid ${COLORS.borderLight};
                                 border-left: none;
-                                border-radius: 0 2px 2px 0;
+                                border-radius: 0 6px 6px 0;
                                 padding: 2px 4px;
                                 font-size: 10px;
                                 font-family: Consolas, monospace;
@@ -1206,7 +1206,7 @@ export class InspectorView extends Disposable {
                         background: ${COLORS.inputBg};
                         color: ${COLORS.valueText};
                         border: 1px solid ${COLORS.borderLight};
-                        border-radius: 2px;
+                        border-radius: 6px;
                         padding: 2px 4px;
                         font-size: 10px;
                         text-align: right;
@@ -1283,7 +1283,7 @@ export class InspectorView extends Disposable {
                         background: ${COLORS.inputBg};
                         color: ${COLORS.valueText};
                         border: 1px solid ${COLORS.borderLight};
-                        border-radius: 2px;
+                        border-radius: 6px;
                         padding: 2px 4px;
                         font-size: 10px;
                         font-family: Consolas, monospace;
@@ -1328,13 +1328,16 @@ export class InspectorView extends Disposable {
                         background: ${COLORS.inputBg};
                         color: ${COLORS.valueText};
                         border: 1px solid ${COLORS.borderLight};
-                        border-radius: 3px;
+                        border-radius: 6px;
                         padding: 3px 6px;
                         font-size: 10px;
                         font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
                         outline: none;
                         cursor: pointer;
                         height: 20px;
+                        appearance: none;
+                        -webkit-appearance: none;
+                        -moz-appearance: none;
                 `;
                 select.onfocus = () => select.style.borderColor = COLORS.focusBorder;
                 select.onblur = () => select.style.borderColor = COLORS.borderLight;
@@ -1380,7 +1383,6 @@ export class InspectorView extends Disposable {
                         top: 2px;
                         left: ${val ? '17px' : '3px'};
                         transition: left 0.15s;
-                        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
                 `;
                 toggle.appendChild(knob);
                 
@@ -1409,7 +1411,7 @@ export class InspectorView extends Disposable {
                         background: ${COLORS.inputBg};
                         color: ${COLORS.valueText};
                         border: 1px solid ${COLORS.borderLight};
-                        border-radius: 2px;
+                        border-radius: 6px;
                         padding: 2px 4px;
                         font-size: 10px;
                         font-family: Consolas, monospace;
@@ -1435,7 +1437,7 @@ export class InspectorView extends Disposable {
                         background: ${COLORS.inputBg};
                         color: ${COLORS.valueText};
                         border: 1px solid ${COLORS.borderLight};
-                        border-radius: 2px;
+                        border-radius: 6px;
                         padding: 2px 4px;
                         font-size: 10px;
                         font-family: Consolas, monospace;
@@ -1474,7 +1476,7 @@ export class InspectorView extends Disposable {
                                 background: ${COLORS.inputFocus};
                                 border: 1px solid ${COLORS.borderLight};
                                 border-right: none;
-                                border-radius: 2px 0 0 2px;
+                                border-radius: 6px 0 0 6px;
                                 flex-shrink: 0;
                         `;
                         cell.appendChild(badge);
@@ -1490,7 +1492,7 @@ export class InspectorView extends Disposable {
                                 background: ${COLORS.inputBg};
                                 color: ${COLORS.valueText};
                                 border: 1px solid ${COLORS.borderLight};
-                                border-radius: 0 2px 2px 0;
+                                border-radius: 0 6px 6px 0;
                                 padding: 2px 4px;
                                 font-size: 10px;
                                 font-family: Consolas, monospace;
@@ -1559,13 +1561,6 @@ export class InspectorView extends Disposable {
         // ═══════════════════════════════════════════════════════════════════════════════
         // ADDITIONAL COMPONENT RENDERERS
         // ═══════════════════════════════════════════════════════════════════════════════
-
-        // ── Node2D (basic 2D transform) ──
-        private trNode2D(p: HTMLElement, c: any, commit: () => void): void {
-                this.vec2Row(p, 'Position', c.position ?? [0, 0], v => { c.position = v; commit(); });
-                this.sliderRow(p, 'Rotation', c.rotation ?? 0, -180, 180, 1, v => { c.rotation = v; commit(); });
-                this.vec2Row(p, 'Scale', c.scale ?? [1, 1], v => { c.scale = v; commit(); });
-        }
 
         // ── 2D Physics Bodies ──
         private trCharacterBody2D(p: HTMLElement, c: any, commit: () => void): void {
@@ -1676,38 +1671,53 @@ export class InspectorView extends Disposable {
                         .vi-slider {
                                 -webkit-appearance: none;
                                 appearance: none;
-                                height: 4px;
+                                height: 5px;
                                 background: ${COLORS.sliderTrack};
-                                border-radius: 2px;
+                                border-radius: 999px;
                                 outline: none;
                         }
                         .vi-slider::-webkit-slider-thumb {
                                 -webkit-appearance: none;
-                                width: 12px;
-                                height: 12px;
+                                width: 11px;
+                                height: 11px;
                                 border-radius: 50%;
                                 background: ${COLORS.sliderThumb};
                                 border: none;
                                 cursor: pointer;
-                                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                                transition: transform 0.1s, background 0.1s;
+                                transition: background 0.1s;
                         }
                         .vi-slider::-webkit-slider-thumb:hover {
-                                background: #6bb3ff;
-                                transform: scale(1.15);
+                                background: ${COLORS.focusBorder};
                         }
                         .vi-slider::-moz-range-thumb {
-                                width: 12px;
-                                height: 12px;
+                                width: 11px;
+                                height: 11px;
                                 border-radius: 50%;
                                 background: ${COLORS.sliderThumb};
                                 border: none;
                                 cursor: pointer;
                         }
                         .vi-slider::-moz-range-track {
-                                height: 4px;
+                                height: 5px;
                                 background: ${COLORS.sliderTrack};
-                                border-radius: 2px;
+                                border-radius: 999px;
+                        }
+
+                        .vi-color-swatch {
+                                -webkit-appearance: none;
+                                appearance: none;
+                                background: transparent;
+                        }
+                        .vi-color-swatch::-webkit-color-swatch-wrapper {
+                                padding: 0;
+                        }
+                        .vi-color-swatch::-webkit-color-swatch {
+                                border: none;
+                                border-radius: 0;
+                        }
+                        .vi-color-swatch::-moz-color-swatch {
+                                border: none;
+                                border-radius: 0;
                         }
                         
                         /* Scrollbar */
@@ -1718,8 +1728,8 @@ export class InspectorView extends Disposable {
                                 background: #1a1a1a;
                         }
                         .vi-body::-webkit-scrollbar-thumb {
-                                background: #3a3a3a;
-                                border-radius: 4px;
+                                background: #4a4a4a;
+                                border-radius: 999px;
                         }
                         .vi-body::-webkit-scrollbar-thumb:hover {
                                 background: #4a4a4a;
@@ -1753,33 +1763,20 @@ export class InspectorView extends Disposable {
                                 position: relative;
                                 overflow: hidden;
                         }
-                        .vi-color-swatch::after {
-                                content: '';
-                                position: absolute;
-                                inset: 0;
-                                background: conic-gradient(#333 25%, transparent 25%, transparent 50%, #333 50%, #333 75%, transparent 75%);
-                                background-size: 6px 6px;
-                                opacity: 0.3;
-                                pointer-events: none;
-                                z-index: -1;
-                        }
                         
                         /* Section header hover */
                         .vi-section-header:hover {
-                                background: #353538 !important;
+                                background: #292929 !important;
                         }
                         
                         /* Section body animation */
                         .vi-section-body {
-                                transition: opacity 0.15s ease;
+                                transition: none;
                         }
                         
                         /* Add Component button */
                         .vi-add-component-btn {
-                                transition: all 0.15s ease;
-                        }
-                        .vi-add-component-btn:active {
-                                transform: scale(0.97);
+                                transition: none;
                         }
                 `;
                 document.head.appendChild(s);

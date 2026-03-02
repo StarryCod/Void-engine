@@ -28,6 +28,13 @@ export interface TransformPatch {
         scale: [number, number, number];
 }
 
+export interface Transform2DPatch {
+        entityId: string;
+        position: [number, number];
+        rotation?: number;
+        scale?: [number, number];
+}
+
 class SceneBridge extends Disposable {
 
         // ── Master State ──
@@ -110,6 +117,39 @@ class SceneBridge extends Disposable {
                 });
 
                 // 2d. Debounced save
+                this.scheduleSave();
+        }
+
+        // ================================================================
+        // 2D transform update from 2D viewport drag
+        // ================================================================
+        public updateTransform2D(patch: Transform2DPatch): void {
+                if (!this._scene) return;
+
+                const entity = this.findEntity(this._scene.entities, patch.entityId);
+                if (!entity) return;
+
+                const tr2d = entity.components.find(c => c.type === 'Transform2D');
+                if (!tr2d || tr2d.type !== 'Transform2D') return;
+
+                tr2d.position = [patch.position[0], patch.position[1]];
+                if (typeof patch.rotation === 'number') {
+                        tr2d.rotation = patch.rotation;
+                }
+                if (patch.scale) {
+                        tr2d.scale = [patch.scale[0], patch.scale[1]];
+                }
+
+                this._raw = VecnParser.serialize(this._scene);
+                this._hash = this.hash(this._raw);
+
+                this._onSceneUpdated.fire({
+                        entities: this._scene.entities,
+                        raw: this._raw,
+                        source: 'viewport',
+                        timestamp: Date.now(),
+                });
+
                 this.scheduleSave();
         }
 
@@ -647,55 +687,105 @@ class SceneBridge extends Disposable {
                                         environment: '',
                                         camera_attributes: '',
                                         background_mode: 'Sky',
-                                        background_color: [0.05, 0.05, 0.1, 1],
-                                        ambient_light_energy: 1.0,
-                                        ambient_light_color: [0.5, 0.5, 0.55, 1],
-                                        ambient_light_sky_contribution: 1.0,
-                                        reflected_light_energy: 1.0,
-                                        tonemap_mode: 'Linear',
-                                        tonemap_exposure: 1.0,
-                                        tonemap_white: 1.0,
+                                        background_color: [0.11, 0.13, 0.17, 1],
+                                        gradient_top: [0.22, 0.30, 0.41, 1],
+                                        gradient_bottom: [0.56, 0.61, 0.67, 1],
+                                        ambient_light_energy: 0.42,
+                                        ambient_light_color: [0.44, 0.47, 0.52, 1],
+                                        ambient_light_sky_contribution: 0.9,
+                                        reflected_light_energy: 0.95,
+                                        tonemap_mode: 'Filmic',
+                                        tonemap_exposure: 0.88,
+                                        tonemap_white: 1.25,
                                         ssao_enabled: false,
                                         ssao_intensity: 1.0,
                                         ssao_radius: 1.0,
                                         glow_enabled: false,
-                                        glow_intensity: 0.8,
-                                        glow_threshold: 0.9
+                                        glow_intensity: 0.15,
+                                        glow_threshold: 1.25,
+                                        sky_material: 'ProceduralSky',
+                                        radiance_size: 'Size1024',
+                                        sky_top_color: [0.20, 0.33, 0.56, 1],
+                                        sky_horizon_color: [0.66, 0.74, 0.84, 1],
+                                        sky_curve: 0.58,
+                                        sky_energy: 1.02,
+                                        ground_bottom_color: [0.12, 0.10, 0.08, 1],
+                                        ground_horizon_color: [0.32, 0.30, 0.26, 1],
+                                        ground_curve: 0.52,
+                                        ground_energy: 0.96,
+                                        sun_enabled: true,
+                                        sun_angle_min: 0.28,
+                                        sun_angle_max: 1.45,
+                                        sun_curve: 0.04,
+                                        sun_energy: 4.2,
+                                        sun_color: [1.0, 0.94, 0.82, 1],
+                                        sun_position: [0.38, 0.78, -0.28],
+                                        clouds_enabled: true,
+                                        clouds_color: [0.95, 0.95, 0.93, 1],
+                                        clouds_density: 0.42,
+                                        clouds_speed: 0.015,
+                                        clouds_height: 1300,
+                                        clouds_coverage: 0.58,
+                                        clouds_thickness: 260,
+                                        fog_enabled: true,
+                                        fog_density: 0.00035,
+                                        fog_depth_begin: 80,
+                                        fog_depth_end: 3500,
+                                        fog_color: [0.68, 0.72, 0.78, 1]
                                 });
                                 break;
                         case 'sky':
-                                newEntity.name = 'Sky';
+                                newEntity.name = 'WorldEnvironment';
                                 newEntity.components.push({
-                                        type: 'Sky',
+                                        type: 'WorldEnvironment',
+                                        environment: '',
+                                        camera_attributes: '',
+                                        background_mode: 'Sky',
+                                        background_color: [0.11, 0.13, 0.17, 1],
+                                        gradient_top: [0.22, 0.30, 0.41, 1],
+                                        gradient_bottom: [0.56, 0.61, 0.67, 1],
+                                        ambient_light_energy: 0.42,
+                                        ambient_light_color: [0.44, 0.47, 0.52, 1],
+                                        ambient_light_sky_contribution: 0.9,
+                                        reflected_light_energy: 0.95,
+                                        tonemap_mode: 'Filmic',
+                                        tonemap_exposure: 0.88,
+                                        tonemap_white: 1.25,
+                                        ssao_enabled: false,
+                                        ssao_intensity: 1.0,
+                                        ssao_radius: 1.0,
+                                        glow_enabled: false,
+                                        glow_intensity: 0.15,
+                                        glow_threshold: 1.25,
                                         sky_material: 'ProceduralSky',
                                         radiance_size: 'Size1024',
-                                        sky_top_color: [0.35, 0.55, 0.85, 1],
-                                        sky_horizon_color: [0.65, 0.78, 0.90, 1],
-                                        sky_curve: 0.15,
-                                        sky_energy: 1.0,
+                                        sky_top_color: [0.20, 0.33, 0.56, 1],
+                                        sky_horizon_color: [0.66, 0.74, 0.84, 1],
+                                        sky_curve: 0.58,
+                                        sky_energy: 1.02,
                                         ground_bottom_color: [0.12, 0.10, 0.08, 1],
-                                        ground_horizon_color: [0.35, 0.30, 0.25, 1],
-                                        ground_curve: 0.1,
-                                        ground_energy: 1.0,
-                                        sun_enabled: true,          // NEW: Sun enabled by default
-                                        sun_angle_min: 0.5,
-                                        sun_angle_max: 2.0,
-                                        sun_curve: 0.05,
-                                        sun_energy: 16.0,
-                                        sun_color: [1.0, 0.95, 0.85, 1],
-                                        sun_position: [0.5, 0.8, -0.3],
-                                        clouds_enabled: false,
-                                        clouds_color: [1.0, 1.0, 1.0, 1],
-                                        clouds_density: 0.5,
-                                        clouds_speed: 0.1,
-                                        clouds_height: 500,
-                                        clouds_coverage: 0.5,
-                                        clouds_thickness: 100,
-                                        fog_enabled: false,
-                                        fog_density: 0.001,
-                                        fog_depth_begin: 10,
-                                        fog_depth_end: 100,
-                                        fog_color: [0.7, 0.75, 0.80, 1]
+                                        ground_horizon_color: [0.32, 0.30, 0.26, 1],
+                                        ground_curve: 0.52,
+                                        ground_energy: 0.96,
+                                        sun_enabled: true,
+                                        sun_angle_min: 0.28,
+                                        sun_angle_max: 1.45,
+                                        sun_curve: 0.04,
+                                        sun_energy: 4.2,
+                                        sun_color: [1.0, 0.94, 0.82, 1],
+                                        sun_position: [0.38, 0.78, -0.28],
+                                        clouds_enabled: true,
+                                        clouds_color: [0.95, 0.95, 0.93, 1],
+                                        clouds_density: 0.42,
+                                        clouds_speed: 0.015,
+                                        clouds_height: 1300,
+                                        clouds_coverage: 0.58,
+                                        clouds_thickness: 260,
+                                        fog_enabled: true,
+                                        fog_density: 0.00035,
+                                        fog_depth_begin: 80,
+                                        fog_depth_end: 3500,
+                                        fog_color: [0.68, 0.72, 0.78, 1]
                                 });
                                 break;
                         case 'fogvolume':
@@ -1000,7 +1090,7 @@ class SceneBridge extends Disposable {
                 for (const entity of entities) {
                         if (entity.id === entityId) return parent;
                         const found = this.findParent(entity.children, entityId, entity);
-                        if (found !== undefined) return found;
+                        if (found !== null) return found;
                 }
                 return null;
         }

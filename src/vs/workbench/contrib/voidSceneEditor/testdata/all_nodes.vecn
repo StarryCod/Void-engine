@@ -1,0 +1,645 @@
+// Void Engine Scene Format (.vecn)
+// All Nodes Diagnostic Scene
+
+VoidScene(
+    version: "1.0",
+    mode: Scene3D,
+
+    entities: [
+        (
+            id: "world_env",
+            name: "WorldEnvironment",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0.0, 0.0, 0.0),
+                    rotation: (0.0, 0.0, 0.0, 1.0),
+                    scale: (1.0, 1.0, 1.0),
+                ),
+                WorldEnvironment(
+                    environment: "",
+                    camera_attributes: "",
+                    background_mode: "Sky",
+                    background_color: (0.11, 0.13, 0.17, 1.0),
+                    ambient_light_energy: 0.42,
+                    ambient_light_color: (0.44, 0.47, 0.52, 1.0),
+                    tonemap_mode: "Filmic",
+                    tonemap_exposure: 0.88,
+                    tonemap_white: 1.25,
+                    sky_material: "ProceduralSky",
+                    sky_top_color: (0.20, 0.33, 0.56, 1.0),
+                    sky_horizon_color: (0.66, 0.74, 0.84, 1.0),
+                    sun_enabled: true,
+                    sun_energy: 4.2,
+                    sun_color: (1.0, 0.94, 0.82, 1.0),
+                    sun_position: (0.38, 0.78, -0.28),
+                    clouds_enabled: true,
+                    clouds_density: 0.42,
+                    clouds_speed: 0.015,
+                    clouds_coverage: 0.58,
+                    clouds_thickness: 260.0,
+                    fog_enabled: true,
+                    fog_density: 0.00035,
+                    fog_depth_begin: 80.0,
+                    fog_depth_end: 3500.0,
+                    fog_color: (0.68, 0.72, 0.78, 1.0),
+                ),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "camera_main",
+            name: "Perspective Camera",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0.0, 9.0, 20.0),
+                    rotation: (-0.2, 0.0, 0.0, 0.98),
+                    scale: (1.0, 1.0, 1.0),
+                ),
+                Camera(
+                    fov: 65.0,
+                    near: 0.1,
+                    far: 3000.0,
+                ),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "sun",
+            name: "Directional Light",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (8.0, 14.0, 6.0),
+                    rotation: (-0.45, 0.15, 0.08, 0.87),
+                    scale: (1.0, 1.0, 1.0),
+                ),
+                DirectionalLight(
+                    color: (1.0, 0.95, 0.88),
+                    illuminance: 45000.0,
+                ),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "point_light",
+            name: "Point Light",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (-8.0, 4.0, 2.0),
+                    rotation: (0.0, 0.0, 0.0, 1.0),
+                    scale: (1.0, 1.0, 1.0),
+                ),
+                PointLight(
+                    color: (1.0, 0.8, 0.6),
+                    intensity: 1800.0,
+                    range: 24.0,
+                ),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "spot_light",
+            name: "Spot Light",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (8.0, 6.0, 8.0),
+                    rotation: (-0.5, 0.0, 0.0, 0.86),
+                    scale: (1.0, 1.0, 1.0),
+                ),
+                SpotLight(
+                    color: (1.0, 0.98, 0.92),
+                    intensity: 2200.0,
+                    range: 18.0,
+                    angle: 45.0,
+                    attenuation: 1.0,
+                ),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "ground_plane",
+            name: "Plane",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0.0, -0.5, 0.0),
+                    rotation: (0.0, 0.0, 0.0, 1.0),
+                    scale: (1.0, 1.0, 1.0),
+                ),
+                Mesh(shape: Plane(size: 120.0)),
+                Material(
+                    color: (0.20, 0.22, 0.24, 1.0),
+                    metallic: 0.0,
+                    roughness: 0.95,
+                ),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "mesh_instance",
+            name: "MeshInstance3D",
+            visible: true,
+            components: [
+                Transform(translation: (-10.0, 1.0, -2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                Mesh(shape: Cube(size: 1.0)),
+                Material(color: (0.55, 0.55, 0.60, 1.0), metallic: 0.0, roughness: 0.8),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "cube",
+            name: "Cube",
+            visible: true,
+            components: [
+                Transform(translation: (-7.0, 1.0, -2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                Mesh(shape: Cube(size: 1.0)),
+                Material(color: (0.90, 0.35, 0.30, 1.0), metallic: 0.1, roughness: 0.55),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "sphere",
+            name: "Sphere",
+            visible: true,
+            components: [
+                Transform(translation: (-4.0, 1.0, -2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                Mesh(shape: Sphere(radius: 0.65)),
+                Material(color: (0.22, 0.55, 0.90, 1.0), metallic: 0.6, roughness: 0.2),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "cylinder",
+            name: "Cylinder",
+            visible: true,
+            components: [
+                Transform(translation: (-1.0, 1.0, -2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                Mesh(shape: Cylinder(radius: 0.5, height: 1.5)),
+                Material(color: (0.30, 0.85, 0.65, 1.0), metallic: 0.2, roughness: 0.55),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "cone",
+            name: "Cone",
+            visible: true,
+            components: [
+                Transform(translation: (2.0, 1.0, -2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                Mesh(shape: Cone(radius: 0.6, height: 1.4)),
+                Material(color: (0.95, 0.75, 0.25, 1.0), metallic: 0.0, roughness: 0.5),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "torus",
+            name: "Torus",
+            visible: true,
+            components: [
+                Transform(translation: (5.0, 1.2, -2.0), rotation: (0.7, 0.0, 0.0, 0.7), scale: (1.0, 1.0, 1.0)),
+                Mesh(shape: Torus(radius: 0.7, tube: 0.2)),
+                Material(color: (0.88, 0.35, 0.88, 1.0), metallic: 0.65, roughness: 0.3),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "empty",
+            name: "Empty",
+            visible: true,
+            components: [Transform(translation: (8.0, 1.0, -2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0))],
+            children: [],
+        ),
+
+        (
+            id: "character_body_3d",
+            name: "CharacterBody3D",
+            visible: true,
+            components: [
+                Transform(translation: (-10.0, 1.0, 2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                CharacterBody(mass: 1.0, gravity_scale: 1.0, lock_rotation: false),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "rigid_body_3d",
+            name: "RigidBody3D",
+            visible: true,
+            components: [
+                Transform(translation: (-7.0, 1.0, 2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                RigidBody(mass: 1.0, gravity_scale: 1.0, linear_damping: 0.1, angular_damping: 0.1, lock_rotation_x: false, lock_rotation_y: false, lock_rotation_z: false),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "static_body_3d",
+            name: "StaticBody3D",
+            visible: true,
+            components: [
+                Transform(translation: (-4.0, 1.0, 2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                StaticBody(friction: 0.8, restitution: 0.0),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "area_3d",
+            name: "Area3D",
+            visible: true,
+            components: [
+                Transform(translation: (-1.0, 1.0, 2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                Area(monitoring: true, monitorable: true, priority: 0),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "collision_shape_3d",
+            name: "CollisionShape3D",
+            visible: true,
+            components: [
+                Transform(translation: (2.0, 1.0, 2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                CollisionShape(shape: Box(size: 1.0)),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "raycast_3d",
+            name: "RayCast3D",
+            visible: true,
+            components: [
+                Transform(translation: (5.0, 1.0, 2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                RayCast(enabled: true, target_position: (0.0, -5.0, 0.0), collision_mask: 1, hit_from_inside: false),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "shape_cast_3d",
+            name: "ShapeCast3D",
+            visible: true,
+            components: [
+                Transform(translation: (8.0, 1.0, 2.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+                ShapeCast(enabled: true, shape: Sphere(radius: 0.5), target_position: (0.0, -3.0, 0.0), collision_mask: 1, max_results: 8),
+            ],
+            children: [],
+        ),
+
+        (
+            id: "sprite3d",
+            name: "Sprite3D",
+            visible: true,
+            components: [Transform(translation: (-10.0, 2.2, 6.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), Sprite3D(texture: "", billboard: "Enabled", transparent: true, shaded: false, double_sided: true, alpha_cut: 0.0)],
+            children: [],
+        ),
+        (
+            id: "animated_sprite3d",
+            name: "AnimatedSprite3D",
+            visible: true,
+            components: [Transform(translation: (-7.0, 2.2, 6.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), AnimatedSprite3D(sprite_frames: "", animation: "default", frame: 0, playing: true, billboard: "Enabled")],
+            children: [],
+        ),
+        (
+            id: "label3d",
+            name: "Label3D",
+            visible: true,
+            components: [Transform(translation: (-4.0, 2.2, 6.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), Label3D(text: "Label3D", font_size: 32, outline_size: 0, modulate: (1.0, 1.0, 1.0, 1.0), billboard: "Enabled")],
+            children: [],
+        ),
+        (
+            id: "gpu_particles",
+            name: "GPUParticles3D",
+            visible: true,
+            components: [Transform(translation: (-1.0, 2.2, 6.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), GPUParticles3D(emitting: true, amount: 128, lifetime: 1.5, one_shot: false, explosiveness: 0.0, randomness: 0.3, visibility_aabb: (-2.0, -2.0, -2.0, 4.0, 4.0, 4.0))],
+            children: [],
+        ),
+        (
+            id: "cpu_particles",
+            name: "CPUParticles3D",
+            visible: true,
+            components: [Transform(translation: (2.0, 2.2, 6.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), CPUParticles3D(emitting: true, amount: 64, lifetime: 1.2, one_shot: false, explosiveness: 0.0, randomness: 0.4, emission_shape: "Point")],
+            children: [],
+        ),
+        (
+            id: "multimesh",
+            name: "MultiMeshInstance3D",
+            visible: true,
+            components: [Transform(translation: (5.0, 2.2, 6.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), MultiMeshInstance3D(mesh: "", instance_count: 32, visible_instance_count: 32, transform_format: "Transform3D")],
+            children: [],
+        ),
+
+        (
+            id: "audio_stream_player",
+            name: "AudioStreamPlayer",
+            visible: true,
+            components: [Transform(translation: (8.0, 2.2, 6.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), AudioStreamPlayer(stream: "", volume_db: 0.0, pitch_scale: 1.0, playing: false, autoplay: false, stream_paused: false)],
+            children: [],
+        ),
+        (
+            id: "audio_stream_player_2d",
+            name: "AudioStreamPlayer2D",
+            visible: true,
+            components: [Transform(translation: (-10.0, 0.8, 10.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), AudioStreamPlayer2D(stream: "", volume_db: 0.0, pitch_scale: 1.0, playing: false, autoplay: false, max_distance: 2000.0, attenuation: 1.0)],
+            children: [],
+        ),
+        (
+            id: "audio_stream_player_3d",
+            name: "AudioStreamPlayer3D",
+            visible: true,
+            components: [Transform(translation: (-7.0, 0.8, 10.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), AudioStreamPlayer3D(stream: "", volume_db: 0.0, pitch_scale: 1.0, playing: false, autoplay: false, max_distance: 40.0, attenuation_model: "InverseSquareDistance", emission_angle_enabled: false, emission_angle_degrees: 45.0)],
+            children: [],
+        ),
+
+        (
+            id: "animation_player",
+            name: "AnimationPlayer",
+            visible: true,
+            components: [Transform(translation: (-4.0, 0.8, 10.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), AnimationPlayer(current_animation: "", playback_speed: 1.0, autoplay: "", playback_active: true, playback_default_blend_time: 0.1)],
+            children: [],
+        ),
+        (
+            id: "animation_tree",
+            name: "AnimationTree",
+            visible: true,
+            components: [Transform(translation: (-1.0, 0.8, 10.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), AnimationTree(tree_root: "", anim_player: "", active: true, process_callback: "idle")],
+            children: [],
+        ),
+        (
+            id: "tween",
+            name: "Tween",
+            visible: true,
+            components: [Transform(translation: (2.0, 0.8, 10.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), Tween(active: true, speed_scale: 1.0)],
+            children: [],
+        ),
+
+        (
+            id: "nav_region_3d",
+            name: "NavigationRegion3D",
+            visible: true,
+            components: [Transform(translation: (5.0, 0.8, 10.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), NavigationRegion3D(enabled: true, navigation_layers: 1, enter_cost: 0.0, travel_cost: 1.0)],
+            children: [],
+        ),
+        (
+            id: "nav_agent_3d",
+            name: "NavigationAgent3D",
+            visible: true,
+            components: [Transform(translation: (8.0, 0.8, 10.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), NavigationAgent3D(target_position: (2.0, 0.0, 2.0), path_desired_distance: 1.0, target_desired_distance: 1.0, radius: 0.5, height: 2.0, max_speed: 5.0, avoidance_enabled: false)],
+            children: [],
+        ),
+        (
+            id: "nav_obstacle_3d",
+            name: "NavigationObstacle3D",
+            visible: true,
+            components: [Transform(translation: (11.0, 0.8, 10.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), NavigationObstacle3D(radius: 1.0, height: 2.0, avoidance_enabled: false, velocity: (0.0, 0.0, 0.0))],
+            children: [],
+        ),
+
+        (
+            id: "path3d",
+            name: "Path3D",
+            visible: true,
+            components: [Transform(translation: (-10.0, 0.8, 14.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), Path3D(curve: "")],
+            children: [],
+        ),
+        (
+            id: "pathfollow3d",
+            name: "PathFollow3D",
+            visible: true,
+            components: [Transform(translation: (-7.0, 0.8, 14.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), PathFollow3D(progress: 0.0, progress_ratio: 0.0, h_offset: 0.0, v_offset: 0.0, rotation_mode: "None", cubic_interp: false, loop_path: true)],
+            children: [],
+        ),
+        (
+            id: "remote_transform3d",
+            name: "RemoteTransform3D",
+            visible: true,
+            components: [Transform(translation: (-4.0, 0.8, 14.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), RemoteTransform3D(remote_path: "", use_global_coordinates: true, update_position: true, update_rotation: true, update_scale: true)],
+            children: [],
+        ),
+        (
+            id: "marker3d",
+            name: "Marker3D",
+            visible: true,
+            components: [Transform(translation: (-1.0, 0.8, 14.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), Marker3D(gizmo_extents: 1.0)],
+            children: [],
+        ),
+        (
+            id: "visibility3d",
+            name: "VisibleOnScreenNotifier3D",
+            visible: true,
+            components: [Transform(translation: (2.0, 0.8, 14.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), VisibleOnScreenNotifier3D(aabb: (-1.0, -1.0, -1.0, 2.0, 2.0, 2.0))],
+            children: [],
+        ),
+        (
+            id: "timer",
+            name: "Timer",
+            visible: true,
+            components: [Transform(translation: (5.0, 0.8, 14.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), Timer(wait_time: 2.0, one_shot: false, autostart: true, time_left: 0.0, paused: false)],
+            children: [],
+        ),
+
+        (
+            id: "fog_volume",
+            name: "FogVolume",
+            visible: true,
+            components: [Transform(translation: (8.0, 0.8, 14.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), FogVolume(density: 0.01, albedo: (0.6, 0.65, 0.7), emission: (0.0, 0.0, 0.0), height_falloff: 0.5)],
+            children: [],
+        ),
+        (
+            id: "sky_node",
+            name: "Sky",
+            visible: true,
+            components: [Transform(translation: (11.0, 0.8, 14.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), Sky(sky_material: "ProceduralSky", radiance_size: "Size1024", sky_top_color: (0.20, 0.33, 0.56, 1.0), sky_horizon_color: (0.66, 0.74, 0.84, 1.0), sky_curve: 0.58, sky_energy: 1.0, ground_bottom_color: (0.10, 0.09, 0.08, 1.0), ground_horizon_color: (0.30, 0.28, 0.26, 1.0), ground_curve: 0.5, ground_energy: 1.0, sun_enabled: true, sun_angle_min: 0.28, sun_angle_max: 1.45, sun_curve: 0.04, sun_energy: 4.2, sun_color: (1.0, 0.94, 0.82, 1.0), sun_position: (0.38, 0.78, -0.28), clouds_enabled: true, clouds_color: (0.95, 0.95, 0.93, 1.0), clouds_density: 0.42, clouds_speed: 0.015, clouds_height: 1300.0, clouds_coverage: 0.58, clouds_thickness: 260.0, fog_enabled: true, fog_density: 0.00035, fog_depth_begin: 80.0, fog_depth_end: 3500.0, fog_color: (0.68, 0.72, 0.78, 1.0))],
+            children: [],
+        ),
+        (
+            id: "reflection_probe",
+            name: "ReflectionProbe",
+            visible: true,
+            components: [Transform(translation: (14.0, 0.8, 14.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), ReflectionProbe(update_mode: "Once", intensity: 1.0, max_distance: 100.0, extents: (5.0, 5.0, 5.0), origin_offset: (0.0, 0.0, 0.0), box_projection: false, enable_shadows: false)],
+            children: [],
+        ),
+
+        (
+            id: "viewport",
+            name: "Viewport",
+            visible: true,
+            components: [Transform(translation: (-10.0, 0.8, 18.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), Viewport(size: (512.0, 512.0), transparent_bg: false, msaa: "Disabled", screen_space_aa: "Disabled", use_debanding: false, use_occlusion_culling: false)],
+            children: [],
+        ),
+        (
+            id: "subviewport",
+            name: "SubViewport",
+            visible: true,
+            components: [Transform(translation: (-7.0, 0.8, 18.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), SubViewport(size: (256.0, 256.0), render_target_update_mode: "Always")],
+            children: [],
+        ),
+        (
+            id: "canvas_layer",
+            name: "CanvasLayer",
+            visible: true,
+            components: [Transform(translation: (-4.0, 0.8, 18.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), CanvasLayer(layer: 1, offset: (0.0, 0.0), rotation: 0.0, scale: (1.0, 1.0), follow_viewport_enabled: false)],
+            children: [],
+        ),
+        (
+            id: "skeleton3d",
+            name: "Skeleton3D",
+            visible: true,
+            components: [Transform(translation: (-1.0, 0.8, 18.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), Skeleton3D(bones: ["root"], bone_poses: ["identity"])],
+            children: [],
+        ),
+        (
+            id: "bone_attachment",
+            name: "BoneAttachment3D",
+            visible: true,
+            components: [Transform(translation: (2.0, 0.8, 18.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)), BoneAttachment3D(bone_name: "root", bone_idx: 0)],
+            children: [],
+        ),
+
+        (
+            id: "node2d",
+            name: "Node2D",
+            visible: true,
+            components: [Transform2D(position: (200.0, 200.0), rotation: 0.0, scale: (1.0, 1.0))],
+            children: [],
+        ),
+        (
+            id: "sprite2d",
+            name: "Sprite2D",
+            visible: true,
+            components: [Transform2D(position: (260.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), Sprite2D(texture: "", region_enabled: false, region_rect: (0.0, 0.0, 32.0, 32.0), offset: (0.0, 0.0))],
+            children: [],
+        ),
+        (
+            id: "animated_sprite2d",
+            name: "AnimatedSprite2D",
+            visible: true,
+            components: [Transform2D(position: (320.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), AnimatedSprite2D(sprite_frames: "", animation: "default", frame: 0, playing: true, speed_scale: 1.0)],
+            children: [],
+        ),
+        (
+            id: "marker2d",
+            name: "Marker2D",
+            visible: true,
+            components: [Transform2D(position: (380.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), Marker2D(gizmo_extents: 24.0)],
+            children: [],
+        ),
+        (
+            id: "character_body2d",
+            name: "CharacterBody2D",
+            visible: true,
+            components: [Transform2D(position: (440.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), CharacterBody2D(motion_mode: "grounded", up_direction: (0.0, -1.0), velocity: (0.0, 0.0), max_slides: 4, floor_stop_on_slope: true)],
+            children: [],
+        ),
+        (
+            id: "rigid_body2d",
+            name: "RigidBody2D",
+            visible: true,
+            components: [Transform2D(position: (500.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), RigidBody2D(mass: 1.0, gravity_scale: 1.0, linear_damp: 0.1, angular_damp: 0.1, lock_rotation: false)],
+            children: [],
+        ),
+        (
+            id: "static_body2d",
+            name: "StaticBody2D",
+            visible: true,
+            components: [Transform2D(position: (560.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), StaticBody2D(friction: 1.0, bounce: 0.0)],
+            children: [],
+        ),
+        (
+            id: "area2d",
+            name: "Area2D",
+            visible: true,
+            components: [Transform2D(position: (620.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), Area2D(monitoring: true, monitorable: true, priority: 0, gravity_space_override: "disabled")],
+            children: [],
+        ),
+        (
+            id: "collision_shape2d",
+            name: "CollisionShape2D",
+            visible: true,
+            components: [Transform2D(position: (680.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), CollisionShape2D(shape: Circle(radius: 16.0), disabled: false, one_way_collision: false)],
+            children: [],
+        ),
+        (
+            id: "raycast2d",
+            name: "RayCast2D",
+            visible: true,
+            components: [Transform2D(position: (740.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), RayCast2D(enabled: true, target_position: (80.0, 0.0), collision_mask: 1, collide_with_areas: false, collide_with_bodies: true, hit_from_inside: false)],
+            children: [],
+        ),
+        (
+            id: "nav_region2d",
+            name: "NavigationRegion2D",
+            visible: true,
+            components: [Transform2D(position: (800.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), NavigationRegion2D(enabled: true, navigation_layers: 1, enter_cost: 0.0, travel_cost: 1.0)],
+            children: [],
+        ),
+        (
+            id: "nav_agent2d",
+            name: "NavigationAgent2D",
+            visible: true,
+            components: [Transform2D(position: (860.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), NavigationAgent2D(target_position: (960.0, 200.0), path_desired_distance: 1.0, target_desired_distance: 1.0, radius: 10.0, max_speed: 200.0, avoidance_enabled: false)],
+            children: [],
+        ),
+        (
+            id: "nav_obstacle2d",
+            name: "NavigationObstacle2D",
+            visible: true,
+            components: [Transform2D(position: (920.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), NavigationObstacle2D(radius: 12.0, avoidance_enabled: false, velocity: (0.0, 0.0))],
+            children: [],
+        ),
+        (
+            id: "path2d",
+            name: "Path2D",
+            visible: true,
+            components: [Transform2D(position: (980.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), Path2D(curve: "")],
+            children: [],
+        ),
+        (
+            id: "pathfollow2d",
+            name: "PathFollow2D",
+            visible: true,
+            components: [Transform2D(position: (1040.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), PathFollow2D(progress: 0.0, progress_ratio: 0.0, h_offset: 0.0, v_offset: 0.0, rotates: false, cubic_interp: false, loop_path: true)],
+            children: [],
+        ),
+        (
+            id: "remote_transform2d",
+            name: "RemoteTransform2D",
+            visible: true,
+            components: [Transform2D(position: (1100.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), RemoteTransform2D(remote_path: "", use_global_coordinates: true, update_position: true, update_rotation: true, update_scale: true)],
+            children: [],
+        ),
+        (
+            id: "visibility2d",
+            name: "VisibleOnScreenNotifier2D",
+            visible: true,
+            components: [Transform2D(position: (1160.0, 200.0), rotation: 0.0, scale: (1.0, 1.0)), VisibleOnScreenNotifier2D(rect: (0.0, 0.0, 32.0, 32.0))],
+            children: [],
+        ),
+    ],
+
+    resources: [
+        AmbientLight(
+            color: (0.44, 0.47, 0.52),
+            brightness: 0.42,
+        ),
+        ClearColor(
+            color: (0.11, 0.13, 0.17, 1.0),
+        ),
+    ],
+)

@@ -218,6 +218,30 @@ pub struct Marker3DComponent {
 pub struct WorldEnvironmentComponent {
     pub environment: String,
     pub camera_attributes: String,
+    #[serde(default)]
+    pub background_mode: Option<String>,
+    #[serde(default)]
+    pub background_color: Option<(f32, f32, f32, f32)>,
+    #[serde(default)]
+    pub ambient_light_energy: Option<f32>,
+    #[serde(default)]
+    pub ambient_light_color: Option<(f32, f32, f32, f32)>,
+    #[serde(default)]
+    pub tonemap_mode: Option<String>,
+    #[serde(default)]
+    pub tonemap_exposure: Option<f32>,
+    #[serde(default)]
+    pub tonemap_white: Option<f32>,
+    #[serde(default)]
+    pub sun_enabled: Option<bool>,
+    #[serde(default)]
+    pub sun_energy: Option<f32>,
+    #[serde(default)]
+    pub clouds_enabled: Option<bool>,
+    #[serde(default)]
+    pub fog_enabled: Option<bool>,
+    #[serde(default)]
+    pub fog_density: Option<f32>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

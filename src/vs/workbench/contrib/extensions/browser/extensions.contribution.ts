@@ -90,11 +90,11 @@ import { ExtensionsWorkbenchService } from './extensionsWorkbenchService.js';
 import './media/extensionManagement.css';
 import { UnsupportedExtensionsMigrationContrib } from './unsupportedExtensionsMigrationContribution.js';
 
-// VOID ENGINE: Extensions/Marketplace services disabled
-// Singletons
-// registerSingleton(IExtensionsWorkbenchService, ExtensionsWorkbenchService, InstantiationType.Eager /* Auto updates extensions */);
-// registerSingleton(IExtensionRecommendationNotificationService, ExtensionRecommendationNotificationService, InstantiationType.Delayed);
-// registerSingleton(IExtensionRecommendationsService, ExtensionRecommendationsService, InstantiationType.Eager /* Prompts recommendations in the background */);
+// VOID ENGINE: Keep extension UI disabled, but register core services to satisfy
+// workbench dependency graph (MCP and other contributions depend on these services).
+registerSingleton(IExtensionsWorkbenchService, ExtensionsWorkbenchService, InstantiationType.Delayed);
+registerSingleton(IExtensionRecommendationNotificationService, ExtensionRecommendationNotificationService, InstantiationType.Delayed);
+registerSingleton(IExtensionRecommendationsService, ExtensionRecommendationsService, InstantiationType.Delayed);
 
 // VOID ENGINE: Extensions/Marketplace disabled - custom UI makes plugins incompatible
 // Quick Access

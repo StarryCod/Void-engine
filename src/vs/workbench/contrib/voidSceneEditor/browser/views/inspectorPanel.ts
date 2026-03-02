@@ -214,9 +214,13 @@ export class InspectorPanel extends Disposable {
 		}
 	}
 	
-	private showPlaceholder(): void {
-		this.sectionsContainer.innerHTML = '';
-		
+	private clearElement(element: HTMLElement): void {
+		while (element.firstChild) {
+			element.removeChild(element.firstChild);
+		}
+	}
+
+	private appendPlaceholder(parent: HTMLElement, iconText: string, titleText: string, descriptionText: string): void {
 		const placeholder = document.createElement('div');
 		placeholder.style.cssText = `
 			display: flex;
@@ -227,14 +231,30 @@ export class InspectorPanel extends Disposable {
 			color: ${COLORS.textSecondary};
 			text-align: center;
 		`;
-		placeholder.innerHTML = `
-			<div style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;">🔍</div>
-			<div style="margin-bottom: 8px;">Выберите узел</div>
-			<div style="font-size: 11px; color: ${COLORS.textDisabled};">Выберите узел для редактирования его свойств</div>
-		`;
-		this.sectionsContainer.appendChild(placeholder);
+
+		const icon = document.createElement('div');
+		icon.style.cssText = 'font-size: 20px; margin-bottom: 12px; opacity: 0.5;';
+		icon.textContent = iconText;
+		placeholder.appendChild(icon);
+
+		const title = document.createElement('div');
+		title.style.cssText = 'margin-bottom: 8px;';
+		title.textContent = titleText;
+		placeholder.appendChild(title);
+
+		const description = document.createElement('div');
+		description.style.cssText = `font-size: 11px; color: ${COLORS.textDisabled};`;
+		description.textContent = descriptionText;
+		placeholder.appendChild(description);
+
+		parent.appendChild(placeholder);
 	}
-	
+
+	private showPlaceholder(): void {
+		this.clearElement(this.sectionsContainer);
+		this.appendPlaceholder(this.sectionsContainer, '?', 'Select node', 'Select a node to edit its properties');
+	}
+
 	public setEntity(entity: Entity | null): void {
 		this.selectedEntity = entity;
 		if (entity) {
@@ -245,7 +265,7 @@ export class InspectorPanel extends Disposable {
 	}
 	
 	private renderEntity(entity: Entity): void {
-		this.sectionsContainer.innerHTML = '';
+		this.clearElement(this.sectionsContainer);
 		
 		if (this.currentTab === 'history') {
 			this.renderHistoryTab();
@@ -326,7 +346,7 @@ export class InspectorPanel extends Disposable {
 		this.sectionsContainer.appendChild(section.container);
 	}
 	
-	private createSection(title: string, subtitle?: string | null, icon?: string): { container: HTMLElement; content: HTMLElement } {
+	private createSection(title: string, subtitle?: string | null, iconColor?: string): { container: HTMLElement; content: HTMLElement } {
 		const container = document.createElement('div');
 		container.className = 'void-inspector-section';
 		container.style.cssText = `
@@ -361,7 +381,7 @@ export class InspectorPanel extends Disposable {
 		header.appendChild(expandIcon);
 		
 		// Type icon
-		if (icon) {
+		if (iconColor) {
 			const typeIcon = document.createElement('div');
 			typeIcon.style.cssText = `
 				width: 16px;
@@ -370,8 +390,10 @@ export class InspectorPanel extends Disposable {
 				display: flex;
 				align-items: center;
 				justify-content: center;
+				border-radius: 50%;
+				background: ${iconColor};
 			`;
-			typeIcon.innerHTML = icon;
+
 			header.appendChild(typeIcon);
 		}
 		
@@ -741,7 +763,6 @@ export class InspectorPanel extends Disposable {
 		container.appendChild(preview);
 		
 		// RGBA inputs
-		const labels = ['R', 'G', 'B', 'A'];
 		value.forEach((v, i) => {
 			const input = document.createElement('input');
 			input.type = 'number';
@@ -854,8 +875,9 @@ export class InspectorPanel extends Disposable {
 		this.addPropertyRow(content, { label: 'Стоп на склоне', key: 'floor_stop_on_slope', type: 'boolean', value: component.floor_stop_on_slope, onChange: (v) => { component.floor_stop_on_slope = v as boolean; } });
 	}
 	
-	private renderGenericProperties(content: HTMLElement, component: Record<string, unknown>): void {
-		for (const [key, value] of Object.entries(component)) {
+	private renderGenericProperties(content: HTMLElement, component: Component): void {
+		const genericComponent = component as unknown as Record<string, unknown>;
+		for (const [key, value] of Object.entries(genericComponent)) {
 			if (key === 'type') continue;
 			
 			let type: PropertyEditor['type'] = 'string';
@@ -872,32 +894,16 @@ export class InspectorPanel extends Disposable {
 				key,
 				type,
 				value,
-				onChange: (v) => { component[key] = v; }
+				onChange: (v) => { genericComponent[key] = v; }
 			});
 		}
 	}
 	
 	private renderHistoryTab(): void {
-		this.sectionsContainer.innerHTML = '';
-		
-		const placeholder = document.createElement('div');
-		placeholder.style.cssText = `
-			display: flex;
-			flex-direction: column;
-			align-items: center;
-			justify-content: center;
-			padding: 40px 20px;
-			color: ${COLORS.textSecondary};
-			text-align: center;
-		`;
-		placeholder.innerHTML = `
-			<div style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;">📋</div>
-			<div style="margin-bottom: 8px;">История изменений</div>
-			<div style="font-size: 11px; color: ${COLORS.textDisabled};">Здесь будет отображаться история изменений узла</div>
-		`;
-		this.sectionsContainer.appendChild(placeholder);
+		this.clearElement(this.sectionsContainer);
+		this.appendPlaceholder(this.sectionsContainer, 'H', 'History', 'Node change history will be shown here');
 	}
-	
+
 	private getComponentTitle(component: Component): string {
 		const titles: Record<string, string> = {
 			Transform: 'Transform',
@@ -930,7 +936,7 @@ export class InspectorPanel extends Disposable {
 			PointLight: '#F4D03F'
 		};
 		const color = colors[component.type] || '#808080';
-		return `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="${color}"/></svg>`;
+		return color;
 	}
 	
 	override dispose(): void {

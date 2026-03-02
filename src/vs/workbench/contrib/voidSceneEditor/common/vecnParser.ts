@@ -441,8 +441,54 @@ export class VecnParser {
                         // Environment components
                         case 'WorldEnvironment':
                                 lines.push(`${pad}WorldEnvironment(`);
-                                lines.push(`${pad}    environment: "${c.environment}",`);
-                                lines.push(`${pad}    camera_attributes: "${c.camera_attributes}",`);
+                                lines.push(`${pad}    environment: "${c.environment ?? ''}",`);
+                                lines.push(`${pad}    camera_attributes: "${c.camera_attributes ?? ''}",`);
+                                lines.push(`${pad}    background_mode: "${c.background_mode ?? 'Sky'}",`);
+                                lines.push(`${pad}    background_color: (${(c.background_color ?? [0.05, 0.05, 0.1, 1]).join(', ')}),`);
+                                lines.push(`${pad}    gradient_top: (${(c.gradient_top ?? [0.4, 0.4, 0.5, 1]).join(', ')}),`);
+                                lines.push(`${pad}    gradient_bottom: (${(c.gradient_bottom ?? [0.15, 0.15, 0.18, 1]).join(', ')}),`);
+                                lines.push(`${pad}    ambient_light_energy: ${c.ambient_light_energy ?? 1.0},`);
+                                lines.push(`${pad}    ambient_light_color: (${(c.ambient_light_color ?? [0.5, 0.5, 0.55, 1]).join(', ')}),`);
+                                lines.push(`${pad}    ambient_light_sky_contribution: ${c.ambient_light_sky_contribution ?? 1.0},`);
+                                lines.push(`${pad}    reflected_light_energy: ${c.reflected_light_energy ?? 1.0},`);
+                                lines.push(`${pad}    tonemap_mode: "${c.tonemap_mode ?? 'Filmic'}",`);
+                                lines.push(`${pad}    tonemap_exposure: ${c.tonemap_exposure ?? 1.0},`);
+                                lines.push(`${pad}    tonemap_white: ${c.tonemap_white ?? 1.0},`);
+                                lines.push(`${pad}    ssao_enabled: ${c.ssao_enabled ?? false},`);
+                                lines.push(`${pad}    ssao_intensity: ${c.ssao_intensity ?? 1.0},`);
+                                lines.push(`${pad}    ssao_radius: ${c.ssao_radius ?? 1.0},`);
+                                lines.push(`${pad}    glow_enabled: ${c.glow_enabled ?? false},`);
+                                lines.push(`${pad}    glow_intensity: ${c.glow_intensity ?? 0.8},`);
+                                lines.push(`${pad}    glow_threshold: ${c.glow_threshold ?? 0.9},`);
+                                lines.push(`${pad}    sky_material: "${c.sky_material ?? 'ProceduralSky'}",`);
+                                lines.push(`${pad}    radiance_size: "${c.radiance_size ?? 'Size1024'}",`);
+                                lines.push(`${pad}    sky_top_color: (${(c.sky_top_color ?? [0.35, 0.55, 0.85, 1]).join(', ')}),`);
+                                lines.push(`${pad}    sky_horizon_color: (${(c.sky_horizon_color ?? [0.65, 0.78, 0.90, 1]).join(', ')}),`);
+                                lines.push(`${pad}    sky_curve: ${c.sky_curve ?? 0.15},`);
+                                lines.push(`${pad}    sky_energy: ${c.sky_energy ?? 1.0},`);
+                                lines.push(`${pad}    ground_bottom_color: (${(c.ground_bottom_color ?? [0.12, 0.10, 0.08, 1]).join(', ')}),`);
+                                lines.push(`${pad}    ground_horizon_color: (${(c.ground_horizon_color ?? [0.35, 0.30, 0.25, 1]).join(', ')}),`);
+                                lines.push(`${pad}    ground_curve: ${c.ground_curve ?? 0.1},`);
+                                lines.push(`${pad}    ground_energy: ${c.ground_energy ?? 1.0},`);
+                                lines.push(`${pad}    sun_enabled: ${c.sun_enabled ?? true},`);
+                                lines.push(`${pad}    sun_angle_min: ${c.sun_angle_min ?? 0.5},`);
+                                lines.push(`${pad}    sun_angle_max: ${c.sun_angle_max ?? 2.0},`);
+                                lines.push(`${pad}    sun_curve: ${c.sun_curve ?? 0.05},`);
+                                lines.push(`${pad}    sun_energy: ${c.sun_energy ?? 16.0},`);
+                                lines.push(`${pad}    sun_color: (${(c.sun_color ?? [1.0, 0.95, 0.85, 1]).join(', ')}),`);
+                                lines.push(`${pad}    sun_position: (${(c.sun_position ?? [0.5, 0.8, -0.3]).join(', ')}),`);
+                                lines.push(`${pad}    clouds_enabled: ${c.clouds_enabled ?? false},`);
+                                lines.push(`${pad}    clouds_color: (${(c.clouds_color ?? [1.0, 1.0, 1.0, 1]).join(', ')}),`);
+                                lines.push(`${pad}    clouds_density: ${c.clouds_density ?? 0.5},`);
+                                lines.push(`${pad}    clouds_speed: ${c.clouds_speed ?? 0.1},`);
+                                lines.push(`${pad}    clouds_height: ${c.clouds_height ?? 500.0},`);
+                                lines.push(`${pad}    clouds_coverage: ${c.clouds_coverage ?? 0.5},`);
+                                lines.push(`${pad}    clouds_thickness: ${c.clouds_thickness ?? 100.0},`);
+                                lines.push(`${pad}    fog_enabled: ${c.fog_enabled ?? false},`);
+                                lines.push(`${pad}    fog_density: ${c.fog_density ?? 0.001},`);
+                                lines.push(`${pad}    fog_depth_begin: ${c.fog_depth_begin ?? 10.0},`);
+                                lines.push(`${pad}    fog_depth_end: ${c.fog_depth_end ?? 100.0},`);
+                                lines.push(`${pad}    fog_color: (${(c.fog_color ?? [0.7, 0.75, 0.8, 1]).join(', ')}),`);
                                 lines.push(`${pad}),`);
                                 break;
                         case 'FogVolume':
@@ -1112,6 +1158,36 @@ export class VecnParser {
                                         glow_enabled: this.parseBool(we, 'glow_enabled', false),
                                         glow_intensity: this.parseFloat(we, 'glow_intensity', 0.8),
                                         glow_threshold: this.parseFloat(we, 'glow_threshold', 0.9),
+                                        // Sky (merged in WorldEnvironment)
+                                        sky_material: this.parseString(we, 'sky_material', 'ProceduralSky') as 'ProceduralSky' | 'PanoramaSky' | 'PhysicalSky',
+                                        radiance_size: this.parseString(we, 'radiance_size', 'Size1024') as 'Size256' | 'Size512' | 'Size1024' | 'Size2048',
+                                        sky_top_color: this.parseColor4(we, 'sky_top_color', [0.35, 0.55, 0.85, 1.0]),
+                                        sky_horizon_color: this.parseColor4(we, 'sky_horizon_color', [0.65, 0.78, 0.90, 1.0]),
+                                        sky_curve: this.parseFloat(we, 'sky_curve', 0.15),
+                                        sky_energy: this.parseFloat(we, 'sky_energy', 1.0),
+                                        ground_bottom_color: this.parseColor4(we, 'ground_bottom_color', [0.12, 0.10, 0.08, 1.0]),
+                                        ground_horizon_color: this.parseColor4(we, 'ground_horizon_color', [0.35, 0.30, 0.25, 1.0]),
+                                        ground_curve: this.parseFloat(we, 'ground_curve', 0.1),
+                                        ground_energy: this.parseFloat(we, 'ground_energy', 1.0),
+                                        sun_enabled: this.parseBool(we, 'sun_enabled', true),
+                                        sun_angle_min: this.parseFloat(we, 'sun_angle_min', 0.5),
+                                        sun_angle_max: this.parseFloat(we, 'sun_angle_max', 2.0),
+                                        sun_curve: this.parseFloat(we, 'sun_curve', 0.05),
+                                        sun_energy: this.parseFloat(we, 'sun_energy', 16.0),
+                                        sun_color: this.parseColor4(we, 'sun_color', [1.0, 0.95, 0.85, 1.0]),
+                                        sun_position: this.parseTuple3Default(we, 'sun_position', [0.5, 0.8, -0.3]),
+                                        clouds_enabled: this.parseBool(we, 'clouds_enabled', false),
+                                        clouds_color: this.parseColor4(we, 'clouds_color', [1.0, 1.0, 1.0, 1.0]),
+                                        clouds_density: this.parseFloat(we, 'clouds_density', 0.5),
+                                        clouds_speed: this.parseFloat(we, 'clouds_speed', 0.1),
+                                        clouds_height: this.parseFloat(we, 'clouds_height', 500.0),
+                                        clouds_coverage: this.parseFloat(we, 'clouds_coverage', 0.5),
+                                        clouds_thickness: this.parseFloat(we, 'clouds_thickness', 100.0),
+                                        fog_enabled: this.parseBool(we, 'fog_enabled', false),
+                                        fog_density: this.parseFloat(we, 'fog_density', 0.001),
+                                        fog_depth_begin: this.parseFloat(we, 'fog_depth_begin', 10.0),
+                                        fog_depth_end: this.parseFloat(we, 'fog_depth_end', 100.0),
+                                        fog_color: this.parseColor4(we, 'fog_color', [0.7, 0.75, 0.80, 1.0]),
                                 });
                         }
 
@@ -1357,45 +1433,64 @@ export class VecnParser {
 
                         // Additional Environment
                         for (const sky of this.extractNamedStructs(compContent, 'Sky')) {
+                                let world = entity.components.find(c => c.type === 'WorldEnvironment') as any;
+                                if (!world) {
+                                        world = {
+                                                type: 'WorldEnvironment',
+                                                environment: '',
+                                                camera_attributes: '',
+                                                background_mode: 'Sky',
+                                                background_color: [0.05, 0.05, 0.1, 1.0],
+                                                gradient_top: [0.4, 0.4, 0.5, 1.0],
+                                                gradient_bottom: [0.15, 0.15, 0.18, 1.0],
+                                                ambient_light_energy: 1.0,
+                                                ambient_light_color: [0.5, 0.5, 0.55, 1.0],
+                                                ambient_light_sky_contribution: 1.0,
+                                                reflected_light_energy: 1.0,
+                                                tonemap_mode: 'Filmic',
+                                                tonemap_exposure: 1.0,
+                                                tonemap_white: 1.0,
+                                                ssao_enabled: false,
+                                                ssao_intensity: 1.0,
+                                                ssao_radius: 1.0,
+                                                glow_enabled: false,
+                                                glow_intensity: 0.8,
+                                                glow_threshold: 0.9,
+                                        };
+                                        entity.components.push(world);
+                                }
+
                                 const skyMat = this.parseString(sky, 'sky_material', 'ProceduralSky');
-                                entity.components.push({
-                                        type: 'Sky',
-                                        sky_material: (skyMat === 'ProceduralSky' || skyMat === 'PanoramaSky' || skyMat === 'PhysicalSky') 
-                                                ? skyMat : 'ProceduralSky',
-                                        radiance_size: this.parseString(sky, 'radiance_size', 'Size256') as 'Size256' | 'Size512' | 'Size1024' | 'Size2048',
-                                        // Sky colors
-                                        sky_top_color: this.parseColor4(sky, 'sky_top_color', [0.35, 0.55, 0.85, 1.0]),
-                                        sky_horizon_color: this.parseColor4(sky, 'sky_horizon_color', [0.65, 0.78, 0.90, 1.0]),
-                                        sky_curve: this.parseFloat(sky, 'sky_curve', 0.15),
-                                        sky_energy: this.parseFloat(sky, 'sky_energy', 1.0),
-                                        // Ground
-                                        ground_bottom_color: this.parseColor4(sky, 'ground_bottom_color', [0.12, 0.10, 0.08, 1.0]),
-                                        ground_horizon_color: this.parseColor4(sky, 'ground_horizon_color', [0.35, 0.30, 0.25, 1.0]),
-                                        ground_curve: this.parseFloat(sky, 'ground_curve', 0.1),
-                                        ground_energy: this.parseFloat(sky, 'ground_energy', 1.0),
-                                        // Sun
-                                        sun_enabled: this.parseBool(sky, 'sun_enabled', true),
-                                        sun_angle_min: this.parseFloat(sky, 'sun_angle_min', 0.5),
-                                        sun_angle_max: this.parseFloat(sky, 'sun_angle_max', 2.0),
-                                        sun_curve: this.parseFloat(sky, 'sun_curve', 0.05),
-                                        sun_energy: this.parseFloat(sky, 'sun_energy', 16.0),
-                                        sun_color: this.parseColor4(sky, 'sun_color', [1.0, 0.95, 0.85, 1.0]),
-                                        sun_position: this.parseTuple3Default(sky, 'sun_position', [0.5, 0.8, -0.3]),
-                                        // Clouds
-                                        clouds_enabled: this.parseBool(sky, 'clouds_enabled', false),
-                                        clouds_color: this.parseColor4(sky, 'clouds_color', [1.0, 1.0, 1.0, 1.0]),
-                                        clouds_density: this.parseFloat(sky, 'clouds_density', 0.5),
-                                        clouds_speed: this.parseFloat(sky, 'clouds_speed', 0.1),
-                                        clouds_height: this.parseFloat(sky, 'clouds_height', 500.0),
-                                        clouds_coverage: this.parseFloat(sky, 'clouds_coverage', 0.5),
-                                        clouds_thickness: this.parseFloat(sky, 'clouds_thickness', 100.0),
-                                        // Fog
-                                        fog_enabled: this.parseBool(sky, 'fog_enabled', false),
-                                        fog_density: this.parseFloat(sky, 'fog_density', 0.001),
-                                        fog_depth_begin: this.parseFloat(sky, 'fog_depth_begin', 10.0),
-                                        fog_depth_end: this.parseFloat(sky, 'fog_depth_end', 100.0),
-                                        fog_color: this.parseColor4(sky, 'fog_color', [0.7, 0.75, 0.80, 1.0]),
-                                });
+                                world.sky_material = (skyMat === 'ProceduralSky' || skyMat === 'PanoramaSky' || skyMat === 'PhysicalSky')
+                                        ? skyMat : 'ProceduralSky';
+                                world.radiance_size = this.parseString(sky, 'radiance_size', 'Size256');
+                                world.sky_top_color = this.parseColor4(sky, 'sky_top_color', [0.35, 0.55, 0.85, 1.0]);
+                                world.sky_horizon_color = this.parseColor4(sky, 'sky_horizon_color', [0.65, 0.78, 0.90, 1.0]);
+                                world.sky_curve = this.parseFloat(sky, 'sky_curve', 0.15);
+                                world.sky_energy = this.parseFloat(sky, 'sky_energy', 1.0);
+                                world.ground_bottom_color = this.parseColor4(sky, 'ground_bottom_color', [0.12, 0.10, 0.08, 1.0]);
+                                world.ground_horizon_color = this.parseColor4(sky, 'ground_horizon_color', [0.35, 0.30, 0.25, 1.0]);
+                                world.ground_curve = this.parseFloat(sky, 'ground_curve', 0.1);
+                                world.ground_energy = this.parseFloat(sky, 'ground_energy', 1.0);
+                                world.sun_enabled = this.parseBool(sky, 'sun_enabled', true);
+                                world.sun_angle_min = this.parseFloat(sky, 'sun_angle_min', 0.5);
+                                world.sun_angle_max = this.parseFloat(sky, 'sun_angle_max', 2.0);
+                                world.sun_curve = this.parseFloat(sky, 'sun_curve', 0.05);
+                                world.sun_energy = this.parseFloat(sky, 'sun_energy', 16.0);
+                                world.sun_color = this.parseColor4(sky, 'sun_color', [1.0, 0.95, 0.85, 1.0]);
+                                world.sun_position = this.parseTuple3Default(sky, 'sun_position', [0.5, 0.8, -0.3]);
+                                world.clouds_enabled = this.parseBool(sky, 'clouds_enabled', false);
+                                world.clouds_color = this.parseColor4(sky, 'clouds_color', [1.0, 1.0, 1.0, 1.0]);
+                                world.clouds_density = this.parseFloat(sky, 'clouds_density', 0.5);
+                                world.clouds_speed = this.parseFloat(sky, 'clouds_speed', 0.1);
+                                world.clouds_height = this.parseFloat(sky, 'clouds_height', 500.0);
+                                world.clouds_coverage = this.parseFloat(sky, 'clouds_coverage', 0.5);
+                                world.clouds_thickness = this.parseFloat(sky, 'clouds_thickness', 100.0);
+                                world.fog_enabled = this.parseBool(sky, 'fog_enabled', false);
+                                world.fog_density = this.parseFloat(sky, 'fog_density', 0.001);
+                                world.fog_depth_begin = this.parseFloat(sky, 'fog_depth_begin', 10.0);
+                                world.fog_depth_end = this.parseFloat(sky, 'fog_depth_end', 100.0);
+                                world.fog_color = this.parseColor4(sky, 'fog_color', [0.7, 0.75, 0.80, 1.0]);
                         }
 
                         for (const rp of this.extractNamedStructs(compContent, 'ReflectionProbe')) {

@@ -221,15 +221,29 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	private onDidRegisterViews(views: { views: IViewDescriptor[]; viewContainer: ViewContainer }[]): void {
 		this.contextKeyService.bufferChangeEvents(() => {
 			views.forEach(({ views, viewContainer }) => {
+				if (!viewContainer || typeof viewContainer.id !== 'string') {
+					this.logger.value.warn('Skipping view registration with invalid view container.');
+					return;
+				}
+				const validViews = views.filter((viewDescriptor): viewDescriptor is IViewDescriptor =>
+					!!viewDescriptor && typeof (viewDescriptor as IViewDescriptor).id === 'string'
+				);
+				if (validViews.length !== views.length) {
+					this.logger.value.warn(`Ignoring ${views.length - validViews.length} invalid view descriptor(s) in container '${viewContainer.id}'.`);
+				}
+				if (!validViews.length) {
+					return;
+				}
+
 				// When views are registered, we need to regroup them based on the customizations
-				const regroupedViews = this.regroupViews(viewContainer.id, views);
+				const regroupedViews = this.regroupViews(viewContainer.id, validViews);
 
 				// Once they are grouped, try registering them which occurs
 				// if the container has already been registered within this service
 				// or we can generate the container from the source view id
 				this.registerGroupedViews(regroupedViews);
 
-				views.forEach(viewDescriptor => this.getOrCreateMovableViewContextKey(viewDescriptor).set(!!viewDescriptor.canMoveView));
+				validViews.forEach(viewDescriptor => this.getOrCreateMovableViewContextKey(viewDescriptor).set(!!viewDescriptor.canMoveView));
 			});
 		});
 	}
@@ -239,11 +253,22 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	}
 
 	private onDidDeregisterViews(views: IViewDescriptor[], viewContainer: ViewContainer): void {
+		if (!viewContainer || typeof viewContainer.id !== 'string') {
+			this.logger.value.warn('Skipping view deregistration with invalid view container.');
+			return;
+		}
+		const validViews = views.filter((viewDescriptor): viewDescriptor is IViewDescriptor =>
+			!!viewDescriptor && typeof (viewDescriptor as IViewDescriptor).id === 'string'
+		);
+		if (!validViews.length) {
+			return;
+		}
+
 		// When views are registered, we need to regroup them based on the customizations
-		const regroupedViews = this.regroupViews(viewContainer.id, views);
+		const regroupedViews = this.regroupViews(viewContainer.id, validViews);
 		this.deregisterGroupedViews(regroupedViews);
 		this.contextKeyService.bufferChangeEvents(() => {
-			views.forEach(viewDescriptor => this.getOrCreateMovableViewContextKey(viewDescriptor).set(false));
+			validViews.forEach(viewDescriptor => this.getOrCreateMovableViewContextKey(viewDescriptor).set(false));
 		});
 	}
 

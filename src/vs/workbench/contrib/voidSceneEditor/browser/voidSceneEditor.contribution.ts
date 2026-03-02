@@ -1,16 +1,15 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Scene Editor - Contribution
- *  Simple mode switching: 3D / 2D / Script
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { URI } from '../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
-import * as DOM from '../../../../base/browser/dom.js';
 import { ThreeViewport } from './threeViewport.js';
 import { Viewport2D } from './viewport2D.js';
 import { InspectorView } from './inspectorView.js';
@@ -36,6 +35,13 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	private modelListener: IDisposable | null = null;
 	private fileWatcher: IDisposable | null = null;
 	private suppressModelUntil: number = 0;
+	private readonly modeDisposables = this._register(new DisposableStore());
+
+	private clearElement(element: HTMLElement): void {
+		while (element.firstChild) {
+			element.removeChild(element.firstChild);
+		}
+	}
 
 	constructor(
 		@IEditorService private readonly editorService: IEditorService,
@@ -49,6 +55,15 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		
 		// Bridge save handler
 		this._register(sceneBridge.onNeedsSave(e => this.saveToDisk(e.uri, e.content)));
+
+		// Realtime scene sync: keep both viewports hot-updated on any bridge change
+		this._register(sceneBridge.onSceneUpdated(() => this.applySceneUpdate()));
+
+		// Keep selection synchronized across scene hierarchy, inspector and both viewports
+		this._register(sceneBridge.onEntitySelected(id => {
+			this.viewport3D?.selectEntityById(id);
+			this.viewport2D?.selectEntity(id);
+		}));
 		
 		// Editor changes
 		this._register(this.editorService.onDidActiveEditorChange(() => this.attachModelListener()));
@@ -83,7 +98,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		this.toolbar.className = 'void-editor-toolbar';
 		this.toolbar.style.cssText = `
 			position: absolute; top: 0; left: 0; right: 0; height: 32px;
-			background: #222225; border-bottom: 1px solid #2a2a2e;
+			background: #171717; border-bottom: 1px solid #2d2d2d;
 			display: flex; align-items: center; padding: 0 8px; gap: 2px;
 			z-index: 100; font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 12px;
 		`;
@@ -115,14 +130,13 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	private updateButtonStyle(btn: HTMLButtonElement, isActive: boolean): void {
 		btn.style.cssText = `
 			padding: 3px 14px;
-			border: 1px solid ${isActive ? '#E67E22' : 'transparent'};
-			border-radius: 3px;
-			background: ${isActive ? '#E67E22' : 'transparent'};
-			color: ${isActive ? '#fff' : '#777'};
+			border: 1px solid ${isActive ? '#d47a4a' : '#2d2d2d'};
+			border-radius: 2px;
+			background: ${isActive ? '#232323' : 'transparent'};
+			color: ${isActive ? '#f0f0f0' : '#9a9a9a'};
 			font-size: 11px;
 			font-weight: ${isActive ? '600' : '500'};
 			cursor: pointer;
-			transition: all 0.1s ease;
 			outline: none;
 		`;
 	}
@@ -142,7 +156,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			position: absolute;
 			top: 32px; left: 0; right: 0; bottom: 0;
 			display: none;
-			background: #1a1a1e;
+			background: #171717;
 			z-index: 50;
 		`;
 
@@ -152,7 +166,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		viewportPane.style.cssText = `
 			position: absolute;
 			top: 0; left: 0; right: 280px; bottom: 0;
-			background: #1a1a1e;
+			background: #171717;
 		`;
 		viewportPane.id = 'void-viewport-pane';
 		this.viewportContainer.appendChild(viewportPane);
@@ -163,12 +177,33 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		this.inspectorContainer.style.cssText = `
 			position: absolute;
 			top: 0; right: 0; width: 280px; bottom: 0;
-			background: #1e1e1e;
-			border-left: 1px solid #2a2a2e;
+			background: #171717;
+			border-left: 1px solid #2d2d2d;
 		`;
 		this.viewportContainer.appendChild(this.inspectorContainer);
 
 		editorContainer.appendChild(this.viewportContainer);
+	}
+
+	private ensureEditorContainers(): void {
+		const editorPart = document.querySelector('.part.editor') as HTMLElement | null;
+		if (!editorPart) {
+			return;
+		}
+		if (!this.toolbar || !editorPart.contains(this.toolbar)) {
+			this.createToolbar(editorPart);
+		}
+		if (!this.viewportContainer || !editorPart.contains(this.viewportContainer)) {
+			this.createViewportContainer(editorPart);
+		}
+	}
+
+	private getViewportPane(): HTMLElement | null {
+		const localPane = this.viewportContainer?.querySelector('#void-viewport-pane') as HTMLElement | null;
+		if (localPane) {
+			return localPane;
+		}
+		return document.getElementById('void-viewport-pane');
 	}
 
 	// ════════════════════════════════════════════════════════════════
@@ -176,109 +211,141 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 	// ════════════════════════════════════════════════════════════════
 
 	private switchMode(mode: EditorMode): void {
-		this.currentMode = mode;
+		try {
+			this.ensureEditorContainers();
+			this.currentMode = mode;
+			this.modeDisposables.clear();
 
-		// Update toolbar buttons
-		if (this.toolbar) {
-			this.toolbar.querySelectorAll('button').forEach(btn => {
-				const btnMode = (btn as HTMLButtonElement).dataset.mode as EditorMode;
-				this.updateButtonStyle(btn as HTMLButtonElement, btnMode === mode);
-			});
-		}
-
-		// Get editor elements
-		const editorPart = document.querySelector('.part.editor');
-		const monacoEditor = editorPart?.querySelector('.monaco-editor') as HTMLElement;
-
-		// Stop all viewports
-		if (this.viewport3D) this.viewport3D.stopRendering();
-		if (this.viewport2D) this.viewport2D.stopRendering();
-
-		// === SCRIPT MODE ===
-		if (mode === 'Script') {
-			// Show Monaco editor
-			if (monacoEditor) monacoEditor.style.display = '';
-			// Hide viewport container
-			if (this.viewportContainer) this.viewportContainer.style.display = 'none';
-			return;
-		}
-
-		// === 3D MODE ===
-		if (mode === '3D') {
-			// Hide Monaco editor
-			if (monacoEditor) monacoEditor.style.display = 'none';
-			// Show viewport container
-			if (this.viewportContainer) this.viewportContainer.style.display = 'block';
-			
-			// Create 3D viewport if not exists
-			const pane = document.getElementById('void-viewport-pane');
-			if (pane && !this.viewport3D) {
-				// Clear pane
-				pane.innerHTML = '';
-				this.viewport3D = new ThreeViewport(pane, sceneBridge.getRaw() || '');
-				this._register(this.viewport3D);
-				
-				this.viewport3D.onTransformEditedTRS(e => {
-					sceneBridge.updateTransform({
-						entityId: e.entityId,
-						translation: e.translation,
-						rotation: e.rotation,
-						scale: e.scale,
-					});
-				});
-				
-				this.viewport3D.onEntityPicked(id => {
-					sceneBridge.selectEntity(id);
+			// Update toolbar buttons
+			if (this.toolbar) {
+				this.toolbar.querySelectorAll('button').forEach(btn => {
+					const btnMode = (btn as HTMLButtonElement).dataset.mode as EditorMode;
+					this.updateButtonStyle(btn as HTMLButtonElement, btnMode === mode);
 				});
 			}
-			
-			// Create inspector if not exists
-			if (this.inspectorContainer && !this.inspector) {
-				this.inspectorContainer.innerHTML = '';
-				this.inspector = new InspectorView(this.inspectorContainer);
-				this._register(this.inspector);
-			}
-			
-			// Update scene
-			if (this.viewport3D) {
-				this.viewport3D.updateScene(sceneBridge.getRaw() || '');
-			}
-			return;
-		}
 
-		// === 2D MODE ===
-		if (mode === '2D') {
-			// Hide Monaco editor
-			if (monacoEditor) monacoEditor.style.display = 'none';
-			// Show viewport container
-			if (this.viewportContainer) this.viewportContainer.style.display = 'block';
-			
-			// Create 2D viewport if not exists
-			const pane = document.getElementById('void-viewport-pane');
-			if (pane && !this.viewport2D) {
-				// Clear pane
-				pane.innerHTML = '';
-				this.viewport2D = new Viewport2D(pane);
-				this._register(this.viewport2D);
+			// Get editor elements
+			const editorPart = document.querySelector('.part.editor');
+			const monacoEditor = editorPart?.querySelector('.monaco-editor') as HTMLElement;
+
+			// Stop all viewports
+			if (this.viewport3D) this.viewport3D.stopRendering();
+			if (this.viewport2D) this.viewport2D.stopRendering();
+
+			// === SCRIPT MODE ===
+			if (mode === 'Script') {
+				// Show Monaco editor
+				if (monacoEditor) monacoEditor.style.display = '';
+				// Hide viewport container
+				if (this.viewportContainer) this.viewportContainer.style.display = 'none';
+				return;
+			}
+
+			// === 3D MODE ===
+			if (mode === '3D') {
+				// Hide Monaco editor
+				if (monacoEditor) monacoEditor.style.display = 'none';
+				// Show viewport container
+				if (this.viewportContainer) this.viewportContainer.style.display = 'block';
+
+				// Dispose 2D viewport before creating/restoring 3D.
+				// Both modes share the same DOM pane, so keeping both instances breaks switching.
+				if (this.viewport2D) {
+					this.viewport2D.dispose();
+					this.viewport2D = null;
+				}
 				
-				this.viewport2D.onEntitySelected(id => {
-					sceneBridge.selectEntity(id);
-				});
+				// Create 3D viewport if not exists
+				const pane = this.getViewportPane();
+				if (pane && !this.viewport3D) {
+					// Clear pane
+					this.clearElement(pane);
+					this.viewport3D = new ThreeViewport(pane, sceneBridge.getRaw() || '');
+					this._register(this.viewport3D);
+				}
+				if (this.viewport3D) {
+					this.modeDisposables.add(this.viewport3D.onTransformEditedTRS(e => {
+						sceneBridge.updateTransform({
+							entityId: e.entityId,
+							translation: e.translation,
+							rotation: e.rotation,
+							scale: e.scale,
+						});
+					}));
+					this.modeDisposables.add(this.viewport3D.onEntityPicked(id => {
+						sceneBridge.selectEntity(id);
+					}));
+				}
+				
+				// Create inspector if not exists
+				if (this.inspectorContainer && !this.inspector) {
+					this.clearElement(this.inspectorContainer);
+					this.inspector = new InspectorView(this.inspectorContainer);
+					this._register(this.inspector);
+				}
+				
+				// Update scene
+				if (this.viewport3D) {
+					this.viewport3D.updateScene(sceneBridge.getRaw() || '');
+					this.viewport3D.startRendering();
+				}
+				return;
 			}
-			
-			// Create inspector if not exists
-			if (this.inspectorContainer && !this.inspector) {
-				this.inspectorContainer.innerHTML = '';
-				this.inspector = new InspectorView(this.inspectorContainer);
-				this._register(this.inspector);
+
+			// === 2D MODE ===
+			if (mode === '2D') {
+				// Hide Monaco editor
+				if (monacoEditor) monacoEditor.style.display = 'none';
+				// Show viewport container
+				if (this.viewportContainer) this.viewportContainer.style.display = 'block';
+
+				// Dispose 3D viewport before creating/restoring 2D.
+				// Both modes share the same DOM pane, so keeping both instances breaks switching.
+				if (this.viewport3D) {
+					this.viewport3D.dispose();
+					this.viewport3D = null;
+				}
+				
+				// Create 2D viewport if not exists
+				const pane = this.getViewportPane();
+				if (pane && !this.viewport2D) {
+					// Clear pane
+					this.clearElement(pane);
+					this.viewport2D = new Viewport2D(pane);
+					this._register(this.viewport2D);
+				}
+				if (this.viewport2D) {
+					this.modeDisposables.add(this.viewport2D.onEntitySelected(id => {
+						sceneBridge.selectEntity(id);
+					}));
+
+					this.modeDisposables.add(this.viewport2D.onTransformChanged(e => {
+						sceneBridge.updateTransform2D({
+							entityId: e.id,
+							position: [e.transform.position[0], e.transform.position[1]],
+							rotation: e.transform.rotation,
+							scale: [e.transform.scale[0], e.transform.scale[1]]
+						});
+					}));
+				}
+				
+				// Create inspector if not exists
+				if (this.inspectorContainer && !this.inspector) {
+					this.clearElement(this.inspectorContainer);
+					this.inspector = new InspectorView(this.inspectorContainer);
+					this._register(this.inspector);
+				}
+				
+				// Update entities
+				if (this.viewport2D) {
+					this.viewport2D.loadScene(this.convertEntities());
+					this.viewport2D.resize();
+					this.viewport2D.startRendering();
+				}
+				return;
 			}
-			
-			// Update entities
-			if (this.viewport2D) {
-				this.viewport2D.loadScene(this.convertEntities());
-				this.viewport2D.resize();
-			}
-			return;
+		} catch (error) {
+			console.error('[Void Scene Editor] Failed to switch editor mode:', error);
 		}
 	}
 
@@ -305,11 +372,27 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 				} else if (comp.type === 'Sprite2D') {
 					result.sprite = { size: [100, 100] };
 				} else if (comp.type === 'CollisionShape2D') {
-					result.collider = { type: comp.shape?.type || 'box', size: comp.shape?.size || [50, 50] };
+					const shape = comp.shape;
+					const size: [number, number] =
+						shape && 'size' in shape
+							? shape.size
+							: shape && 'radius' in shape
+								? [shape.radius * 2, shape.radius * 2]
+								: [50, 50];
+					result.collider = { type: shape?.type || 'box', size };
 				}
 			}
 			return result;
 		});
+	}
+
+	private applySceneUpdate(): void {
+		if (this.viewport3D) {
+			this.viewport3D.updateScene(sceneBridge.getRaw() || '');
+		}
+		if (this.viewport2D) {
+			this.viewport2D.loadScene(this.convertEntities());
+		}
 	}
 
 	// ════════════════════════════════════════════════════════════════

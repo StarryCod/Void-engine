@@ -26,6 +26,12 @@
         "path": "./themes/dark_modern.json"
       },
       {
+        "id": "Void Cyber Minimal",
+        "label": "%voidCyberMinimalThemeLabel%",
+        "uiTheme": "vs-dark",
+        "path": "./themes/void_cyber_minimal.json"
+      },
+      {
         "id": "Default Light+",
         "label": "%lightPlusColorThemeLabel%",
         "uiTheme": "vs",

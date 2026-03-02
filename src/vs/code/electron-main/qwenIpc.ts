@@ -6,6 +6,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { createInterface } from 'readline';
 import { join, dirname } from 'path';
+import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { ILogService } from '../../platform/log/common/log.js';
 
@@ -33,12 +34,35 @@ export class QwenIPCHandler {
 		const currentFilePath = fileURLToPath(import.meta.url);
 		const currentDir = dirname(currentFilePath);
 
-		// Path to void-ai-chat.js - always relative to VSCode installation, not workspace
-		// currentDir is: vscode/out/vs/code/electron-main
-		// We need: qwen-code-clean/void-ai-chat.js
-		this.qwenScriptPath = join(currentDir, '..', '..', '..', '..', '..', 'qwen-code-clean', 'void-ai-chat.js');
+		// Resolve script path from several common layouts (dev/build/package).
+		this.qwenScriptPath = this.resolveQwenScriptPath(currentDir);
 
 		this.logService.info('[Qwen IPC] Initialized with script path:', this.qwenScriptPath);
+		if (!existsSync(this.qwenScriptPath)) {
+			this.logService.warn('[Qwen IPC] Script file does not exist:', this.qwenScriptPath);
+		}
+	}
+
+	private resolveQwenScriptPath(currentDir: string): string {
+		const envPath = process.env.VOID_QWEN_SCRIPT;
+		if (envPath && existsSync(envPath)) {
+			return envPath;
+		}
+
+		const candidates = [
+			join(currentDir, '..', '..', '..', '..', '..', 'qwen-code-clean', 'void-ai-chat.js'),
+			join(currentDir, '..', '..', '..', '..', '..', '..', 'qwen-code-clean', 'void-ai-chat.js'),
+			join(process.cwd(), 'qwen-code-clean', 'void-ai-chat.js'),
+			join(process.cwd(), '..', 'qwen-code-clean', 'void-ai-chat.js'),
+		];
+
+		for (const candidate of candidates) {
+			if (existsSync(candidate)) {
+				return candidate;
+			}
+		}
+
+		return candidates[0];
 	}
 
 	async sendMessage(query: string, workspacePath?: string, onEvent?: (event: IQwenEvent) => void): Promise<IQwenChatResult> {
@@ -84,8 +108,9 @@ export class QwenIPCHandler {
 						if (onEvent) {
 							onEvent(event);
 						}
-					} catch (error) {
-						this.logService.warn('[Qwen IPC] Failed to parse line:', line);
+					} catch {
+						// Ignore non-JSON transport noise from external tooling.
+						this.logService.trace('[Qwen IPC] Ignored non-JSON line');
 					}
 				});
 

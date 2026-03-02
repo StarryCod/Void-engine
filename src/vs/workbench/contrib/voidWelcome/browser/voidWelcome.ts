@@ -72,15 +72,139 @@ const I: Record<string, string[]> = {
 // ═══ File Templates ═══
 
 function bevyCargo(n: string): string {
-	return `[package]\nname = "${n}"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nbevy = "0.15"\nvoid-scene-loader = { path = "../vscode/engine/void-scene-loader" }\n`;
+	return `[package]\nname = "${n}"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nbevy = "0.15"\nvoid-scene-loader = { path = "../../vscode/engine/void-scene-loader" }\n`;
 }
 
 const BEVY_MAIN_3D = `use bevy::prelude::*;\nuse void_scene_loader::VoidSceneLoaderPlugin;\n\nfn main() {\n    App::new()\n        .add_plugins(DefaultPlugins.set(WindowPlugin {\n            primary_window: Some(Window {\n                title: "Void Engine".to_string(),\n                resolution: (1280.0, 720.0).into(),\n                ..default()\n            }),\n            ..default()\n        }))\n        .add_plugins(VoidSceneLoaderPlugin)\n        .run();\n}\n`;
 const BEVY_MAIN_2D = BEVY_MAIN_3D;
 const BEVY_MAIN_BLANK = `use bevy::prelude::*;\n\nfn main() {\n    App::new()\n        .add_plugins(DefaultPlugins)\n        .add_systems(Startup, setup)\n        .run();\n}\n\nfn setup(mut commands: Commands) {\n    commands.spawn(Camera2dBundle::default());\n}\n`;
 const GITIGNORE = `/target\nCargo.lock\n.vscode\n*.vecn~\n`;
-const SCENE_3D = `# Void Engine 3D Scene\n(camera):\n  camera_3d: true\n  transform: [0, 5, 10, 0, -0.3, 0]\n\n(light):\n  directional_light: true\n  transform: [0, 10, 5, -1, -0.5, 0]\n\n(cube):\n  mesh: cube\n  transform: [0, 1, 0, 0, 0, 0]\n`;
-const SCENE_2D = `# Void Engine 2D Scene\n(camera):\n  camera_2d: true\n  transform: [0, 0, 0, 0, 0, 1]\n\n(sprite):\n  sprite: square\n  transform: [0, 0, 0, 0, 0, 0]\n`;
+function voidConfig(mainScene: string | null): string {
+	return JSON.stringify({
+		mainScene,
+		version: '0.1.0',
+	}, null, 2);
+}
+const SCENE_3D = `// Void Engine Scene Format (.vecn)
+VoidScene(
+    version: "1.0",
+    mode: Scene3D,
+
+    entities: [
+        (
+            id: "camera_main",
+            name: "Camera",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0, 5, 10),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Camera(
+                    fov: 60,
+                    near: 0.1,
+                    far: 1000,
+                ),
+            ],
+            children: [],
+        ),
+        (
+            id: "light_sun",
+            name: "Directional Light",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0, 10, 5),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                DirectionalLight(
+                    color: (1, 1, 1),
+                    illuminance: 10000,
+                ),
+            ],
+            children: [],
+        ),
+        (
+            id: "cube_main",
+            name: "Cube",
+            visible: true,
+            components: [
+                Transform(
+                    translation: (0, 1, 0),
+                    rotation: (0, 0, 0, 1),
+                    scale: (1, 1, 1),
+                ),
+                Mesh( shape: Cube(size: 1) ),
+                Material(
+                    color: (0.6, 0.6, 0.7, 1.0),
+                    metallic: 0,
+                    roughness: 0.8,
+                ),
+            ],
+            children: [],
+        ),
+    ],
+
+    resources: [
+        AmbientLight(
+            color: (1, 1, 1),
+            brightness: 0.35,
+        ),
+        ClearColor(
+            color: (0.06, 0.07, 0.10, 1.0),
+        ),
+    ],
+)
+`;
+const SCENE_2D = `// Void Engine Scene Format (.vecn)
+VoidScene(
+    version: "1.0",
+    mode: Scene2D,
+
+    entities: [
+        (
+            id: "camera_2d",
+            name: "Camera2D",
+            visible: true,
+            components: [
+                Transform2D(
+                    position: (0, 0),
+                    rotation: 0,
+                    scale: (1, 1),
+                ),
+            ],
+            children: [],
+        ),
+        (
+            id: "sprite_main",
+            name: "Sprite2D",
+            visible: true,
+            components: [
+                Transform2D(
+                    position: (0, 0),
+                    rotation: 0,
+                    scale: (1, 1),
+                ),
+                Sprite2D(
+                    texture: "",
+                    region_enabled: false,
+                    region_rect: (0, 0, 64, 64),
+                    offset: (0, 0),
+                ),
+            ],
+            children: [],
+        ),
+    ],
+
+    resources: [
+        ClearColor(
+            color: (0.08, 0.08, 0.10, 1.0),
+        ),
+    ],
+)
+`;
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN CLASS
@@ -307,6 +431,7 @@ export class VoidWelcomeScreen extends Disposable {
 
 		await this.w(root + this.sep + 'Cargo.toml', bevyCargo(sl));
 		await this.w(root + this.sep + '.gitignore', GITIGNORE);
+		await this.w(root + this.sep + 'void.config.json', voidConfig(template !== 'blank' ? 'assets/scenes/main.vecn' : null));
 
 		const mainContent = template === '3d' ? BEVY_MAIN_3D : template === '2d' ? BEVY_MAIN_2D : BEVY_MAIN_BLANK;
 		await this.w(src + this.sep + 'main.rs', mainContent);
@@ -339,7 +464,7 @@ export class VoidWelcomeScreen extends Disposable {
 		await this.fileService.createFolder(URI.file(dst));
 		await this.fileService.createFolder(URI.file(dst + this.sep + 'src'));
 
-		for (const f of ['Cargo.toml', '.gitignore', '.void-meta.json']) {
+		for (const f of ['Cargo.toml', '.gitignore', '.void-meta.json', 'void.config.json']) {
 			try { await this.w(dst + this.sep + f, await this.read(srcProj.path + this.sep + f)); } catch { /* */ }
 		}
 		try {
@@ -349,6 +474,11 @@ export class VoidWelcomeScreen extends Disposable {
 			await this.w(dst + this.sep + 'src' + this.sep + 'main.rs', BEVY_MAIN_BLANK);
 		}
 		try { await this.copyDir(srcProj.path + this.sep + 'assets', dst + this.sep + 'assets'); } catch { /* */ }
+		try {
+			let cargo = await this.read(dst + this.sep + 'Cargo.toml');
+			cargo = cargo.replace(/name\s*=\s*"[^"]*"/, `name = "${newSlug}"`);
+			await this.w(dst + this.sep + 'Cargo.toml', cargo);
+		} catch { /* */ }
 	}
 
 	private async copyDir(src: string, dst: string): Promise<void> {

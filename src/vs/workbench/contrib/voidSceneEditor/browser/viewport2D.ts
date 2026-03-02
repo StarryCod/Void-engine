@@ -1,49 +1,28 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine — 2D Viewport (Canvas2D)
- *  Godot-style 2D scene editor
- *  Coordinate system: X→right, Y→down (screen coordinates)
- *  Render zone: 4th quadrant (positive X, positive Y from origin)
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// COLOR PALETTE (Same as 3D Viewport)
-// ═══════════════════════════════════════════════════════════════════════════════
-
 const COLORS = {
-	// Background (same as 3D viewport)
-	background: '#1a1a1e',
-	
-	// Grid
-	gridLine: '#252528',
-	gridLineMajor: '#2d2d32',
-	
-	// Axes
-	axisX: '#ff6b6b',  // Red for X
-	axisY: '#69db7c',  // Green for Y
-	
-	// Render zone (camera view)
-	renderZone: 'rgba(74, 158, 255, 0.08)',
-	renderZoneBorder: 'rgba(74, 158, 255, 0.5)',
-	
-	// Outside render zone (dimmed)
-	outsideRender: 'rgba(0, 0, 0, 0.35)',
-	
-	// Objects
-	objectBounds: '#888888',
-	objectSelected: '#4a9eff',
-	objectHovered: '#aaaaaa',
-	collider: '#4caf50',
-	
-	// Gizmo
-	gizmoHandle: '#ffffff',
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════════════════
+	background: '#1d1d1d',
+	gridMinor: '#2d2d2d',
+	gridMajor: '#3a3a3a',
+	axisX: '#d47a4a',
+	axisY: '#8ea06f',
+	renderZoneFill: 'rgba(212, 122, 74, 0.08)',
+	renderZoneBorder: '#9c6b4f',
+	outsideRender: 'rgba(0, 0, 0, 0.30)',
+	objectFill: 'rgba(170, 170, 170, 0.14)',
+	objectBounds: '#9a9a9a',
+	objectSelected: '#d47a4a',
+	objectHovered: '#d0d0d0',
+	collider: '#8ea06f',
+	gizmo: '#d9d9d9',
+	infoText: '#9a9a9a',
+} as const;
 
 interface Vec2 { x: number; y: number; }
 
@@ -62,49 +41,44 @@ interface SceneEntity2D {
 	visible: boolean;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// VIEWPORT 2D CLASS
-// ═══════════════════════════════════════════════════════════════════════════════
+type GizmoHandle = 'moveX' | 'moveY' | 'rotate' | null;
 
 export class Viewport2D extends Disposable {
 	private container: HTMLElement;
 	private canvas: HTMLCanvasElement;
 	private ctx: CanvasRenderingContext2D;
-	
-	// Scene
+
 	private entities: SceneEntity2D[] = [];
 	private selectedIds: Set<string> = new Set();
-	
-	// Camera (pan & zoom)
-	private cameraX: number = 0;
-	private cameraY: number = 0;
-	private zoom: number = 1;
-	
-	// Render zone size (what will be rendered)
-	private renderWidth: number = 1152;
-	private renderHeight: number = 648;
-	
-	// Interaction
-	private isPanning: boolean = false;
-	private isDragging: boolean = false;
+
+	private cameraX = 0;
+	private cameraY = 0;
+	private zoom = 1;
+
+	private renderWidth = 1152;
+	private renderHeight = 648;
+
+	private isPanning = false;
+	private isDragging = false;
 	private lastMouse: Vec2 = { x: 0, y: 0 };
 	private hoveredId: string | null = null;
-	
-	// Rendering
+	private gizmoHover: GizmoHandle = null;
+	private activeGizmo: GizmoHandle = null;
+	private dragStartRotation = 0;
+	private dragStartAngle = 0;
+
 	private rafId: number | null = null;
-	private isRunning: boolean = false;
-	
-	// Events
+	private isRunning = false;
+
 	private readonly _onEntitySelected = this._register(new Emitter<string | null>());
 	public readonly onEntitySelected: Event<string | null> = this._onEntitySelected.event;
-	
+
 	private readonly _onTransformChanged = this._register(new Emitter<{ id: string; transform: Transform2D }>());
 	public readonly onTransformChanged: Event<{ id: string; transform: Transform2D }> = this._onTransformChanged.event;
-	
+
 	constructor(parent: HTMLElement) {
 		super();
-		
-		// Container
+
 		this.container = document.createElement('div');
 		this.container.className = 'void-viewport-2d';
 		this.container.style.cssText = `
@@ -116,391 +90,289 @@ export class Viewport2D extends Disposable {
 			outline: none;
 		`;
 		this.container.tabIndex = 0;
-		
-		// Canvas
+
 		this.canvas = document.createElement('canvas');
-		this.canvas.style.cssText = `width: 100%; height: 100%; display: block;`;
+		this.canvas.style.cssText = 'width: 100%; height: 100%; display: block;';
 		this.container.appendChild(this.canvas);
-		
-		// Context
+
 		const ctx = this.canvas.getContext('2d', { alpha: false });
-		if (!ctx) throw new Error('Canvas 2D context failed');
+		if (!ctx) {
+			throw new Error('Canvas 2D context failed');
+		}
 		this.ctx = ctx;
-		
-		// Events
+
 		this.setupEvents();
-		
-		// Append
 		parent.appendChild(this.container);
-		
-		// Initial resize
 		this.handleResize();
-		
-		// Start
 		this.startRendering();
 	}
-	
-	// ════════════════════════════════════════════════════════════════
-	// PUBLIC API
-	// ════════════════════════════════════════════════════════════════
-	
+
 	public loadScene(entities: SceneEntity2D[]): void {
 		this.entities = entities;
 	}
-	
+
 	public selectEntity(id: string | null): void {
 		this.selectedIds.clear();
-		if (id) this.selectedIds.add(id);
+		if (id) {
+			this.selectedIds.add(id);
+		}
 	}
-	
+
 	public resize(): void {
 		this.handleResize();
 	}
-	
+
 	public startRendering(): void {
-		if (this.isRunning) return;
+		if (this.isRunning) {
+			return;
+		}
 		this.isRunning = true;
 		this.renderLoop();
 	}
-	
+
 	public stopRendering(): void {
 		this.isRunning = false;
-		if (this.rafId) {
+		if (this.rafId !== null) {
 			cancelAnimationFrame(this.rafId);
 			this.rafId = null;
 		}
 	}
-	
-	// ════════════════════════════════════════════════════════════════
-	// RENDERING
-	// ════════════════════════════════════════════════════════════════
-	
+
 	private renderLoop(): void {
-		if (!this.isRunning) return;
+		if (!this.isRunning) {
+			return;
+		}
 		this.render();
 		this.rafId = requestAnimationFrame(() => this.renderLoop());
 	}
-	
+
 	private render(): void {
 		const w = this.canvas.width;
 		const h = this.canvas.height;
-		
-		if (w === 0 || h === 0) return;
-		
-		// Clear with background
+		if (w === 0 || h === 0) {
+			return;
+		}
+
 		this.ctx.fillStyle = COLORS.background;
 		this.ctx.fillRect(0, 0, w, h);
-		
-		// Viewport center in screen coordinates
+
 		const centerX = w / 2;
 		const centerY = h / 2;
-		
-		// World origin in screen coordinates
 		const originX = centerX - this.cameraX * this.zoom;
 		const originY = centerY - this.cameraY * this.zoom;
-		
-		// Draw grid
+
 		this.drawGrid(w, h, originX, originY);
-		
-		// Draw axes (X = red, Y = green)
-		this.drawAxes(w, h, originX, originY);
-		
-		// Draw render zone (4th quadrant - positive X, positive Y)
 		this.drawRenderZone(w, h, originX, originY);
-		
-		// Draw entities
+		this.drawAxes(w, h, originX, originY);
+
 		this.ctx.save();
 		this.ctx.translate(originX, originY);
 		this.ctx.scale(this.zoom, this.zoom);
-		
 		for (const entity of this.entities) {
 			if (entity.visible) {
 				this.drawEntity(entity);
 			}
 		}
-		
 		this.ctx.restore();
-		
-		// Draw info
+
 		this.drawInfo(w, h);
 	}
-	
-	// ════════════════════════════════════════════════════════════════
-	// GRID (Same style as 3D viewport)
-	// ════════════════════════════════════════════════════════════════
-	
+
 	private drawGrid(w: number, h: number, originX: number, originY: number): void {
-		const gridSize = 32;
-		const majorInterval = 8;
-		
-		const step = gridSize * this.zoom;
-		const majorStep = step * majorInterval;
-		
-		// Skip if too zoomed out
-		if (step < 4) return;
-		
-		// Minor grid
-		this.ctx.strokeStyle = COLORS.gridLine;
+		const baseStep = 32;
+		const majorEvery = 4;
+		const step = baseStep * this.zoom;
+		if (step < 6) {
+			return;
+		}
+
+		const majorStep = step * majorEvery;
+
+		this.ctx.strokeStyle = COLORS.gridMinor;
 		this.ctx.lineWidth = 1;
 		this.ctx.beginPath();
-		
-		// Vertical lines
-		let startX = originX % step;
-		for (let x = startX; x < w; x += step) {
+		for (let x = originX % step; x < w; x += step) {
 			this.ctx.moveTo(x, 0);
 			this.ctx.lineTo(x, h);
 		}
-		
-		// Horizontal lines
-		let startY = originY % step;
-		for (let y = startY; y < h; y += step) {
+		for (let y = originY % step; y < h; y += step) {
 			this.ctx.moveTo(0, y);
 			this.ctx.lineTo(w, y);
 		}
-		
 		this.ctx.stroke();
-		
-		// Major grid
-		this.ctx.strokeStyle = COLORS.gridLineMajor;
-		this.ctx.lineWidth = 1;
+
+		this.ctx.strokeStyle = COLORS.gridMajor;
 		this.ctx.beginPath();
-		
-		let majorStartX = originX % majorStep;
-		for (let x = majorStartX; x < w; x += majorStep) {
+		for (let x = originX % majorStep; x < w; x += majorStep) {
 			this.ctx.moveTo(x, 0);
 			this.ctx.lineTo(x, h);
 		}
-		
-		let majorStartY = originY % majorStep;
-		for (let y = majorStartY; y < h; y += majorStep) {
+		for (let y = originY % majorStep; y < h; y += majorStep) {
 			this.ctx.moveTo(0, y);
 			this.ctx.lineTo(w, y);
 		}
-		
 		this.ctx.stroke();
 	}
-	
-	// ════════════════════════════════════════════════════════════════
-	// AXES (X = Red →, Y = Green ↓)
-	// ════════════════════════════════════════════════════════════════
-	
+
 	private drawAxes(w: number, h: number, originX: number, originY: number): void {
-		this.ctx.lineWidth = 2;
-		
-		// X axis (red) - goes RIGHT from origin
-		this.ctx.strokeStyle = COLORS.axisX;
-		this.ctx.beginPath();
-		this.ctx.moveTo(0, originY);
-		this.ctx.lineTo(w, originY);
-		this.ctx.stroke();
-		
-		// Y axis (green) - goes DOWN from origin
-		this.ctx.strokeStyle = COLORS.axisY;
-		this.ctx.beginPath();
-		this.ctx.moveTo(originX, 0);
-		this.ctx.lineTo(originX, h);
-		this.ctx.stroke();
-		
-		// Origin marker
-		this.ctx.fillStyle = '#ffffff';
-		this.ctx.beginPath();
-		this.ctx.arc(originX, originY, 4, 0, Math.PI * 2);
-		this.ctx.fill();
-		
-		// Axis labels
-		this.ctx.font = '11px sans-serif';
-		this.ctx.textAlign = 'left';
-		this.ctx.textBaseline = 'top';
-		
-		// X label (right side)
-		this.ctx.fillStyle = COLORS.axisX;
-		this.ctx.fillText('X', w - 20, originY + 6);
-		
-		// Y label (bottom)
-		this.ctx.fillStyle = COLORS.axisY;
-		this.ctx.fillText('Y', originX + 6, h - 20);
-		
-		// Quadrant numbers
-		this.ctx.fillStyle = '#555';
-		this.ctx.font = '10px sans-serif';
-		
-		// Quadrant 1 (top-right)
-		this.ctx.fillText('1', originX + 10, originY - 20);
-		// Quadrant 2 (top-left)  
-		this.ctx.fillText('2', originX - 20, originY - 20);
-		// Quadrant 3 (bottom-left)
-		this.ctx.fillText('3', originX - 20, originY + 10);
-		// Quadrant 4 (bottom-right) - this is where render zone is
-		this.ctx.fillText('4', originX + 10, originY + 10);
+		this.ctx.lineWidth = 1;
+
+		if (originY >= 0 && originY <= h) {
+			this.ctx.strokeStyle = COLORS.axisX;
+			this.ctx.beginPath();
+			this.ctx.moveTo(0, originY);
+			this.ctx.lineTo(w, originY);
+			this.ctx.stroke();
+		}
+
+		if (originX >= 0 && originX <= w) {
+			this.ctx.strokeStyle = COLORS.axisY;
+			this.ctx.beginPath();
+			this.ctx.moveTo(originX, 0);
+			this.ctx.lineTo(originX, h);
+			this.ctx.stroke();
+		}
+
+		this.ctx.fillStyle = COLORS.gizmo;
+		this.ctx.fillRect(originX - 1.5, originY - 1.5, 3, 3);
 	}
-	
-	// ════════════════════════════════════════════════════════════════
-	// RENDER ZONE (4th Quadrant - positive X, positive Y)
-	// ════════════════════════════════════════════════════════════════
-	
+
 	private drawRenderZone(w: number, h: number, originX: number, originY: number): void {
-		// Render zone is in 4th quadrant
-		// Top-left corner at (0,0) world = (originX, originY) screen
-		// Extends to (renderWidth, renderHeight) world
-		
 		const screenW = this.renderWidth * this.zoom;
 		const screenH = this.renderHeight * this.zoom;
-		
-		// Screen coordinates of render zone
-		const left = originX;
-		const top = originY;
-		const right = originX + screenW;
-		const bottom = originY + screenH;
-		
-		// Dim everything OUTSIDE render zone
+
+		const left = originX - screenW / 2;
+		const top = originY - screenH / 2;
+
 		this.ctx.fillStyle = COLORS.outsideRender;
-		
-		// Left side (x < 0 in world)
-		if (originX > 0) {
-			this.ctx.fillRect(0, 0, originX, h);
-		}
-		
-		// Top side (y < 0 in world)
-		if (originY > 0) {
-			this.ctx.fillRect(originX, 0, w - originX, originY);
-		}
-		
-		// Right side (x > renderWidth)
-		if (right < w) {
-			this.ctx.fillRect(right, originY, w - right, bottom - originY);
-		}
-		
-		// Bottom side (y > renderHeight)
-		if (bottom < h) {
-			this.ctx.fillRect(originX, bottom, right - originX, h - bottom);
-		}
-		
-		// Draw render zone rectangle
-		this.ctx.fillStyle = COLORS.renderZone;
-		this.ctx.fillRect(originX, originY, screenW, screenH);
-		
-		// Border
+		this.ctx.fillRect(0, 0, w, h);
+
+		this.ctx.fillStyle = COLORS.renderZoneFill;
+		this.ctx.fillRect(left, top, screenW, screenH);
+
 		this.ctx.strokeStyle = COLORS.renderZoneBorder;
-		this.ctx.lineWidth = 2;
-		this.ctx.setLineDash([6, 3]);
-		this.ctx.strokeRect(originX, originY, screenW, screenH);
-		this.ctx.setLineDash([]);
-		
-		// Label
-		this.ctx.fillStyle = COLORS.renderZoneBorder;
-		this.ctx.font = '10px sans-serif';
-		this.ctx.textAlign = 'left';
-		this.ctx.textBaseline = 'top';
-		this.ctx.fillText(`Render: ${this.renderWidth}×${this.renderHeight}`, originX + 6, originY + 6);
+		this.ctx.lineWidth = 1;
+		this.ctx.strokeRect(left, top, screenW, screenH);
 	}
-	
-	// ════════════════════════════════════════════════════════════════
-	// ENTITY DRAWING
-	// ════════════════════════════════════════════════════════════════
-	
+
 	private drawEntity(entity: SceneEntity2D): void {
 		const isSelected = this.selectedIds.has(entity.id);
 		const isHovered = this.hoveredId === entity.id;
-		
 		const x = entity.transform.position[0];
 		const y = entity.transform.position[1];
-		
-		// Sprite bounds
-		if (entity.sprite) {
-			const sw = entity.sprite.size[0] * entity.transform.scale[0];
-			const sh = entity.sprite.size[1] * entity.transform.scale[1];
-			
-			// Placeholder
-			this.ctx.fillStyle = 'rgba(80, 80, 80, 0.4)';
-			this.ctx.fillRect(x - sw/2, y - sh/2, sw, sh);
-			
-			// Bounds
-			this.ctx.strokeStyle = isSelected ? COLORS.objectSelected : 
-			                       isHovered ? COLORS.objectHovered : COLORS.objectBounds;
-			this.ctx.lineWidth = isSelected ? 2 : 1;
-			this.ctx.strokeRect(x - sw/2, y - sh/2, sw, sh);
-		}
-		
-		// Collider
+
+		const spriteW = entity.sprite ? entity.sprite.size[0] * entity.transform.scale[0] : 28;
+		const spriteH = entity.sprite ? entity.sprite.size[1] * entity.transform.scale[1] : 28;
+		const left = x - spriteW / 2;
+		const top = y - spriteH / 2;
+
+		this.ctx.fillStyle = COLORS.objectFill;
+		this.ctx.fillRect(left, top, spriteW, spriteH);
+
+		this.ctx.strokeStyle = isSelected
+			? COLORS.objectSelected
+			: isHovered
+				? COLORS.objectHovered
+				: COLORS.objectBounds;
+		this.ctx.lineWidth = isSelected ? 2 : 1;
+		this.ctx.strokeRect(left, top, spriteW, spriteH);
+		this.drawNodeIcon(entity, x, y);
+
 		if (entity.collider) {
 			this.ctx.strokeStyle = COLORS.collider;
 			this.ctx.lineWidth = 1;
-			this.ctx.setLineDash([3, 2]);
-			
+			this.ctx.setLineDash([2, 2]);
 			const cw = entity.collider.size[0];
 			const ch = entity.collider.size[1];
-			this.ctx.strokeRect(x - cw/2, y - ch/2, cw, ch);
-			
+			this.ctx.strokeRect(x - cw / 2, y - ch / 2, cw, ch);
 			this.ctx.setLineDash([]);
 		}
-		
-		// Name label
+
 		if (isSelected || isHovered) {
 			this.ctx.fillStyle = isSelected ? COLORS.objectSelected : COLORS.objectHovered;
-			this.ctx.font = '10px sans-serif';
+			this.ctx.font = '10px monospace';
 			this.ctx.textAlign = 'center';
 			this.ctx.textBaseline = 'bottom';
-			const labelY = y - (entity.sprite?.size[1] || 20) / 2 - 4;
-			this.ctx.fillText(entity.name, x, labelY);
+			this.ctx.fillText(entity.name, x, top - 4);
 		}
-		
-		// Selection gizmo
+
 		if (isSelected) {
-			this.drawGizmo(x, y);
+			this.drawGizmo(entity);
 		}
 	}
-	
-	private drawGizmo(x: number, y: number): void {
-		const size = 10 / this.zoom;
-		
-		// Center
-		this.ctx.fillStyle = COLORS.gizmoHandle;
-		this.ctx.beginPath();
-		this.ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-		this.ctx.fill();
-		
-		// X handle (red, goes right)
-		this.ctx.strokeStyle = COLORS.axisX;
-		this.ctx.lineWidth = 2;
-		this.ctx.beginPath();
-		this.ctx.moveTo(x, y);
-		this.ctx.lineTo(x + size * 3, y);
-		this.ctx.stroke();
-		
-		// Y handle (green, goes down)
-		this.ctx.strokeStyle = COLORS.axisY;
-		this.ctx.beginPath();
-		this.ctx.moveTo(x, y);
-		this.ctx.lineTo(x, y + size * 3);
-		this.ctx.stroke();
+
+	private drawNodeIcon(entity: SceneEntity2D, x: number, y: number): void {
+		const name = entity.name.toLowerCase();
+		let glyph = 'N';
+		if (name.includes('camera')) {
+			glyph = 'C';
+		} else if (name.includes('light') || name.includes('sun')) {
+			glyph = 'L';
+		} else if (name.includes('player')) {
+			glyph = 'P';
+		} else if (name.includes('sky') || name.includes('environment')) {
+			glyph = 'S';
+		}
+		this.ctx.fillStyle = '#cfcfcf';
+		this.ctx.font = `${Math.max(8, 10 / this.zoom)}px monospace`;
+		this.ctx.textAlign = 'center';
+		this.ctx.textBaseline = 'middle';
+		this.ctx.fillText(glyph, x, y);
 	}
-	
-	// ════════════════════════════════════════════════════════════════
-	// INFO OVERLAY
-	// ════════════════════════════════════════════════════════════════
-	
-	private drawInfo(w: number, h: number): void {
-		const padding = 8;
-		const lineH = 16;
-		
-		// Background
-		this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-		this.ctx.fillRect(padding, h - padding - lineH * 2, 140, lineH * 2);
-		
-		// Text
-		this.ctx.fillStyle = '#aaa';
+
+	private drawGizmo(entity: SceneEntity2D): void {
+		const x = entity.transform.position[0];
+		const y = entity.transform.position[1];
+		const handle = this.getGizmoHandlePositions(entity);
+		const lineW = 1.5 / this.zoom;
+		const ringW = 1 / this.zoom;
+
+		this.ctx.lineWidth = lineW;
+		this.ctx.strokeStyle = this.activeGizmo === 'moveX' || this.gizmoHover === 'moveX' ? '#f0a26f' : COLORS.axisX;
+		this.ctx.beginPath();
+		this.ctx.moveTo(x, y);
+		this.ctx.lineTo(handle.moveX.x, handle.moveX.y);
+		this.ctx.stroke();
+
+		this.ctx.strokeStyle = this.activeGizmo === 'moveY' || this.gizmoHover === 'moveY' ? '#b4c691' : COLORS.axisY;
+		this.ctx.beginPath();
+		this.ctx.moveTo(x, y);
+		this.ctx.lineTo(handle.moveY.x, handle.moveY.y);
+		this.ctx.stroke();
+
+		this.ctx.lineWidth = ringW;
+		this.ctx.strokeStyle = this.activeGizmo === 'rotate' || this.gizmoHover === 'rotate' ? '#d9d9d9' : '#8d8d8d';
+		this.ctx.beginPath();
+		this.ctx.arc(x, y, handle.rotateRadius, 0, Math.PI * 2);
+		this.ctx.stroke();
+
+		const handleR = 5 / this.zoom;
+		this.ctx.fillStyle = this.activeGizmo === 'moveX' || this.gizmoHover === 'moveX' ? '#f0a26f' : COLORS.axisX;
+		this.ctx.beginPath();
+		this.ctx.arc(handle.moveX.x, handle.moveX.y, handleR, 0, Math.PI * 2);
+		this.ctx.fill();
+
+		this.ctx.fillStyle = this.activeGizmo === 'moveY' || this.gizmoHover === 'moveY' ? '#b4c691' : COLORS.axisY;
+		this.ctx.beginPath();
+		this.ctx.arc(handle.moveY.x, handle.moveY.y, handleR, 0, Math.PI * 2);
+		this.ctx.fill();
+
+		this.ctx.fillStyle = COLORS.gizmo;
+		this.ctx.fillRect(x - 2 / this.zoom, y - 2 / this.zoom, 4 / this.zoom, 4 / this.zoom);
+	}
+
+	private drawInfo(w: number, _h: number): void {
+		this.ctx.fillStyle = COLORS.infoText;
 		this.ctx.font = '10px monospace';
 		this.ctx.textAlign = 'left';
-		this.ctx.textBaseline = 'bottom';
-		
-		this.ctx.fillText(`Zoom: ${Math.round(this.zoom * 100)}%`, padding + 4, h - padding - lineH);
-		this.ctx.fillText(`Camera: ${Math.round(this.cameraX)}, ${Math.round(this.cameraY)}`, padding + 4, h - padding);
+		this.ctx.textBaseline = 'top';
+		this.ctx.fillText(
+			`${this.renderWidth}x${this.renderHeight}  Z:${Math.round(this.zoom * 100)}%  C:${Math.round(this.cameraX)},${Math.round(this.cameraY)}`,
+			8,
+			8
+		);
 	}
-	
-	// ════════════════════════════════════════════════════════════════
-	// EVENTS
-	// ════════════════════════════════════════════════════════════════
-	
+
 	private setupEvents(): void {
 		this.canvas.addEventListener('mousedown', e => this.onMouseDown(e));
 		this.canvas.addEventListener('mousemove', e => this.onMouseMove(e));
@@ -508,120 +380,216 @@ export class Viewport2D extends Disposable {
 		this.canvas.addEventListener('wheel', e => this.onWheel(e), { passive: false });
 		this.canvas.addEventListener('contextmenu', e => e.preventDefault());
 		this.container.addEventListener('keydown', e => this.onKeyDown(e));
-		
-		// Focus on click
 		this.canvas.addEventListener('mousedown', () => this.container.focus());
 	}
-	
+
 	private onMouseDown(e: MouseEvent): void {
 		const rect = this.canvas.getBoundingClientRect();
 		const sx = e.clientX - rect.left;
 		const sy = e.clientY - rect.top;
-		
 		this.lastMouse = { x: sx, y: sy };
-		
-		if (e.button === 1 || (e.button === 0 && e.altKey)) {
-			// Pan
+
+		if (e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey)) {
 			this.isPanning = true;
 			this.container.style.cursor = 'grabbing';
-		} else if (e.button === 0) {
-			// Select
-			const world = this.screenToWorld(sx, sy);
-			const hit = this.hitTest(world.x, world.y);
-			
-			if (hit) {
-				this.selectedIds.clear();
-				this.selectedIds.add(hit.id);
-				this._onEntitySelected.fire(hit.id);
-				this.isDragging = true;
-			} else {
-				this.selectedIds.clear();
-				this._onEntitySelected.fire(null);
-			}
+			return;
 		}
-	}
-	
-	private onMouseMove(e: MouseEvent): void {
-		const rect = this.canvas.getBoundingClientRect();
-		const sx = e.clientX - rect.left;
-		const sy = e.clientY - rect.top;
-		
-		if (this.isPanning) {
-			const dx = sx - this.lastMouse.x;
-			const dy = sy - this.lastMouse.y;
-			this.cameraX += dx / this.zoom;
-			this.cameraY += dy / this.zoom;
-		} else if (this.isDragging && this.selectedIds.size === 1) {
-			const world = this.screenToWorld(sx, sy);
-			const lastWorld = this.screenToWorld(this.lastMouse.x, this.lastMouse.y);
-			
-			const id = Array.from(this.selectedIds)[0];
-			const ent = this.entities.find(e => e.id === id);
-			if (ent) {
-				ent.transform.position[0] += world.x - lastWorld.x;
-				ent.transform.position[1] += world.y - lastWorld.y;
-				this._onTransformChanged.fire({ id, transform: ent.transform });
+
+		if (e.button !== 0) {
+			return;
+		}
+
+		const world = this.screenToWorld(sx, sy);
+		const gizmoHit = this.hitTestGizmo(world.x, world.y);
+		if (gizmoHit) {
+			const selected = this.getSelectedEntity();
+			if (!selected) {
+				return;
 			}
+			this.activeGizmo = gizmoHit;
+			this.dragStartRotation = selected.transform.rotation;
+			this.dragStartAngle = Math.atan2(world.y - selected.transform.position[1], world.x - selected.transform.position[0]);
+			this.isDragging = true;
+			this.container.style.cursor = gizmoHit === 'rotate' ? 'crosshair' : gizmoHit === 'moveX' ? 'ew-resize' : 'ns-resize';
+			return;
+		}
+
+		const hit = this.hitTest(world.x, world.y);
+		if (hit) {
+			this.selectedIds.clear();
+			this.selectedIds.add(hit.id);
+			this._onEntitySelected.fire(hit.id);
+			this.isDragging = true;
 		} else {
-			// Hover
-			const world = this.screenToWorld(sx, sy);
-			const hit = this.hitTest(world.x, world.y);
-			this.hoveredId = hit?.id || null;
-			this.container.style.cursor = hit ? 'pointer' : 'default';
-		}
-		
-		this.lastMouse = { x: sx, y: sy };
-	}
-	
-	private onMouseUp(): void {
-		this.isPanning = false;
-		this.isDragging = false;
-		this.container.style.cursor = 'default';
-	}
-	
-	private onWheel(e: WheelEvent): void {
-		e.preventDefault();
-		
-		const rect = this.canvas.getBoundingClientRect();
-		const sx = e.clientX - rect.left;
-		const sy = e.clientY - rect.top;
-		
-		const worldBefore = this.screenToWorld(sx, sy);
-		
-		// Zoom
-		const factor = e.deltaY > 0 ? 0.9 : 1.1;
-		this.zoom = Math.max(0.1, Math.min(10, this.zoom * factor));
-		
-		const worldAfter = this.screenToWorld(sx, sy);
-		
-		// Keep point under cursor
-		this.cameraX -= worldAfter.x - worldBefore.x;
-		this.cameraY -= worldAfter.y - worldBefore.y;
-	}
-	
-	private onKeyDown(e: KeyboardEvent): void {
-		if (e.key === 'Delete' || e.key === 'Backspace') {
-			for (const id of this.selectedIds) {
-				const idx = this.entities.findIndex(e => e.id === id);
-				if (idx !== -1) this.entities.splice(idx, 1);
-			}
 			this.selectedIds.clear();
 			this._onEntitySelected.fire(null);
 		}
 	}
-	
-	// ════════════════════════════════════════════════════════════════
-	// HELPERS
-	// ════════════════════════════════════════════════════════════════
-	
+
+	private onMouseMove(e: MouseEvent): void {
+		const rect = this.canvas.getBoundingClientRect();
+		const sx = e.clientX - rect.left;
+		const sy = e.clientY - rect.top;
+
+		if (this.isPanning) {
+			const dx = sx - this.lastMouse.x;
+			const dy = sy - this.lastMouse.y;
+			this.cameraX -= dx / this.zoom;
+			this.cameraY -= dy / this.zoom;
+			this.container.style.cursor = 'grabbing';
+		} else if (this.isDragging && this.selectedIds.size === 1) {
+			const world = this.screenToWorld(sx, sy);
+			const lastWorld = this.screenToWorld(this.lastMouse.x, this.lastMouse.y);
+			const selectedId = Array.from(this.selectedIds)[0];
+			if (!selectedId) {
+				this.lastMouse = { x: sx, y: sy };
+				return;
+			}
+			const ent = this.entities.find(entity => entity.id === selectedId);
+			if (ent) {
+				if (this.activeGizmo === 'moveX') {
+					ent.transform.position[0] -= world.x - lastWorld.x;
+				} else if (this.activeGizmo === 'moveY') {
+					ent.transform.position[1] -= world.y - lastWorld.y;
+				} else if (this.activeGizmo === 'rotate') {
+					const currentAngle = Math.atan2(world.y - ent.transform.position[1], world.x - ent.transform.position[0]);
+					const delta = currentAngle - this.dragStartAngle;
+					ent.transform.rotation = this.normalizeAngle(this.dragStartRotation - delta);
+				} else {
+					ent.transform.position[0] -= world.x - lastWorld.x;
+					ent.transform.position[1] -= world.y - lastWorld.y;
+				}
+				this._onTransformChanged.fire({ id: selectedId, transform: ent.transform });
+			}
+		} else {
+			const world = this.screenToWorld(sx, sy);
+			this.gizmoHover = this.hitTestGizmo(world.x, world.y);
+			const hit = this.hitTest(world.x, world.y);
+			this.hoveredId = hit?.id ?? null;
+			if (this.gizmoHover === 'moveX') {
+				this.container.style.cursor = 'ew-resize';
+			} else if (this.gizmoHover === 'moveY') {
+				this.container.style.cursor = 'ns-resize';
+			} else if (this.gizmoHover === 'rotate') {
+				this.container.style.cursor = 'crosshair';
+			} else {
+				this.container.style.cursor = hit ? 'pointer' : 'default';
+			}
+		}
+
+		this.lastMouse = { x: sx, y: sy };
+	}
+
+	private onMouseUp(): void {
+		this.isPanning = false;
+		this.isDragging = false;
+		this.activeGizmo = null;
+		this.gizmoHover = null;
+		this.container.style.cursor = 'default';
+	}
+
+	private onWheel(e: WheelEvent): void {
+		e.preventDefault();
+
+		const rect = this.canvas.getBoundingClientRect();
+		const sx = e.clientX - rect.left;
+		const sy = e.clientY - rect.top;
+		const worldBefore = this.screenToWorld(sx, sy);
+
+		const factor = e.deltaY > 0 ? 1.08 : 0.92;
+		this.zoom = Math.max(0.1, Math.min(10, this.zoom * factor));
+
+		const worldAfter = this.screenToWorld(sx, sy);
+		this.cameraX -= worldAfter.x - worldBefore.x;
+		this.cameraY -= worldAfter.y - worldBefore.y;
+	}
+
+	private onKeyDown(e: KeyboardEvent): void {
+		if (e.key !== 'Delete' && e.key !== 'Backspace') {
+			return;
+		}
+		for (const id of this.selectedIds) {
+			const idx = this.entities.findIndex(entity => entity.id === id);
+			if (idx !== -1) {
+				this.entities.splice(idx, 1);
+			}
+		}
+		this.selectedIds.clear();
+		this._onEntitySelected.fire(null);
+	}
+
 	private handleResize(): void {
 		const rect = this.container.getBoundingClientRect();
 		const dpr = window.devicePixelRatio || 1;
-		this.canvas.width = rect.width * dpr;
-		this.canvas.height = rect.height * dpr;
-		this.ctx.scale(dpr, dpr);
+		const width = Math.max(1, Math.floor(rect.width * dpr));
+		const height = Math.max(1, Math.floor(rect.height * dpr));
+
+		if (this.canvas.width !== width || this.canvas.height !== height) {
+			this.canvas.width = width;
+			this.canvas.height = height;
+		}
+		this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 	}
-	
+
+	private getSelectedEntity(): SceneEntity2D | null {
+		const selectedId = Array.from(this.selectedIds)[0];
+		if (!selectedId) {
+			return null;
+		}
+		return this.entities.find(entity => entity.id === selectedId) ?? null;
+	}
+
+	private getGizmoHandlePositions(entity: SceneEntity2D): { moveX: Vec2; moveY: Vec2; rotateRadius: number } {
+		const arm = 28 / this.zoom;
+		return {
+			moveX: { x: entity.transform.position[0] + arm, y: entity.transform.position[1] },
+			moveY: { x: entity.transform.position[0], y: entity.transform.position[1] - arm },
+			rotateRadius: 18 / this.zoom,
+		};
+	}
+
+	private hitTestGizmo(wx: number, wy: number): GizmoHandle {
+		const selected = this.getSelectedEntity();
+		if (!selected) {
+			return null;
+		}
+		const handle = this.getGizmoHandlePositions(selected);
+		const hitRadius = 7 / this.zoom;
+
+		const dxX = wx - handle.moveX.x;
+		const dyX = wy - handle.moveX.y;
+		if (Math.hypot(dxX, dyX) <= hitRadius) {
+			return 'moveX';
+		}
+
+		const dxY = wx - handle.moveY.x;
+		const dyY = wy - handle.moveY.y;
+		if (Math.hypot(dxY, dyY) <= hitRadius) {
+			return 'moveY';
+		}
+
+		const centerDx = wx - selected.transform.position[0];
+		const centerDy = wy - selected.transform.position[1];
+		const dist = Math.hypot(centerDx, centerDy);
+		const ringThreshold = 4 / this.zoom;
+		if (Math.abs(dist - handle.rotateRadius) <= ringThreshold) {
+			return 'rotate';
+		}
+
+		return null;
+	}
+
+	private normalizeAngle(angle: number): number {
+		let result = angle;
+		while (result > Math.PI) {
+			result -= Math.PI * 2;
+		}
+		while (result < -Math.PI) {
+			result += Math.PI * 2;
+		}
+		return result;
+	}
+
 	private screenToWorld(sx: number, sy: number): Vec2 {
 		const rect = this.canvas.getBoundingClientRect();
 		return {
@@ -629,27 +597,29 @@ export class Viewport2D extends Disposable {
 			y: (sy - rect.height / 2) / this.zoom + this.cameraY,
 		};
 	}
-	
+
 	private hitTest(wx: number, wy: number): SceneEntity2D | null {
 		for (let i = this.entities.length - 1; i >= 0; i--) {
-			const e = this.entities[i];
-			if (!e.visible || !e.sprite) continue;
-			
-			const sw = e.sprite.size[0] * e.transform.scale[0];
-			const sh = e.sprite.size[1] * e.transform.scale[1];
-			
-			if (wx >= e.transform.position[0] - sw/2 &&
-			    wx <= e.transform.position[0] + sw/2 &&
-			    wy >= e.transform.position[1] - sh/2 &&
-			    wy <= e.transform.position[1] + sh/2) {
-				return e;
+			const entity = this.entities[i];
+			if (!entity.visible) {
+				continue;
+			}
+
+			const sw = entity.sprite ? entity.sprite.size[0] * entity.transform.scale[0] : 28;
+			const sh = entity.sprite ? entity.sprite.size[1] * entity.transform.scale[1] : 28;
+
+			if (
+				wx >= entity.transform.position[0] - sw / 2 &&
+				wx <= entity.transform.position[0] + sw / 2 &&
+				wy >= entity.transform.position[1] - sh / 2 &&
+				wy <= entity.transform.position[1] + sh / 2
+			) {
+				return entity;
 			}
 		}
 		return null;
 	}
-	
-	// ════════════════════════════════════════════════════════════════
-	
+
 	override dispose(): void {
 		this.stopRendering();
 		this.container.remove();
