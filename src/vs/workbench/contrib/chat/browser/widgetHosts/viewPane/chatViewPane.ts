@@ -70,6 +70,28 @@ interface RunChangeSummary {
 	removed: number;
 }
 
+interface HistoryAttachmentPreview {
+	name: string;
+	preview: string;
+}
+
+interface HistoryMessageRecord {
+	role: 'user' | 'assistant' | 'error';
+	text: string;
+	timestamp: number;
+	attachments?: HistoryAttachmentPreview[];
+}
+
+interface HistorySessionRecord {
+	id: string;
+	title: string;
+	pinned: boolean;
+	createdAt: number;
+	updatedAt: number;
+	lastViewedAt: number;
+	messages: HistoryMessageRecord[];
+}
+
 export class ChatViewPane extends ViewPane {
 	private container: HTMLElement | undefined;
 	private messagesContainer: HTMLElement | undefined;
@@ -93,9 +115,17 @@ export class ChatViewPane extends ViewPane {
 	private readonly runTouchedFiles = new Set<string>();
 	private readonly runFileSnapshots = new Map<string, RunFileSnapshot>();
 	private runSummaryRendered = false;
+	private historyButton: HTMLButtonElement | undefined;
+	private historyPanel: HTMLElement | undefined;
+	private historySearchInput: HTMLInputElement | undefined;
+	private historyList: HTMLElement | undefined;
+	private historySessions: HistorySessionRecord[] = [];
+	private activeSessionId: string | undefined;
 	private static readonly CONTEXT_WINDOW_TOKENS = 1048600;
 	private static readonly CONTEXT_HARD_LIMIT = 0.92;
 	private static readonly MAX_ATTACHED_FILES = 9;
+	private static readonly CHAT_HISTORY_STORAGE_KEY = 'void.chat.history.v1';
+	private static readonly CHAT_HISTORY_MAX_SESSIONS = 80;
 
 	constructor(
 		options: IViewPaneOptions,
@@ -133,6 +163,18 @@ export class ChatViewPane extends ViewPane {
 		this.container = container;
 		container.classList.add('void-chat-container');
 
+		const header = append(container, $('.void-chat-header'));
+		const brand = append(header, $('.void-chat-brand'));
+		brand.textContent = 'CODEX';
+		const headerActions = append(header, $('.void-chat-header-actions'));
+		const historyButton = append(headerActions, $('button.void-chat-header-btn')) as HTMLButtonElement;
+		historyButton.textContent = 'Chat History';
+		historyButton.setAttribute('data-tooltip', 'Open saved chats');
+		this.historyButton = historyButton;
+		const newChatButton = append(headerActions, $('button.void-chat-header-btn')) as HTMLButtonElement;
+		newChatButton.textContent = 'New Chat';
+		newChatButton.setAttribute('data-tooltip', 'Start a new chat session');
+
 		const messagesContainer = append(container, $('.void-chat-messages'));
 		this.messagesContainer = messagesContainer;
 		this.emptyState = append(messagesContainer, $('.void-chat-empty'));
@@ -142,6 +184,20 @@ export class ChatViewPane extends ViewPane {
 		emptyTitle.textContent = this.buildWelcomeLine();
 		const emptySub = append(this.emptyState, $('.void-chat-empty-subtitle'));
 		emptySub.textContent = 'Describe the task and we will execute it step by step.';
+
+		const historyPanel = append(container, $('.void-chat-history-panel'));
+		this.historyPanel = historyPanel;
+		const historyPanelHeader = append(historyPanel, $('.void-chat-history-header'));
+		const historyPanelTitle = append(historyPanelHeader, $('.void-chat-history-title'));
+		historyPanelTitle.textContent = 'Chat History';
+		const closeHistoryButton = append(historyPanelHeader, $('button.void-chat-history-close.codicon.codicon-close')) as HTMLButtonElement;
+		closeHistoryButton.setAttribute('aria-label', 'Close chat history');
+		const historySearchInput = append(historyPanel, $('input.void-chat-history-search')) as HTMLInputElement;
+		historySearchInput.type = 'text';
+		historySearchInput.placeholder = 'Search chats';
+		this.historySearchInput = historySearchInput;
+		const historyList = append(historyPanel, $('.void-chat-history-list'));
+		this.historyList = historyList;
 
 		const inputBox = append(container, $('.void-input-shell'));
 		this.inputShell = inputBox;
@@ -223,9 +279,24 @@ export class ChatViewPane extends ViewPane {
 			if (!target || !inputBox.contains(target)) {
 				this.toggleMenu(plusMenu, false);
 			}
+			if (!target || (!historyPanel.contains(target) && !header.contains(target))) {
+				this.toggleHistoryPanel(false);
+			}
 		};
 		document.addEventListener('click', onDocumentClick, true);
 		this._register({ dispose: () => document.removeEventListener('click', onDocumentClick, true) });
+
+		historyButton.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.toggleHistoryPanel(!historyPanel.classList.contains('visible'));
+		});
+		newChatButton.addEventListener('click', () => {
+			this.createSessionAndSwitch('New chat');
+		});
+		closeHistoryButton.addEventListener('click', () => {
+			this.toggleHistoryPanel(false);
+		});
+		historySearchInput.addEventListener('input', () => this.renderHistoryList());
 
 		let dragCounter = 0;
 		inputBox.addEventListener('dragenter', (e) => {
@@ -273,6 +344,8 @@ export class ChatViewPane extends ViewPane {
 		});
 
 		this.updateComposerState();
+		this.loadHistorySessions();
+		this.renderHistoryList();
 
 		if (this.qwenService) {
 			this._register(this.qwenService.onEvent((event) => {
@@ -354,8 +427,8 @@ export class ChatViewPane extends ViewPane {
 			loadingIndicator.remove();
 		}
 	}
-	
-	private addUserMessage(text: string, attachments: AttachedFile[] = []): void {
+
+	private renderUserMessageBubble(text: string, attachments: HistoryAttachmentPreview[]): void {
 		if (!this.messagesContainer) {
 			return;
 		}
@@ -370,10 +443,20 @@ export class ChatViewPane extends ViewPane {
 				const title = append(item, $('.void-user-attachment-title'));
 				title.textContent = `Attached file ${file.name}:`;
 				const preview = append(item, $('.void-user-attachment-preview'));
-				const content = (file.inlineContent ?? '').trim();
-				preview.textContent = content ? content.slice(0, 800) : '[content will be read from path]';
+				preview.textContent = file.preview || '[content will be read from path]';
 			}
 		}
+	}
+	
+	private addUserMessage(text: string, attachments: AttachedFile[] = [], persistToHistory: boolean = true): void {
+		if (!this.messagesContainer) {
+			return;
+		}
+		const attachmentPreviews = attachments.map(file => ({
+			name: file.name,
+			preview: ((file.inlineContent ?? '').trim() || '[content will be read from path]').slice(0, 800)
+		}));
+		this.renderUserMessageBubble(text, attachmentPreviews);
 
 		this.currentRunContainer = undefined;
 		this.contextSegments.push({ role: 'user', text });
@@ -383,6 +466,9 @@ export class ChatViewPane extends ViewPane {
 				role: 'user',
 				text: `Attached file ${file.name}: ${body ? body.slice(0, 4000) : '[content will be read from path]'}`
 			});
+		}
+		if (persistToHistory) {
+			this.appendHistoryMessage('user', text, attachmentPreviews);
 		}
 		this.updateContextMeter();
 		this.updateEmptyStateVisibility();
@@ -438,7 +524,7 @@ export class ChatViewPane extends ViewPane {
 		}, delayMs);
 	}
 	
-	private addAssistantMessage(text: string): void {
+	private addAssistantMessage(text: string, persistToHistory: boolean = true): void {
 		if (!this.messagesContainer) {
 			return;
 		}
@@ -450,6 +536,9 @@ export class ChatViewPane extends ViewPane {
 		const contentDiv = append(messageDiv, $('.void-message-content.void-assistant-text'));
 		this.renderMarkdownSafe(contentDiv, text);
 		this.contextSegments.push({ role: 'assistant', text });
+		if (persistToHistory) {
+			this.appendHistoryMessage('assistant', text);
+		}
 		this.updateContextMeter();
 	}
 	
@@ -1954,7 +2043,7 @@ export class ChatViewPane extends ViewPane {
 		this.scrollToBottom();
 	}
 	
-	private addErrorMessage(text: string): void {
+	private addErrorMessage(text: string, persistToHistory: boolean = true): void {
 		if (!this.messagesContainer) {
 			return;
 		}
@@ -1962,6 +2051,9 @@ export class ChatViewPane extends ViewPane {
 		const messageDiv = append(this.messagesContainer, $('.void-message.void-message-error'));
 		const contentDiv = append(messageDiv, $('.void-message-content'));
 		contentDiv.textContent = text;
+		if (persistToHistory) {
+			this.appendHistoryMessage('error', text);
+		}
 	}
 
 	private addRunCompletionMarker(): void {
@@ -2196,6 +2288,422 @@ export class ChatViewPane extends ViewPane {
 		menu.classList.toggle('visible', visible);
 	}
 
+	private toggleHistoryPanel(visible: boolean): void {
+		if (!this.historyPanel || !this.historyButton) {
+			return;
+		}
+		this.historyPanel.classList.toggle('visible', visible);
+		this.historyButton.classList.toggle('active', visible);
+	}
+
+	private loadHistorySessions(): void {
+		let parsed: unknown = [];
+		try {
+			const raw = localStorage.getItem(ChatViewPane.CHAT_HISTORY_STORAGE_KEY);
+			if (raw) {
+				parsed = JSON.parse(raw);
+			}
+		} catch {
+			parsed = [];
+		}
+		const records = Array.isArray(parsed) ? parsed : [];
+		this.historySessions = records
+			.map(record => this.normalizeHistorySession(record))
+			.filter((record): record is HistorySessionRecord => !!record)
+			.sort((a, b) => {
+				if (a.pinned !== b.pinned) {
+					return a.pinned ? -1 : 1;
+				}
+				return b.updatedAt - a.updatedAt;
+			})
+			.slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
+
+		if (this.historySessions.length > 0) {
+			const preferred = [...this.historySessions].sort((a, b) => b.lastViewedAt - a.lastViewedAt)[0];
+			this.openSessionFromHistory(preferred.id, false);
+		}
+	}
+
+	private normalizeHistorySession(record: unknown): HistorySessionRecord | undefined {
+		if (!record || typeof record !== 'object') {
+			return undefined;
+		}
+		const candidate = record as Partial<HistorySessionRecord>;
+		if (typeof candidate.id !== 'string' || !candidate.id.trim()) {
+			return undefined;
+		}
+		if (typeof candidate.title !== 'string') {
+			return undefined;
+		}
+		const messages = Array.isArray(candidate.messages) ? candidate.messages : [];
+		const normalizedMessages: HistoryMessageRecord[] = [];
+		for (const message of messages) {
+			if (!message || typeof message !== 'object') {
+				continue;
+			}
+			const entry = message as Partial<HistoryMessageRecord>;
+			if (entry.role !== 'user' && entry.role !== 'assistant' && entry.role !== 'error') {
+				continue;
+			}
+			if (typeof entry.text !== 'string') {
+				continue;
+			}
+			const attachments = Array.isArray(entry.attachments)
+				? entry.attachments
+					.map(item => {
+						if (!item || typeof item !== 'object') {
+							return undefined;
+						}
+						const attachment = item as Partial<HistoryAttachmentPreview>;
+						if (typeof attachment.name !== 'string' || typeof attachment.preview !== 'string') {
+							return undefined;
+						}
+						return {
+							name: attachment.name,
+							preview: attachment.preview
+						};
+					})
+					.filter((item): item is HistoryAttachmentPreview => !!item)
+				: undefined;
+			normalizedMessages.push({
+				role: entry.role,
+				text: entry.text,
+				timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : Date.now(),
+				attachments
+			});
+		}
+		return {
+			id: candidate.id.trim(),
+			title: candidate.title.trim() || 'New chat',
+			pinned: !!candidate.pinned,
+			createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : Date.now(),
+			updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now(),
+			lastViewedAt: typeof candidate.lastViewedAt === 'number' ? candidate.lastViewedAt : Date.now(),
+			messages: normalizedMessages
+		};
+	}
+
+	private saveHistorySessions(): void {
+		try {
+			localStorage.setItem(ChatViewPane.CHAT_HISTORY_STORAGE_KEY, JSON.stringify(this.historySessions.slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS)));
+		} catch {
+			// Ignore persistence failures.
+		}
+	}
+
+	private createSessionAndSwitch(baseTitle?: string): void {
+		const now = Date.now();
+		const session: HistorySessionRecord = {
+			id: `session-${now}-${Math.random().toString(36).slice(2, 8)}`,
+			title: (baseTitle ?? 'New chat').trim() || 'New chat',
+			pinned: false,
+			createdAt: now,
+			updatedAt: now,
+			lastViewedAt: now,
+			messages: []
+		};
+		this.historySessions = [session, ...this.historySessions].slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
+		this.activeSessionId = session.id;
+		this.clearConversationSurface();
+		this.saveHistorySessions();
+		this.renderHistoryList();
+		this.toggleHistoryPanel(false);
+	}
+
+	private ensureActiveSession(seedText?: string): HistorySessionRecord {
+		const active = this.activeSessionId
+			? this.historySessions.find(session => session.id === this.activeSessionId)
+			: undefined;
+		if (active) {
+			return active;
+		}
+
+		const now = Date.now();
+		const session: HistorySessionRecord = {
+			id: `session-${now}-${Math.random().toString(36).slice(2, 8)}`,
+			title: this.buildSessionTitleFromText(seedText ?? ''),
+			pinned: false,
+			createdAt: now,
+			updatedAt: now,
+			lastViewedAt: now,
+			messages: []
+		};
+		this.historySessions = [session, ...this.historySessions].slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
+		this.activeSessionId = session.id;
+		return session;
+	}
+
+	private appendHistoryMessage(
+		role: 'user' | 'assistant' | 'error',
+		text: string,
+		attachments?: HistoryAttachmentPreview[]
+	): void {
+		const session = this.ensureActiveSession(role === 'user' ? text : undefined);
+		const now = Date.now();
+		session.messages.push({
+			role,
+			text,
+			timestamp: now,
+			attachments: attachments && attachments.length ? attachments : undefined
+		});
+		session.updatedAt = now;
+		session.lastViewedAt = now;
+		if (role === 'user' && (session.title === 'New chat' || session.messages.length <= 2)) {
+			session.title = this.buildSessionTitleFromText(text);
+		}
+		this.historySessions = this.historySessions
+			.slice()
+			.sort((a, b) => {
+				if (a.pinned !== b.pinned) {
+					return a.pinned ? -1 : 1;
+				}
+				return b.updatedAt - a.updatedAt;
+			})
+			.slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
+		this.saveHistorySessions();
+		this.renderHistoryList();
+	}
+
+	private openSessionFromHistory(sessionId: string, closePanel: boolean = true): void {
+		const session = this.historySessions.find(item => item.id === sessionId);
+		if (!session) {
+			return;
+		}
+		this.activeSessionId = session.id;
+		session.lastViewedAt = Date.now();
+		this.clearConversationSurface();
+		for (const message of session.messages) {
+			if (message.role === 'user') {
+				this.renderUserMessageBubble(message.text, message.attachments ?? []);
+				this.contextSegments.push({ role: 'user', text: message.text });
+				for (const attachment of message.attachments ?? []) {
+					this.contextSegments.push({ role: 'user', text: `Attached file ${attachment.name}: ${attachment.preview}` });
+				}
+				this.currentRunContainer = undefined;
+				continue;
+			}
+			if (message.role === 'assistant') {
+				this.addAssistantMessage(message.text, false);
+				continue;
+			}
+			this.addErrorMessage(message.text, false);
+		}
+		this.updateContextMeter();
+		this.updateEmptyStateVisibility();
+		this.scrollToBottom();
+		this.saveHistorySessions();
+		this.renderHistoryList();
+		if (closePanel) {
+			this.toggleHistoryPanel(false);
+		}
+	}
+
+	private renameSessionInHistory(sessionId: string): void {
+		const session = this.historySessions.find(item => item.id === sessionId);
+		if (!session) {
+			return;
+		}
+		const renamed = window.prompt('Rename chat', session.title);
+		if (typeof renamed !== 'string') {
+			return;
+		}
+		const next = renamed.trim();
+		if (!next) {
+			return;
+		}
+		session.title = next.slice(0, 100);
+		session.updatedAt = Date.now();
+		this.saveHistorySessions();
+		this.renderHistoryList();
+	}
+
+	private removeSessionFromHistory(sessionId: string): void {
+		const session = this.historySessions.find(item => item.id === sessionId);
+		if (!session) {
+			return;
+		}
+		if (!window.confirm(`Delete chat "${session.title}"?`)) {
+			return;
+		}
+		this.historySessions = this.historySessions.filter(item => item.id !== sessionId);
+		if (this.activeSessionId === sessionId) {
+			this.activeSessionId = undefined;
+			this.clearConversationSurface();
+			if (this.historySessions.length) {
+				this.openSessionFromHistory(this.historySessions[0].id, false);
+			}
+		}
+		this.saveHistorySessions();
+		this.renderHistoryList();
+	}
+
+	private pinSession(sessionId: string, pinned: boolean): void {
+		const session = this.historySessions.find(item => item.id === sessionId);
+		if (!session) {
+			return;
+		}
+		session.pinned = pinned;
+		session.updatedAt = Date.now();
+		this.historySessions = this.historySessions
+			.slice()
+			.sort((a, b) => {
+				if (a.pinned !== b.pinned) {
+					return a.pinned ? -1 : 1;
+				}
+				return b.updatedAt - a.updatedAt;
+			});
+		this.saveHistorySessions();
+		this.renderHistoryList();
+	}
+
+	private clearConversationSurface(): void {
+		if (!this.messagesContainer || !this.emptyState) {
+			return;
+		}
+		for (const child of Array.from(this.messagesContainer.children)) {
+			if (child !== this.emptyState) {
+				child.remove();
+			}
+		}
+		this.currentRunContainer = undefined;
+		this.toolCards.clear();
+		this.seenToolCalls.clear();
+		this.runTouchedFiles.clear();
+		this.runFileSnapshots.clear();
+		this.runSummaryRendered = false;
+		this.contextSummary = '';
+		this.contextSegments.length = 0;
+		this.removeLoadingIndicator();
+		this.updateContextMeter();
+		this.updateEmptyStateVisibility();
+	}
+
+	private renderHistoryList(): void {
+		if (!this.historyList) {
+			return;
+		}
+		while (this.historyList.firstChild) {
+			this.historyList.removeChild(this.historyList.firstChild);
+		}
+
+		const query = this.historySearchInput?.value.trim().toLowerCase() ?? '';
+		const filtered = this.historySessions.filter(session => {
+			if (!query) {
+				return true;
+			}
+			return session.title.toLowerCase().includes(query) || session.messages.some(message => message.text.toLowerCase().includes(query));
+		});
+		if (!filtered.length) {
+			const empty = append(this.historyList, $('.void-chat-history-empty'));
+			empty.textContent = query ? 'No matching chats' : 'No saved chats yet';
+			return;
+		}
+
+		const groups = new Map<string, HistorySessionRecord[]>();
+		for (const session of filtered) {
+			const key = this.getHistoryGroupKey(session.updatedAt);
+			const entries = groups.get(key);
+			if (entries) {
+				entries.push(session);
+			} else {
+				groups.set(key, [session]);
+			}
+		}
+
+		const orderedKeys: string[] = [];
+		if (groups.has('Today')) {
+			orderedKeys.push('Today');
+		}
+		if (groups.has('Yesterday')) {
+			orderedKeys.push('Yesterday');
+		}
+		if (groups.has('Older')) {
+			orderedKeys.push('Older');
+		}
+
+		for (const key of orderedKeys) {
+			const section = append(this.historyList, $('.void-chat-history-section'));
+			const sectionTitle = append(section, $('.void-chat-history-section-title'));
+			sectionTitle.textContent = key;
+			const groupList = append(section, $('.void-chat-history-section-list'));
+			for (const session of groups.get(key) ?? []) {
+				const item = append(groupList, $('.void-chat-history-item'));
+				if (session.id === this.activeSessionId) {
+					item.classList.add('active');
+				}
+
+				const openButton = append(item, $('button.void-chat-history-open')) as HTMLButtonElement;
+				openButton.setAttribute('type', 'button');
+				openButton.addEventListener('click', () => this.openSessionFromHistory(session.id));
+
+				const title = append(openButton, $('.void-chat-history-item-title'));
+				title.textContent = session.title;
+				const subtitle = append(openButton, $('.void-chat-history-item-subtitle'));
+				subtitle.textContent = `${this.formatHistoryTime(session.updatedAt)}  |  ${session.messages.length} messages`;
+
+				const actions = append(item, $('.void-chat-history-item-actions'));
+				const pinButton = append(actions, $('button.void-chat-history-icon-btn.codicon')) as HTMLButtonElement;
+				pinButton.classList.add('codicon-pin');
+				if (session.pinned) {
+					pinButton.classList.add('pinned');
+				}
+				pinButton.setAttribute('aria-label', session.pinned ? 'Unpin' : 'Pin');
+				pinButton.setAttribute('data-tooltip', session.pinned ? 'Unpin' : 'Pin');
+				pinButton.addEventListener('click', (event) => {
+					event.stopPropagation();
+					this.pinSession(session.id, !session.pinned);
+				});
+
+				const renameButton = append(actions, $('button.void-chat-history-icon-btn.codicon.codicon-edit')) as HTMLButtonElement;
+				renameButton.setAttribute('aria-label', 'Rename');
+				renameButton.setAttribute('data-tooltip', 'Rename');
+				renameButton.addEventListener('click', (event) => {
+					event.stopPropagation();
+					this.renameSessionInHistory(session.id);
+				});
+
+				const deleteButton = append(actions, $('button.void-chat-history-icon-btn.codicon.codicon-trash')) as HTMLButtonElement;
+				deleteButton.setAttribute('aria-label', 'Delete');
+				deleteButton.setAttribute('data-tooltip', 'Delete');
+				deleteButton.addEventListener('click', (event) => {
+					event.stopPropagation();
+					this.removeSessionFromHistory(session.id);
+				});
+			}
+		}
+	}
+
+	private getHistoryGroupKey(timestamp: number): 'Today' | 'Yesterday' | 'Older' {
+		const target = new Date(timestamp);
+		const now = new Date();
+		const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const startOfYesterday = new Date(startOfToday);
+		startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+		if (target >= startOfToday) {
+			return 'Today';
+		}
+		if (target >= startOfYesterday) {
+			return 'Yesterday';
+		}
+		return 'Older';
+	}
+
+	private formatHistoryTime(timestamp: number): string {
+		try {
+			return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+		} catch {
+			return '--:--';
+		}
+	}
+
+	private buildSessionTitleFromText(text: string): string {
+		const normalized = text.replace(/\s+/g, ' ').trim();
+		if (!normalized) {
+			return 'New chat';
+		}
+		return normalized.slice(0, 60);
+	}
+
 	private updateComposerState(): void {
 		if (!this.inputElement || !this.sendButton || !this.inputShell) {
 			return;
@@ -2342,7 +2850,7 @@ export class ChatViewPane extends ViewPane {
 			fileName.textContent = file.name;
 			const removeBtn = append(card, $('button.void-file-remove.codicon.codicon-close')) as HTMLButtonElement;
 			removeBtn.setAttribute('aria-label', 'Detach');
-			removeBtn.title = 'Detach';
+			removeBtn.setAttribute('data-tooltip', 'Detach');
 			removeBtn.addEventListener('click', () => this.removeAttachedFile(file.id));
 		}
 	}
