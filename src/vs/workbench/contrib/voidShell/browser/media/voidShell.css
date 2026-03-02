@@ -1,0 +1,63 @@
+/*---------------------------------------------------------------------------------------------
+ *  Void Engine - Product Shell Cleanup Styles
+ *--------------------------------------------------------------------------------------------*/
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .void-shell-hidden {
+	display: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench {
+	--void-shell-bg-0: #141414;
+	--void-shell-bg-1: #1b1b1b;
+	--void-shell-border: #2f2f2f;
+	--void-shell-text: #d9d9d9;
+	--void-shell-text-muted: #8e8e8e;
+	--void-shell-accent: #d47a4a;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.activitybar {
+	background: linear-gradient(180deg, #171717 0%, #151515 100%);
+	border-right: 1px solid var(--void-shell-border);
+	width: 52px !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-label.codicon {
+	color: var(--void-shell-text-muted);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item:hover .action-label.codicon,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item.checked .action-label.codicon {
+	color: var(--void-shell-text);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item.checked .active-item-indicator::before {
+	background-color: var(--void-shell-accent) !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar {
+	background: #1a1a1a !important;
+	border-bottom: 1px solid var(--void-shell-border);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item {
+	color: var(--void-shell-text-muted);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item:hover {
+	color: var(--void-shell-text);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.statusbar {
+	background: #151515 !important;
+	border-top: 1px solid var(--void-shell-border);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.statusbar .statusbar-item {
+	color: #9a9a9a !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.statusbar .statusbar-item:hover {
+	background: #242424 !important;
+	color: #d7d7d7 !important;
+}
+

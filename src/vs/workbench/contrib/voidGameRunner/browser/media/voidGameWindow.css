@@ -1,911 +1,184 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine - Game Window Styles
+ *  Void Engine - Build/Run Window Styles
  *--------------------------------------------------------------------------------------------*/
 
 .void-game-window-overlay {
 	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.92) 100%);
-	backdrop-filter: blur(8px);
+	inset: 0;
 	z-index: 2147483640;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	animation: fadeIn 0.25s ease;
-}
-
-.void-game-window-overlay.closing {
-	animation: fadeOut 0.25s ease;
-}
-
-@keyframes fadeIn {
-	from {
-		opacity: 0;
-		backdrop-filter: blur(0px);
-	}
-	to {
-		opacity: 1;
-		backdrop-filter: blur(8px);
-	}
-}
-
-@keyframes fadeOut {
-	from {
-		opacity: 1;
-		backdrop-filter: blur(8px);
-	}
-	to {
-		opacity: 0;
-		backdrop-filter: blur(0px);
-	}
+	background: radial-gradient(circle at center, rgba(0, 0, 0, 0.74), rgba(0, 0, 0, 0.88));
+	backdrop-filter: blur(6px);
 }
 
 .void-game-window {
-	width: 92%;
-	height: 88%;
-	max-width: 1700px;
-	max-height: 950px;
-	background: linear-gradient(135deg, #1e1e1e 0%, #1a1a1a 50%, #181818 100%);
-	border: 1px solid #404040;
-	border-radius: 10px;
+	width: min(860px, 92vw);
+	height: min(560px, 84vh);
 	display: flex;
 	flex-direction: column;
+	border-radius: 16px;
+	border: 1px solid #343434;
+	background: linear-gradient(180deg, #1f1f1f 0%, #191919 100%);
+	box-shadow: 0 24px 54px rgba(0, 0, 0, 0.55);
 	overflow: hidden;
-	box-shadow: 
-		0 25px 70px rgba(0, 0, 0, 0.7),
-		0 0 0 1px rgba(255, 255, 255, 0.05) inset,
-		0 0 60px rgba(255, 140, 0, 0.05);
-	animation: slideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@keyframes slideUp {
-	from {
-		opacity: 0;
-		transform: translateY(40px) scale(0.92);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0) scale(1);
-	}
-}
-
-.void-game-toolbar {
-	display: flex;
+.void-game-window-header {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
 	align-items: center;
-	gap: 10px;
-	padding: 14px 20px;
-	background: linear-gradient(180deg, #2d2d2d 0%, #262626 50%, #252525 100%);
-	border-bottom: 1px solid #404040;
-	box-shadow: 
-		0 2px 8px rgba(0, 0, 0, 0.3),
-		inset 0 1px 0 rgba(255, 255, 255, 0.03);
+	column-gap: 12px;
+	padding: 12px 14px;
+	border-bottom: 1px solid #303030;
+	background: #232323;
 }
 
-.void-game-toolbar-button {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	padding: 10px 18px;
-	background: transparent;
-	border: 1px solid transparent;
-	border-radius: 5px;
-	color: rgba(255, 255, 255, 0.75);
-	font-size: 14px;
+.void-game-window-title {
+	font-size: 13px;
 	font-weight: 600;
-	cursor: pointer;
-	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-	user-select: none;
+	color: #ececec;
 }
 
-.void-game-toolbar-button:hover {
-	background: rgba(255, 255, 255, 0.06);
-	border-color: rgba(255, 255, 255, 0.15);
-	color: rgba(255, 255, 255, 0.95);
-}
-
-.void-game-toolbar-button.active {
-	background: rgba(255, 255, 255, 0.1);
-	border-color: rgba(255, 255, 255, 0.25);
-	color: #ffffff;
-}
-
-.void-game-toolbar-button.stop-button {
-	margin-left: auto;
-}
-
-.void-game-toolbar-button.stop-button:hover {
-	background: rgba(255, 70, 70, 0.1);
-	border-color: rgba(255, 70, 70, 0.35);
-	color: #ff5555;
-	box-shadow: 0 0 12px rgba(255, 70, 70, 0.2);
-}
-
-.void-toolbar-icon {
-	width: 20px;
-	height: 20px;
-	flex-shrink: 0;
-}
-
-.void-game-content {
-	flex: 1;
-	background: linear-gradient(180deg, #1a1a1a 0%, #161616 50%, #151515 100%);
+.void-game-window-workspace {
+	font-size: 11px;
+	color: #8f8f8f;
+	white-space: nowrap;
 	overflow: hidden;
-	position: relative;
-	box-shadow: 
-		inset 0 1px 0 rgba(255, 255, 255, 0.03),
-		inset 0 0 60px rgba(0, 0, 0, 0.3);
+	text-overflow: ellipsis;
 }
 
-.void-game-viewport {
-	width: 100%;
-	height: 100%;
-	background: radial-gradient(ellipse at center, #0f0f0f 0%, #080808 50%, #050505 100%);
-	display: flex;
+.void-game-window-close {
+	width: 24px;
+	height: 24px;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: #b7b7b7;
+	cursor: pointer;
+	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	position: relative;
+}
+
+.void-game-window-close:hover {
+	background: #323232;
+	color: #ededed;
+}
+
+.void-game-window-body {
+	display: grid;
+	grid-template-rows: auto 1fr;
+	gap: 12px;
+	padding: 14px;
+	min-height: 0;
+}
+
+.void-build-state-card,
+.void-build-logs-card {
+	border: 1px solid #343434;
+	border-radius: 14px;
+	background: #1d1d1d;
+}
+
+.void-build-state-card {
+	padding: 11px 12px;
+}
+
+.void-build-status {
+	font-size: 12px;
+	color: #d8d8d8;
+	margin-bottom: 9px;
+}
+
+.void-build-status.success {
+	color: #8fb27d;
+}
+
+.void-build-status.error {
+	color: #cf7a72;
+}
+
+.void-build-progress-track {
+	height: 8px;
+	border-radius: 999px;
+	background: #292929;
 	overflow: hidden;
 }
 
-.void-game-container {
-	width: 100%;
+.void-build-progress-fill {
 	height: 100%;
-	position: relative;
-	background: #000;
+	width: 0;
+	background: linear-gradient(90deg, #d47a4a, #e38a58);
+	transition: width 140ms ease;
 }
 
-.void-game-container.game-running .void-viewport-placeholder {
-	display: none;
+.void-build-progress-fill.error {
+	background: linear-gradient(90deg, #b26158, #cf7a72);
 }
 
-.void-viewport-placeholder {
+.void-build-progress-label {
+	margin-top: 8px;
+	font-size: 11px;
+	color: #a5a5a5;
+	font-family: Consolas, Monaco, monospace;
+}
+
+.void-build-logs-card {
+	min-height: 0;
 	display: flex;
 	flex-direction: column;
-	align-items: center;
-	gap: 20px;
-	text-align: center;
-	opacity: 0.7;
-	position: absolute;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
-	z-index: 1;
+	overflow: hidden;
 }
 
-.void-viewport-text {
-	font-size: 22px;
-	font-weight: 700;
-	color: rgba(255, 255, 255, 0.9);
-	letter-spacing: 1.5px;
+.void-build-logs-title {
+	padding: 9px 11px;
+	border-bottom: 1px solid #303030;
+	font-size: 11px;
 	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #a6a6a6;
 }
 
-.void-viewport-hint {
-	font-size: 14px;
-	color: rgba(255, 255, 255, 0.5);
-}
-
-.void-game-terminal {
-	width: 100%;
-	height: 100%;
-	background: linear-gradient(135deg, #0a0a0a 0%, #121212 100%);
-	padding: 20px;
-	overflow-y: auto;
-	font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-	scroll-behavior: smooth; /* Плавный скролл */
-}
-
-/* Стилизованный скроллбар для терминала */
-.void-game-terminal::-webkit-scrollbar {
-	width: 12px;
-}
-
-.void-game-terminal::-webkit-scrollbar-track {
-	background: rgba(0, 0, 0, 0.3);
-	border-radius: 6px;
-	margin: 4px;
-}
-
-.void-game-terminal::-webkit-scrollbar-thumb {
-	background: linear-gradient(180deg, #ff8c00 0%, #ff6600 100%);
-	border-radius: 6px;
-	border: 2px solid rgba(0, 0, 0, 0.3);
-	transition: background 0.2s ease;
-}
-
-.void-game-terminal::-webkit-scrollbar-thumb:hover {
-	background: linear-gradient(180deg, #ffa500 0%, #ff7700 100%);
-	box-shadow: 0 0 8px rgba(255, 140, 0, 0.5);
-}
-
-.void-game-terminal::-webkit-scrollbar-thumb:active {
-	background: linear-gradient(180deg, #ffb700 0%, #ff8800 100%);
-}
-
-.void-terminal-output {
+.void-build-logs-list {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	padding: 10px 11px;
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
-	user-select: text; /* Возможность выделения и копирования текста */
-	cursor: text;
+	gap: 5px;
+	font-family: Consolas, Monaco, monospace;
+	font-size: 11px;
+	line-height: 1.42;
 }
 
-.void-terminal-line {
-	font-size: 14px;
-	color: rgba(255, 255, 255, 0.85);
-	line-height: 1.8;
-	padding: 4px 0;
-	font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+.void-build-logs-list::-webkit-scrollbar {
+	width: 9px;
+	height: 9px;
+}
+
+.void-build-logs-list::-webkit-scrollbar-thumb {
+	background: #434343;
+	border-radius: 999px;
+}
+
+.void-build-log-line {
+	color: #cfcfcf;
 	white-space: pre-wrap;
 	word-break: break-word;
-	user-select: text; /* Возможность выделения текста */
 }
 
-.void-terminal-line.void-terminal-success {
-	color: rgba(100, 255, 150, 0.95);
-	font-weight: 600;
+.void-build-log-line.success {
+	color: #8fb27d;
 }
 
-.void-terminal-line.void-terminal-error {
-	color: rgba(255, 107, 107, 0.95);
-	font-weight: 600;
+.void-build-log-line.error {
+	color: #cf7a72;
 }
 
-/* Compilation Scene */
-.compilation-scene {
-	width: 100%;
-	height: 100%;
-	position: relative;
-	overflow: hidden;
-	background: radial-gradient(ellipse at center, #1a1a1a 0%, #0f0f0f 50%, #0a0a0a 100%);
-	display: flex;
-	align-items: center;
-	justify-content: center;
+.void-build-log-line.warning {
+	color: #d7b278;
 }
 
-/* --- 3D DEPTH LAYERS --- */
-
-/* Каминная полка (Верхняя крышка) */
-.mantel-shelf {
-	position: absolute;
-	/* Исправлено: Лежит НА архитраве без зазора */
-	top: calc(50% - 196px);
-	
-	width: 440px; /* Шире всей конструкции */
-	height: 12px;
-	left: 50%;
-	transform: translateX(-50%);
-	background: #1a1016; /* Темный камень */
-	border-top: 2px solid #3e2731; /* Блик сверху */
-	z-index: 25; /* Самый верх */
-	box-shadow: 0 4px 10px rgba(0,0,0,0.9);
-}
-
-/* Каминная плита (Пол перед камином) */
-.hearth-stone {
-	position: absolute;
-	/* Лежит ПОД колоннами */
-	top: calc(50% + 140px);
-	
-	width: 400px;
-	height: 16px;
-	left: 50%;
-	transform: translateX(-50%);
-	background: linear-gradient(to bottom, #2b1d24, #1a1016);
-	z-index: 20;
-	border-top: 2px solid #5a3e50; /* Блик на ребре */
-	box-shadow: 0 15px 30px rgba(0,0,0,0.8);
-}
-
-/* Внутренние стенки топки (создают толщину) */
-.inner-wall {
-	position: absolute;
-	background: #0f080a; /* Очень темный кирпич */
-	z-index: 0; /* ЗА передней стеной */
-	box-shadow: inset 0 0 20px rgba(0,0,0,1); /* Внутренняя тень */
-}
-
-/* --- BURNING LOGS STAGES --- */
-
-/* Дрова (3D объемные) - базовое состояние */
-.wood-log {
-	position: absolute;
-	width: 50px;
-	height: 14px;
-	/* Чуть более "жареное" дерево */
-	background:
-		radial-gradient(circle at 20% 35%, rgba(0,0,0,0.2) 0 3px, transparent 4px),
-		radial-gradient(circle at 60% 70%, rgba(0,0,0,0.18) 0 2px, transparent 3px),
-		linear-gradient(to bottom,
-			#ffb86b 0%,
-			#d77a38 40%,
-			#6d2b16 100%
-		);
-	border-radius: 3px;
-	border: 1px solid #2a160e;
-	z-index: 5;
-	box-shadow: 0 3px 4px rgba(0,0,0,0.6);
-	transition: background 1s ease, box-shadow 1s ease, transform 0.5s ease;
-}
-
-/* Срез бревна (торец) - базовое состояние */
-.wood-log .wood-end {
-	position: absolute;
-	right: -5px;
-	top: 1px;
-	width: 10px;
-	height: 10px;
-	border-radius: 50%;
-	background:
-		radial-gradient(circle, #ffcf8b 0 3px, #b06b32 4px, #5a2a16 5px);
-	border: 1px solid #2a160e;
-	transition: background 1s ease, border-color 1s ease, box-shadow 1s ease;
-}
-
-/* 1. Горящее бревно (Charred) */
-.wood-log.burning {
-	/* Темнеет, появляется внутреннее свечение (тление) */
-	background: linear-gradient(to bottom, #2a1510 0%, #4a2010 100%);
-	box-shadow: inset 0 0 10px #ff4500, 0 0 5px rgba(255, 69, 0, 0.3);
-}
-
-/* Торец горящего бревна */
-.wood-log.burning .wood-end {
-	background: #3e1e15;
-	border-color: #1a0a05;
-	box-shadow: inset 0 0 5px #ffaa00; /* Тлеющая сердцевина */
-}
-
-/* 1.5. Золотое полено */
-.wood-log.golden {
-	background:
-		radial-gradient(circle at 20% 35%, rgba(255,255,255,0.4) 0 3px, transparent 4px),
-		linear-gradient(to bottom,
-			#fff7c3 0%,
-			#ffd700 40%,
-			#b8860b 100%
-		);
-	box-shadow: 0 0 12px #ffd700;
-}
-
-.wood-log.golden .wood-end {
-	background:
-		radial-gradient(circle, #fff7c3 0 3px, #ffd700 4px, #b8860b 5px);
-	border-color: #fff;
-}
-
-/* 2. Пепел (Ash) */
-.wood-log.ash {
-	/* Бело-серый, "рассыпающийся" цвет */
-	background: linear-gradient(to bottom, #e0e0e0 0%, #a0a0a0 100%);
-	/* Тень исчезает, бревно выглядит плоским и мертвым */
-	box-shadow: none;
-	transform: translateY(2px) scale(0.95); /* Чуть оседает */
-}
-
-.wood-log.ash .wood-end {
-	background: #c0c0c0;
-	border-color: #808080;
-	box-shadow: inset 0 0 0 2px #a0a0a0;
-}
-
-/* Улучшаем контейнер стены для слоев */
-.brick-wall-container {
-	overflow: visible; /* Чтобы полка могла торчать */
-	/* Тень от колонн на стену */
-	box-shadow: inset 20px 0 40px rgba(0,0,0,0.8), inset -20px 0 40px rgba(0,0,0,0.8);
-}
-
-/* --- FIREPLACE CORE (Внутренняя часть камина) --- */
-
-.brick-wall-container {
-	position: relative;
-	/* Увеличиваем ширину с 300 до 320, чтобы края спрятались за колоннами */
-	width: 320px;
-	height: 280px; /* Высота как у колонн */
-	background: #0a0505; /* Цвет глубины камина (сажа) */
-	box-shadow: inset 0 0 40px rgba(0,0,0,0.9);
-	z-index: 1; /* Позади колонн */
-	display: flex;
-	justify-content: center;
-	align-items: flex-end; /* Чтобы решетка стояла на дне */
-}
-
-/* Стили для кирпичей */
-.pixel-brick {
-	position: absolute;
-	box-sizing: border-box;
-	/* Убираем border, будем рисовать тенью для чистоты пикселей */
-}
-
-/* Brick Layers - REMOVED, using new structure */
-.brick-layer {
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	pointer-events: none;
-}
-
-.brick-layer.border-layer { z-index: 1; }
-.brick-layer.brick-fill-layer { z-index: 2; }
-.brick-layer.texture-layer { z-index: 3; }
-.brick-layer.dirt-layer { z-index: 4; }
-.brick-layer.vignette-layer { 
-	z-index: 5;
-	background: radial-gradient(ellipse at center, transparent 20%, rgba(0,0,0,0.6) 100%); /* Darker vignette */
-}
-
-/* Layer 1: Brick Borders - darker mortar */
-.brick-border {
-	position: absolute;
-	box-sizing: border-box;
-	border: 3px solid #2a2a2a; /* Darker mortar */
-	border-right-width: 3px;
-	border-bottom-width: 3px;
-	border-top: none;
-	border-left: none;
-}
-
-/* Layer 2: Brick Fill */
-.brick-fill {
-	position: absolute;
-	box-sizing: border-box;
-}
-
-/* Layer 3: Texture Pixels */
-.texture-pixel {
-	position: absolute;
-	border-radius: 1px;
-}
-
-/* Layer 4: Dirt Spots */
-.dirt-spot {
-	position: absolute;
-	background: radial-gradient(ellipse at center, rgba(40, 30, 20, 0.6) 0%, transparent 70%);
-	pointer-events: none;
-}
-
-/* --- IRON GRATE (Кованая решетка) --- */
-.iron-grate {
-	position: relative;
-	width: 200px; /* Чуть уже топки */
-	height: 120px;
-	z-index: 10;
-	margin-bottom: 0px; /* Стоит на полу */
-	display: flex;
-	justify-content: space-between;
-	align-items: flex-end;
-}
-
-.iron-bar {
-	width: 8px; /* 2 пикселя игры */
-	background: #1a1016; /* Цвет контура (почти черный) */
-	position: relative;
-	border-top-left-radius: 2px;
-	border-top-right-radius: 2px;
-}
-
-/* Блик на металле */
-.iron-bar::after {
-	content: '';
-	position: absolute;
-	top: 4px;
-	left: 2px;
-	width: 2px;
-	height: 90%;
-	background: #5a3e50; /* Цвет металла (тусклый блик) */
-	opacity: 0.5;
-}
-
-/* Декоративные пики на решетке */
-.iron-finial {
-	position: absolute;
-	top: -8px;
-	left: -2px;
-	width: 12px;
-	height: 8px;
-	background: #1a1016;
-	clip-path: polygon(50% 0%, 0% 100%, 100% 100%); /* Треугольник */
-}
-
-/* Нижняя перекладина решетки */
-.iron-crossbar {
-	position: absolute;
-	bottom: 20px;
-	left: 0;
-	width: 100%;
-	height: 8px;
-	background: #1a1016;
-	z-index: 11;
-	box-shadow: 0 4px 0 rgba(0,0,0,0.5);
-}
-
-/* --- PIXEL ART COLUMNS --- */
-
-.limestone-column {
-	position: absolute;
-	width: 96px; /* Кратное пикселям */
-	height: 280px;
-	top: 50%;
-	transform: translateY(-50%);
-	z-index: 5; /* Поверх стены */
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	image-rendering: pixelated;
-	justify-content: space-between; /* Добавлено для правильного распределения */
-}
-
-.limestone-column.left-column {
-	right: calc(50% + 155px); /* Слева от стены */
-}
-
-.limestone-column.right-column {
-	left: calc(50% + 155px); /* Справа от стены */
-}
-
-/* Capital (Верхушка) */
-.pixel-capital {
-	width: 100%;
-	height: 52px;
-	position: relative;
-	z-index: 3;
-}
-
-/* Shaft (Ствол) */
-.pixel-shaft {
-	width: 72px; /* Чуть уже верхушки */
-	flex: 1; /* Растягивается на высоту */
-	position: relative;
-	background: #2b2b2b;
-	display: flex;
-	z-index: 2;
-}
-
-/* Base (Основание) */
-.pixel-base {
-	width: 88px;
-	height: 48px;
-	position: relative;
-	z-index: 3;
-}
-
-/* Общие стили для пикселей внутри */
-.px-block {
-	position: absolute;
-	image-rendering: pixelated;
-}
-
-/* Цветовая палитра из референса */
-:root {
-	--col-shadow-dark: #3e2731;   /* Самая темная тень (фиолетовый) */
-	--col-shadow-mid: #5a3e50;    /* Средняя тень */
-	--col-shadow-light: #7a5868;  /* Светлая тень */
-	
-	--col-light-dark: #d4a672;    /* Темное золото */
-	--col-light-mid: #f5cc96;     /* Основной беж */
-	--col-light-high: #ffe8c2;    /* Блик */
-	
-	--col-outline: #1a1016;       /* Контур */
-}
-
-/* Стилизация ствола через CSS градиенты для производительности */
-.shaft-shadow-side {
-	width: 50%;
-	height: 100%;
-	background:
-		/* Вертикальные полосы (каннелюры) - Тень */
-		linear-gradient(90deg,
-			var(--col-outline) 0px, var(--col-outline) 2px,      /* Граница слева */
-			var(--col-shadow-mid) 2px, var(--col-shadow-mid) 8px,
-			var(--col-shadow-dark) 8px, var(--col-shadow-dark) 11px, /* Углубление */
-			var(--col-shadow-mid) 11px, var(--col-shadow-mid) 17px,
-			var(--col-shadow-dark) 17px, var(--col-shadow-dark) 20px, /* Углубление */
-			var(--col-shadow-mid) 20px, var(--col-shadow-mid) 26px,
-			var(--col-shadow-dark) 26px, var(--col-shadow-dark) 29px, /* Углубление */
-			var(--col-shadow-mid) 29px, var(--col-shadow-mid) 36px
-		);
-}
-
-.shaft-light-side {
-	width: 50%;
-	height: 100%;
-	background:
-		/* Вертикальные полосы (каннелюры) - Свет */
-		linear-gradient(90deg,
-			var(--col-light-mid) 0px, var(--col-light-mid) 6px,
-			var(--col-light-dark) 6px, var(--col-light-dark) 9px, /* Углубление */
-			var(--col-light-mid) 9px, var(--col-light-mid) 15px,
-			var(--col-light-dark) 15px, var(--col-light-dark) 18px, /* Углубление */
-			var(--col-light-mid) 18px, var(--col-light-mid) 24px,
-			var(--col-light-dark) 24px, var(--col-light-dark) 27px, /* Углубление */
-			var(--col-light-mid) 27px, var(--col-light-mid) 34px,
-			var(--col-outline) 34px, var(--col-outline) 36px       /* Граница справа */
-		);
-}
-
-/* Column Layers - REMOVED, using new structure */
-.column-layer {
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	pointer-events: none;
-}
-
-/* Detailed pixel elements */
-.column-pixel,
-.flute-pixel,
-.block-border-pixel,
-.block-crack-pixel,
-.crack-pixel,
-.shadow-pixel,
-.highlight-pixel,
-.moss-pixel,
-.capital-pixel,
-.volute-pixel,
-.pedestal-pixel,
-.architrave-pixel {
-	position: absolute;
-	image-rendering: pixelated;
-	image-rendering: -moz-crisp-edges;
-	image-rendering: crisp-edges;
-}
-
-/* --- NEW ARCHITRAVE (Верхняя балка) --- */
-.architrave-beam {
-	position: absolute;
-	/* Математика: Центр экрана - (половина высоты колонны) - (высота балки) */
-	/* 280px / 2 = 140px. Высота балки = 48px. */
-	top: calc(50% - 140px - 48px);
-	
-	/* Ширина: от левого края левой колонны до правого края правой */
-	/* Колонны сдвинуты на 155px от центра. Ширина колонны ~96px. */
-	width: 420px;
-	height: 48px;
-	left: 50%;
-	transform: translateX(-50%);
-	z-index: 6; /* Поверх всего */
-	
-	display: flex;
-	box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-}
-
-.beam-section {
-	flex: 1;
-	height: 100%;
-	position: relative;
-}
-
-/* Теневая (левая) сторона балки */
-.beam-shadow {
-	background:
-		/* Черный контур снизу */
-		linear-gradient(to top, var(--col-outline) 0px, var(--col-outline) 4px, transparent 4px),
-		/* Горизонтальные молдинги (ступеньки) */
-		linear-gradient(to bottom,
-			var(--col-outline) 0px, var(--col-outline) 4px,      /* Карниз верх */
-			var(--col-shadow-mid) 4px, var(--col-shadow-mid) 12px,
-			var(--col-shadow-dark) 12px, var(--col-shadow-dark) 20px,
-			var(--col-outline) 20px, var(--col-outline) 24px,    /* Разделитель */
-			var(--col-shadow-mid) 24px, var(--col-shadow-mid) 44px
-		);
-	/* Вертикальная линия в центре стыка */
-	border-right: 2px solid var(--col-shadow-dark);
-}
-
-/* Освещенная (правая) сторона балки */
-.beam-light {
-	background:
-		/* Черный контур снизу */
-		linear-gradient(to top, var(--col-outline) 0px, var(--col-outline) 4px, transparent 4px),
-		/* Горизонтальные молдинги (светлые) */
-		linear-gradient(to bottom,
-			var(--col-outline) 0px, var(--col-outline) 4px,
-			var(--col-light-high) 4px, var(--col-light-high) 12px,
-			var(--col-light-mid) 12px, var(--col-light-mid) 20px,
-			var(--col-outline) 20px, var(--col-outline) 24px,
-			var(--col-light-mid) 24px, var(--col-light-mid) 44px
-		);
-}
-
-/* Декоративные стыки (Seams) для колонн */
-.column-seam {
-	width: 100%;
-	height: 4px;
-	background-color: var(--col-outline);
-	z-index: 4;
-	flex-shrink: 0;
-}
-
-/* --- LOG PHYSICS --- */
-
-/* Падающее/Лежащее бревно */
-.new-log {
-	position: absolute;
-	width: 50px; /* Чуть меньше стандартных */
-	height: 12px;
-	background: linear-gradient(to bottom, #6d4534 0%, #3d2318 100%);
-	border: 1px solid #2a160e;
-	border-radius: 2px;
-	z-index: 20; /* Высокий Z-index во время полета */
-	box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-	transition: background 1s ease, box-shadow 1s ease;
-}
-
-.new-log.golden {
-	background: linear-gradient(to right, #ffd700, #ffec8b, #ffd700);
-	border: 1px solid #fff;
-	box-shadow: 0 0 15px #ffd700;
-}
-
-.new-log.golden .wood-end {
-	background: #fffacd;
-	border-color: #b8860b;
-}
-
-/* Торцы для новых бревен */
-.new-log .wood-end {
-	width: 12px;
-	height: 12px;
-	right: -6px;
-	top: -1px;
-}
-
-/* Горящее новое бревно */
-.new-log.burning {
-	background: linear-gradient(to bottom, #2a1510 0%, #4a2010 100%);
-	box-shadow: inset 0 0 10px #ff4500, 0 0 5px rgba(255, 69, 0, 0.3);
-}
-
-.new-log.burning .wood-end {
-	background: #3e1e15;
-	border-color: #1a0a05;
-	box-shadow: inset 0 0 5px #ffaa00;
-}
-
-/* Пепел нового бревна */
-.new-log.ash {
-	background: linear-gradient(to bottom, #e0e0e0 0%, #a0a0a0 100%);
-	box-shadow: none;
-	transform: scale(0.95);
-}
-
-.new-log.ash .wood-end {
-	background: #c0c0c0;
-	border-color: #808080;
-	box-shadow: inset 0 0 0 2px #a0a0a0;
-}
-
-/* --- SUPER FIRE (GOLDEN MODE) --- */
-.fire-particle.super-fire {
-	background: #fff !important; /* Белое ядро */
-	box-shadow: 0 0 8px #ffd700, 0 0 15px #ff4500 !important;
-}
-
-.fire-glow.super-active {
-	background: radial-gradient(circle, rgba(255, 215, 0, 0.4) 0%, rgba(255, 69, 0, 0.1) 70%);
-	animation: glowPulse 0.5s infinite ease-in-out; /* Быстрая пульсация */
-}
-
-/* --- ENHANCED FIRE SYSTEM --- */
-
-/* Основные частицы стали ярче и больше */
-.fire-particle {
-	position: absolute;
-	background: #ffaa00;
-	pointer-events: none;
-	z-index: 6; /* Между дровами и решеткой */
-	border-radius: 2px; /* Чуть мягче */
-	box-shadow: 0 0 4px #ff4500; /* Свечение вокруг частицы */
-}
-
-/* Базовое пламя (Static Core) - чтобы огонь не выглядел пустым */
-.fire-base-layer {
-	position: absolute;
-	left: 140px;
-	top: 250px;
-	width: 40px;
-	height: 30px;
-	background: #ff5500;
-	filter: blur(8px);
-	opacity: 0.6;
-	z-index: 6;
-	animation: flickerBase 0.1s infinite alternate;
-	pointer-events: none;
-}
-
-@keyframes flickerBase {
-	from { opacity: 0.5; transform: scale(1); }
-	to { opacity: 0.7; transform: scale(1.1); }
-}
-
-/* Свечение от огня (Ambient Light) */
-.fire-glow {
-	position: absolute;
-	left: 50%;
-	top: 50%;
-	transform: translate(-50%, -50%);
-	width: 120px;
-	height: 120px;
-	background: radial-gradient(circle, rgba(255, 100, 0, 0.2) 0%, rgba(0,0,0,0) 70%);
-	z-index: 4;
-	animation: glowPulse 2s infinite ease-in-out;
-	pointer-events: none;
-}
-
-@keyframes glowPulse {
-	0% { opacity: 0.5; transform: translate(-50%, -50%) scale(0.9); }
-	50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.1); }
-	100% { opacity: 0.5; transform: translate(-50%, -50%) scale(0.9); }
-}
-
-/* Анимация полета частицы (улучшенная) */
-@keyframes fireRise {
-	0% {
-		transform: translateY(0) scale(1) rotate(0deg);
-		opacity: 1;
-		background-color: #ffffff; /* Белое ядро */
-	}
-	15% {
-		background-color: #fff020; /* Желтый */
-	}
-	40% {
-		background-color: #ff5a00; /* Оранжевый */
-		transform: translateY(-25px) scale(1.4) rotate(10deg);
-	}
-	70% {
-		background-color: #8a2be2; /* Фиолетовый оттенок дыма в конце */
-		opacity: 0.6;
-	}
-	100% {
-		transform: translateY(-70px) scale(0.5) rotate(-10deg);
-		opacity: 0;
-		background-color: #333;
-	}
-}
-
-/* Анимация появления комнаты */
-@keyframes roomFadeIn {
-	0% {
-		opacity: 0;
-		transform: scale(0.9);
-	}
-	100% {
-		opacity: 1;
-		transform: scale(1);
-	}
-}
-
-/* Анимация появления прогресс-бара снизу */
-@keyframes fadeInUp {
-	0% {
-		opacity: 0;
-		transform: translateY(20px);
-	}
-	100% {
-		opacity: 1;
-		transform: translateY(0);
-	}
-}
-
-/* Анимация вращения спиннера */
-@keyframes spin {
-	0% {
-		transform: rotate(0deg);
-	}
-	100% {
-		transform: rotate(360deg);
-	}
-}
-
-/* Стили для спиннера */
-.loading-spinner {
-	animation: spin 1s linear infinite;
-}

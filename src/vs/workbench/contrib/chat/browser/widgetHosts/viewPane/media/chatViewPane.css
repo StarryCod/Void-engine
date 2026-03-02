@@ -3,19 +3,19 @@
  *--------------------------------------------------------------------------------------------*/
 
 .void-chat-container {
-	--void-bg-0: #161616;
-	--void-bg-1: #1d1d1d;
-	--void-bg-2: #242424;
-	--void-bg-3: #2d2d2d;
-	--void-border: #353535;
-	--void-border-strong: #444444;
-	--void-text-1: #e8e8e8;
-	--void-text-2: #b9b9b9;
-	--void-text-3: #8a8a8a;
+	--void-bg-0: #171717;
+	--void-bg-1: #1c1c1c;
+	--void-bg-2: #232323;
+	--void-bg-3: #2a2a2a;
+	--void-border: #323232;
+	--void-border-strong: #464646;
+	--void-text-1: #ececec;
+	--void-text-2: #b8b8b8;
+	--void-text-3: #8d8d8d;
 	--void-accent: #d47a4a;
 	--void-ok: #8fb27d;
 	--void-error: #c97b70;
-	--void-input-shell-bg: #262626;
+	--void-input-shell-bg: #2a2a2a;
 
 	display: flex;
 	flex-direction: column;
@@ -26,7 +26,9 @@
 	padding: 10px;
 	gap: 8px;
 	box-sizing: border-box;
-	background: var(--void-bg-0);
+	background:
+		radial-gradient(circle at 75% -10%, rgba(212, 122, 74, 0.08), transparent 38%),
+		linear-gradient(180deg, #181818 0%, #161616 100%);
 	color: var(--void-text-1);
 	font: 12px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -35,14 +37,16 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	min-height: 26px;
+	min-height: 30px;
 	flex-shrink: 0;
 }
 
 .void-chat-brand {
 	color: #f1f1f1;
-	font-size: 13px;
-	letter-spacing: 0.03em;
+	font-size: 20px;
+	font-weight: 400;
+	letter-spacing: 0.01em;
+	font-family: Georgia, 'Times New Roman', serif;
 }
 
 .void-chat-header-actions {
@@ -53,23 +57,37 @@
 
 .void-chat-header-btn {
 	height: 24px;
-	padding: 0 8px;
+	padding: 0 9px;
 	border-radius: 999px;
-	border: 1px solid #3a3a3a;
-	background: #232323;
-	color: #cbcbcb;
+	border: 1px solid #383838;
+	background: #212121;
+	color: #c8c8c8;
 	font-size: 11px;
 	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	position: relative;
 }
 
 .void-chat-header-btn:hover {
-	background: #2a2a2a;
+	background: #282828;
 }
 
 .void-chat-header-btn.active {
-	border-color: #565656;
-	background: #2d2d2d;
+	border-color: #5a5a5a;
+	background: #2b2b2b;
 	color: #f0f0f0;
+}
+
+.void-chat-header-btn-text.codicon::before {
+	font-size: 12px;
+}
+
+.void-chat-header-btn-icon {
+	width: 24px;
+	padding: 0;
+	justify-content: center;
 }
 
 .void-chat-history-panel {
@@ -255,6 +273,15 @@
 	padding: 2px;
 }
 
+.void-chat-container.void-layout-home .void-chat-messages {
+	justify-content: center;
+}
+
+.void-chat-container.void-layout-conversation .void-chat-messages,
+.void-chat-container.void-layout-history .void-chat-messages {
+	justify-content: flex-start;
+}
+
 .void-chat-messages::-webkit-scrollbar {
 	width: 8px;
 }
@@ -280,6 +307,18 @@
 	color: var(--void-text-2);
 }
 
+.void-chat-empty-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 4px 10px;
+	border-radius: 8px;
+	border: 1px solid #343434;
+	background: #1b1b1b;
+	color: #bcbcbc;
+	font-size: 11px;
+}
+
 .void-chat-empty-header {
 	display: inline-flex;
 	align-items: center;
@@ -293,9 +332,10 @@
 }
 
 .void-chat-empty-title {
-	font-size: 30px;
+	font-size: 48px;
 	line-height: 1.08;
 	color: #f1f1f1;
+	font-family: Georgia, 'Times New Roman', serif;
 }
 
 .void-chat-empty-subtitle {
@@ -429,10 +469,11 @@
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
-	padding: 10px 12px;
-	border: 1px solid #3c3c3c;
-	border-radius: 22px;
-	background: var(--void-input-shell-bg);
+	padding: 12px 14px;
+	border: 1px solid #383838;
+	border-radius: 24px;
+	background: linear-gradient(180deg, #303030 0%, var(--void-input-shell-bg) 100%);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .void-input-shell:focus,
@@ -513,7 +554,7 @@
 
 .void-input {
 	width: 100%;
-	min-height: 26px;
+	min-height: 30px;
 	max-height: 160px;
 	resize: none;
 	margin: 0;
@@ -523,7 +564,7 @@
 	box-shadow: none !important;
 	background: transparent;
 	color: var(--void-text-1);
-	font: 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 	overflow-y: hidden;
 }
 
@@ -548,7 +589,7 @@
 }
 
 .void-input::placeholder {
-	color: var(--void-text-3);
+	color: #9b9b9b;
 }
 
 .void-input::-webkit-scrollbar {
@@ -564,8 +605,8 @@
 	display: grid;
 	grid-template-columns: auto 1fr auto auto auto;
 	align-items: center;
-	gap: 6px;
-	padding-top: 2px;
+	gap: 8px;
+	padding-top: 4px;
 }
 
 .void-input-left {
@@ -575,11 +616,11 @@
 }
 
 .void-toolbar-btn {
-	width: 24px;
-	height: 24px;
+	width: 28px;
+	height: 28px;
 	border: 0;
 	border-radius: 999px;
-	background: transparent;
+	background: #1f1f1f;
 	color: #cfcfcf;
 	cursor: pointer;
 	display: inline-flex;
@@ -591,7 +632,7 @@
 }
 
 .void-toolbar-btn:hover {
-	background: #383838;
+	background: #353535;
 }
 
 .void-model-label {
@@ -618,8 +659,8 @@
 	width: 14px;
 	height: 14px;
 	border-radius: 50%;
-	border: 1px solid #525252;
-	background: var(--void-input-shell-bg);
+	border: 1px solid #585858;
+	background: transparent;
 	overflow: hidden;
 }
 
@@ -628,7 +669,7 @@
 	position: absolute;
 	inset: -1px;
 	border-radius: 50%;
-	background: conic-gradient(#ffffff calc(var(--void-context-ratio) * 1turn), transparent 0);
+	background: conic-gradient(#f5f5f5 calc(var(--void-context-ratio) * 1turn), transparent 0);
 	-webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
 	mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
 }
@@ -661,11 +702,11 @@
 }
 
 .void-send-btn {
-	width: 26px;
-	height: 26px;
+	width: 30px;
+	height: 30px;
 	border-radius: 999px;
-	border: 1px solid #4a4a4a;
-	background: #2d2d2d;
+	border: 1px solid #535353;
+	background: #3a3a3a;
 	color: #f3f3f3 !important;
 	cursor: pointer;
 	display: inline-flex;
@@ -677,14 +718,14 @@
 }
 
 .void-send-btn:not(:disabled) {
-	background: #f3f3f3;
-	color: #000000 !important;
-	border-color: #f3f3f3;
+	background: var(--void-accent);
+	color: #ffffff !important;
+	border-color: var(--void-accent);
 }
 
 .void-send-btn:disabled {
-	background: #2b2b2b;
-	color: #f3f3f3 !important;
+	background: #4a4a4a;
+	color: #d8d8d8 !important;
 	cursor: default;
 }
 
@@ -694,11 +735,12 @@
 	bottom: 44px;
 	display: none;
 	flex-direction: column;
-	min-width: 180px;
-	padding: 6px;
-	border: 1px solid var(--void-border);
-	border-radius: 10px;
-	background: #202020;
+	min-width: 240px;
+	padding: 8px;
+	border: 1px solid #3a3a3a;
+	border-radius: 14px;
+	background: #262626;
+	box-shadow: 0 16px 28px rgba(0, 0, 0, 0.36);
 	z-index: 4;
 }
 
@@ -707,18 +749,47 @@
 }
 
 .void-plus-menu-item {
+	display: grid;
+	grid-template-columns: 14px 1fr auto;
+	column-gap: 8px;
+	align-items: center;
 	border: 0;
 	background: transparent;
 	color: var(--void-text-1);
 	text-align: left;
-	padding: 8px 10px;
-	border-radius: 7px;
+	padding: 9px 10px;
+	border-radius: 8px;
 	cursor: pointer;
 	font: inherit;
+	font-size: 12px;
 }
 
 .void-plus-menu-item:hover {
-	background: #2b2b2b;
+	background: #323232;
+}
+
+.void-plus-menu-icon {
+	color: #c2c2c2;
+	font-size: 13px;
+}
+
+.void-plus-menu-item:hover .void-plus-menu-icon {
+	color: #f0f0f0;
+}
+
+.void-plus-menu-text {
+	color: #dddddd;
+}
+
+.void-plus-menu-tail {
+	color: #8f8f8f;
+	font-size: 12px;
+}
+
+.void-plus-menu-separator {
+	height: 1px;
+	margin: 5px 4px;
+	background: #3a3a3a;
 }
 
 .void-drag-overlay {
@@ -1491,33 +1562,32 @@
 	color: var(--void-error);
 }
 
-[data-tooltip] {
-	position: relative;
-}
-
-[data-tooltip]:hover::after {
-	content: attr(data-tooltip);
-	position: absolute;
-	left: 50%;
-	bottom: calc(100% + 8px);
-	transform: translateX(-50%);
-	background: #262626;
-	border: 1px solid #3b3b3b;
+.void-chat-tooltip-overlay {
+	position: fixed;
+	left: 0;
+	top: 0;
+	z-index: 210;
+	display: none;
+	padding: 4px 8px;
 	border-radius: 8px;
-	padding: 3px 7px;
+	border: 1px solid #3b3b3b;
+	background: #262626;
+	color: #d0d0d0;
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 	font-size: 10px;
 	line-height: 1.2;
-	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-	color: #d0d0d0;
 	white-space: nowrap;
 	pointer-events: none;
-	z-index: 30;
+	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+	opacity: 0;
+	transform: translateY(1px);
+	transition: opacity 90ms ease, transform 90ms ease;
 }
 
-.void-file-remove[data-tooltip]:hover::after {
-	left: auto;
-	right: 0;
-	transform: none;
+.void-chat-tooltip-overlay.visible {
+	display: block;
+	opacity: 1;
+	transform: translateY(0);
 }
 
 .void-toolbar-btn.codicon::before,
@@ -1638,6 +1708,10 @@
 @media (max-width: 640px) {
 	.void-chat-container {
 		padding: 8px;
+	}
+
+	.void-chat-empty-title {
+		font-size: 36px;
 	}
 
 	.void-model-label {

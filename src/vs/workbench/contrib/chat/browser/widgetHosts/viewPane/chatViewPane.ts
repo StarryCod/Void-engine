@@ -26,6 +26,7 @@ import { ITerminalService } from '../../../../terminal/browser/terminal.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IExplorerService } from '../../../../files/browser/files.js';
 import { QwenChatService } from './qwenChatService.js';
+import { IChatHistoryPanelState, IChatHistoryUiStore, LocalChatHistoryUiStore } from './chatHistoryUiStore.js';
 
 interface AttachedFile {
 	id: string;
@@ -92,6 +93,8 @@ interface HistorySessionRecord {
 	messages: HistoryMessageRecord[];
 }
 
+type ChatPaneLayoutMode = 'home' | 'conversation' | 'history';
+
 export class ChatViewPane extends ViewPane {
 	private container: HTMLElement | undefined;
 	private messagesContainer: HTMLElement | undefined;
@@ -117,10 +120,17 @@ export class ChatViewPane extends ViewPane {
 	private runSummaryRendered = false;
 	private historyButton: HTMLButtonElement | undefined;
 	private historyPanel: HTMLElement | undefined;
-	private historySearchInput: HTMLInputElement | undefined;
 	private historyList: HTMLElement | undefined;
 	private historySessions: HistorySessionRecord[] = [];
+	private readonly historyUiStore: IChatHistoryUiStore;
+	private historyPanelState: IChatHistoryPanelState = { query: '', mode: 'list' };
 	private activeSessionId: string | undefined;
+	private layoutMode: ChatPaneLayoutMode = 'home';
+	private scrollToBottomHandle: number | undefined;
+	private devProfileEnabled = false;
+	private longTaskObserver: PerformanceObserver | undefined;
+	private tooltipOverlay: HTMLElement | undefined;
+	private tooltipTarget: HTMLElement | undefined;
 	private static readonly CONTEXT_WINDOW_TOKENS = 1048600;
 	private static readonly CONTEXT_HARD_LIMIT = 0.92;
 	private static readonly MAX_ATTACHED_FILES = 9;
@@ -131,7 +141,7 @@ export class ChatViewPane extends ViewPane {
 		options: IViewPaneOptions,
 		@IKeybindingService keybindingService: IKeybindingService,
 		@IContextMenuService contextMenuService: IContextMenuService,
-		@IConfigurationService configurationService: IConfigurationService,
+		@IConfigurationService override readonly configurationService: IConfigurationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
 		@IInstantiationService instantiationService: IInstantiationService,
@@ -155,6 +165,11 @@ export class ChatViewPane extends ViewPane {
 			const workspacePath = workspace.folders[0].uri.fsPath;
 			this.qwenService.setWorkspacePath(workspacePath);
 		}
+
+		this.historyUiStore = new LocalChatHistoryUiStore(
+			ChatViewPane.CHAT_HISTORY_STORAGE_KEY,
+			ChatViewPane.CHAT_HISTORY_MAX_SESSIONS
+		);
 	}
 
 	protected override renderBody(container: HTMLElement): void {
@@ -162,22 +177,27 @@ export class ChatViewPane extends ViewPane {
 
 		this.container = container;
 		container.classList.add('void-chat-container');
+		this.setupTooltipOverlay(container);
 
 		const header = append(container, $('.void-chat-header'));
 		const brand = append(header, $('.void-chat-brand'));
 		brand.textContent = 'CODEX';
 		const headerActions = append(header, $('.void-chat-header-actions'));
-		const historyButton = append(headerActions, $('button.void-chat-header-btn')) as HTMLButtonElement;
+		const historyButton = append(headerActions, $('button.void-chat-header-btn.void-chat-header-btn-text')) as HTMLButtonElement;
 		historyButton.textContent = 'Chat History';
 		historyButton.setAttribute('data-tooltip', 'Open saved chats');
+		historyButton.classList.add('codicon', 'codicon-history');
 		this.historyButton = historyButton;
-		const newChatButton = append(headerActions, $('button.void-chat-header-btn')) as HTMLButtonElement;
-		newChatButton.textContent = 'New Chat';
+		const newChatButton = append(headerActions, $('button.void-chat-header-btn.void-chat-header-btn-icon.codicon.codicon-edit')) as HTMLButtonElement;
+		newChatButton.textContent = '';
+		newChatButton.setAttribute('aria-label', 'New Chat');
 		newChatButton.setAttribute('data-tooltip', 'Start a new chat session');
 
 		const messagesContainer = append(container, $('.void-chat-messages'));
 		this.messagesContainer = messagesContainer;
 		this.emptyState = append(messagesContainer, $('.void-chat-empty'));
+		const emptyBadge = append(this.emptyState, $('.void-chat-empty-badge'));
+		emptyBadge.textContent = 'Free plan · Upgrade';
 		const emptyHeader = append(this.emptyState, $('.void-chat-empty-header'));
 		this.renderWelcomeLogo(emptyHeader);
 		const emptyTitle = append(emptyHeader, $('.void-chat-empty-title'));
@@ -195,7 +215,6 @@ export class ChatViewPane extends ViewPane {
 		const historySearchInput = append(historyPanel, $('input.void-chat-history-search')) as HTMLInputElement;
 		historySearchInput.type = 'text';
 		historySearchInput.placeholder = 'Search chats';
-		this.historySearchInput = historySearchInput;
 		const historyList = append(historyPanel, $('.void-chat-history-list'));
 		this.historyList = historyList;
 
@@ -221,16 +240,46 @@ export class ChatViewPane extends ViewPane {
 
 		const plusBtn = append(leftControls, $('button.void-toolbar-btn.void-plus-btn.codicon.codicon-add')) as HTMLButtonElement;
 		plusBtn.setAttribute('aria-label', 'Attach files');
-		plusBtn.setAttribute('data-tooltip', 'Attach files');
+		plusBtn.setAttribute('data-tooltip', 'Actions');
 
 		const plusMenu = append(inputBox, $('.void-plus-menu'));
-		const addFilesBtn = append(plusMenu, $('button.void-plus-menu-item')) as HTMLButtonElement;
-		addFilesBtn.textContent = 'Add files';
-		addFilesBtn.setAttribute('data-tooltip', 'Attach text/PDF files');
-		addFilesBtn.addEventListener('click', () => {
-			this.toggleMenu(plusMenu, false);
-			this.openFilePicker();
-		});
+		const createMenuItem = (
+			label: string,
+			iconClass: string,
+			tooltip: string,
+			onClick: () => void,
+			tailCodicon?: string
+		): HTMLButtonElement => {
+			const item = append(plusMenu, $('button.void-plus-menu-item')) as HTMLButtonElement;
+			item.type = 'button';
+			item.setAttribute('data-tooltip', tooltip);
+			const icon = append(item, $('span.void-plus-menu-icon.codicon'));
+			icon.classList.add(iconClass);
+			const text = append(item, $('span.void-plus-menu-text'));
+			text.textContent = label;
+			if (tailCodicon) {
+				const tail = append(item, $('span.void-plus-menu-tail.codicon'));
+				tail.classList.add(tailCodicon);
+			}
+			item.addEventListener('click', onClick);
+			return item;
+		};
+
+		createMenuItem(
+			'Add files or photos',
+			'codicon-attach',
+			'Attach text/PDF files',
+			() => {
+				this.toggleMenu(plusMenu, false);
+				this.openFilePicker();
+			}
+		);
+
+		append(plusMenu, $('.void-plus-menu-separator'));
+		createMenuItem('Add to project', 'codicon-folder', 'Add context from project', () => this.toggleMenu(plusMenu, false), 'codicon-chevron-right');
+		createMenuItem('Web search', 'codicon-globe', 'Use web search in this chat', () => this.toggleMenu(plusMenu, false), 'codicon-check');
+		createMenuItem('Use style', 'codicon-symbol-color', 'Configure response style', () => this.toggleMenu(plusMenu, false), 'codicon-chevron-right');
+		createMenuItem('Add connectors', 'codicon-plug', 'Connect external tools', () => this.toggleMenu(plusMenu, false));
 
 		plusBtn.addEventListener('click', () => {
 			this.toggleMenu(plusMenu, !plusMenu.classList.contains('visible'));
@@ -285,6 +334,14 @@ export class ChatViewPane extends ViewPane {
 		};
 		document.addEventListener('click', onDocumentClick, true);
 		this._register({ dispose: () => document.removeEventListener('click', onDocumentClick, true) });
+		this._register({
+			dispose: () => {
+				if (typeof this.scrollToBottomHandle === 'number') {
+					window.cancelAnimationFrame(this.scrollToBottomHandle);
+					this.scrollToBottomHandle = undefined;
+				}
+			}
+		});
 
 		historyButton.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -296,7 +353,12 @@ export class ChatViewPane extends ViewPane {
 		closeHistoryButton.addEventListener('click', () => {
 			this.toggleHistoryPanel(false);
 		});
-		historySearchInput.addEventListener('input', () => this.renderHistoryList());
+		historySearchInput.addEventListener('input', () => {
+			const query = historySearchInput.value.trim();
+			this.historyPanelState.query = query;
+			this.historyPanelState.mode = query.length > 0 ? 'search' : 'list';
+			this.renderHistoryList();
+		});
 
 		let dragCounter = 0;
 		inputBox.addEventListener('dragenter', (e) => {
@@ -346,6 +408,11 @@ export class ChatViewPane extends ViewPane {
 		this.updateComposerState();
 		this.loadHistorySessions();
 		this.renderHistoryList();
+		this.setLayoutMode('home');
+		this.devProfileEnabled = this.configurationService.getValue<boolean>('void.dev.profileChatUi') === true;
+		if (this.devProfileEnabled) {
+			this.installLongTaskObserver();
+		}
 
 		if (this.qwenService) {
 			this._register(this.qwenService.onEvent((event) => {
@@ -2273,12 +2340,26 @@ export class ChatViewPane extends ViewPane {
 		}
 		const hasMessages = this.messagesContainer.querySelectorAll('.void-message, .void-run-group, .void-context-summary-card').length > 0;
 		this.emptyState.style.display = hasMessages ? 'none' : 'flex';
+		if (this.historyPanel?.classList.contains('visible')) {
+			this.setLayoutMode('history');
+			return;
+		}
+		this.setLayoutMode(hasMessages ? 'conversation' : 'home');
 	}
 
 	private scrollToBottom(): void {
-		if (this.messagesContainer) {
-			this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+		if (!this.messagesContainer) {
+			return;
 		}
+		if (typeof this.scrollToBottomHandle === 'number') {
+			return;
+		}
+		this.scrollToBottomHandle = window.requestAnimationFrame(() => {
+			this.scrollToBottomHandle = undefined;
+			if (this.messagesContainer) {
+				this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+			}
+		});
 	}
 
 	private toggleMenu(menu: HTMLElement | undefined, visible: boolean): void {
@@ -2294,19 +2375,176 @@ export class ChatViewPane extends ViewPane {
 		}
 		this.historyPanel.classList.toggle('visible', visible);
 		this.historyButton.classList.toggle('active', visible);
+		if (visible) {
+			this.setLayoutMode('history');
+			return;
+		}
+		this.updateEmptyStateVisibility();
+	}
+
+	private setLayoutMode(mode: ChatPaneLayoutMode): void {
+		if (!this.container) {
+			return;
+		}
+		if (this.layoutMode === mode && this.container.classList.contains(`void-layout-${mode}`)) {
+			return;
+		}
+		this.container.classList.remove('void-layout-home', 'void-layout-conversation', 'void-layout-history');
+		this.container.classList.add(`void-layout-${mode}`);
+		this.layoutMode = mode;
+	}
+
+	private installLongTaskObserver(): void {
+		if (!('PerformanceObserver' in window) || this.longTaskObserver) {
+			return;
+		}
+		try {
+			this.longTaskObserver = new PerformanceObserver((entries) => {
+				for (const entry of entries.getEntries()) {
+					if (entry.duration >= 50) {
+						console.warn(`[Qwen UI Perf] long task ${Math.round(entry.duration)}ms`);
+					}
+				}
+			});
+			this.longTaskObserver.observe({ entryTypes: ['longtask'] });
+			this._register({
+				dispose: () => {
+					this.longTaskObserver?.disconnect();
+					this.longTaskObserver = undefined;
+				}
+			});
+		} catch {
+			// Ignore unsupported observer environments.
+		}
+	}
+
+	private setupTooltipOverlay(container: HTMLElement): void {
+		const overlay = append(container, $('.void-chat-tooltip-overlay'));
+		this.tooltipOverlay = overlay;
+
+		const onPointerOver = (event: PointerEvent): void => {
+			const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-tooltip]');
+			if (!target || !container.contains(target)) {
+				return;
+			}
+			this.showTooltip(target);
+		};
+
+		const onPointerOut = (event: PointerEvent): void => {
+			const relatedTarget = event.relatedTarget as HTMLElement | null;
+			const nextTarget = relatedTarget?.closest<HTMLElement>('[data-tooltip]');
+			if (nextTarget && container.contains(nextTarget)) {
+				this.showTooltip(nextTarget);
+				return;
+			}
+			this.hideTooltip();
+		};
+
+		const onFocusIn = (event: FocusEvent): void => {
+			const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-tooltip]');
+			if (!target || !container.contains(target)) {
+				return;
+			}
+			this.showTooltip(target);
+		};
+
+		const onFocusOut = (event: FocusEvent): void => {
+			const relatedTarget = event.relatedTarget as HTMLElement | null;
+			const nextTarget = relatedTarget?.closest<HTMLElement>('[data-tooltip]');
+			if (nextTarget && container.contains(nextTarget)) {
+				this.showTooltip(nextTarget);
+				return;
+			}
+			this.hideTooltip();
+		};
+
+		const onResize = (): void => {
+			if (this.tooltipTarget) {
+				this.positionTooltip(this.tooltipTarget);
+			}
+		};
+
+		const onContainerScroll = (): void => {
+			if (this.tooltipTarget) {
+				this.positionTooltip(this.tooltipTarget);
+			}
+		};
+
+		container.addEventListener('pointerover', onPointerOver);
+		container.addEventListener('pointerout', onPointerOut);
+		container.addEventListener('focusin', onFocusIn);
+		container.addEventListener('focusout', onFocusOut);
+		container.addEventListener('scroll', onContainerScroll, true);
+		window.addEventListener('resize', onResize);
+
+		this._register({
+			dispose: () => {
+				container.removeEventListener('pointerover', onPointerOver);
+				container.removeEventListener('pointerout', onPointerOut);
+				container.removeEventListener('focusin', onFocusIn);
+				container.removeEventListener('focusout', onFocusOut);
+				container.removeEventListener('scroll', onContainerScroll, true);
+				window.removeEventListener('resize', onResize);
+				this.hideTooltip();
+				this.tooltipOverlay?.remove();
+				this.tooltipOverlay = undefined;
+			}
+		});
+	}
+
+	private showTooltip(target: HTMLElement): void {
+		if (!this.tooltipOverlay) {
+			return;
+		}
+		const tooltipText = target.getAttribute('data-tooltip')?.trim();
+		if (!tooltipText) {
+			this.hideTooltip();
+			return;
+		}
+
+		this.tooltipTarget = target;
+		this.tooltipOverlay.textContent = tooltipText;
+		this.tooltipOverlay.classList.add('visible');
+		this.positionTooltip(target);
+	}
+
+	private positionTooltip(target: HTMLElement): void {
+		if (!this.tooltipOverlay) {
+			return;
+		}
+		this.tooltipOverlay.style.left = '0px';
+		this.tooltipOverlay.style.top = '0px';
+		this.tooltipOverlay.style.visibility = 'hidden';
+
+		const margin = 8;
+		const targetRect = target.getBoundingClientRect();
+		const tooltipRect = this.tooltipOverlay.getBoundingClientRect();
+		let left = targetRect.left + (targetRect.width / 2) - (tooltipRect.width / 2);
+		let top = targetRect.top - tooltipRect.height - 8;
+
+		if (top < margin) {
+			top = targetRect.bottom + 8;
+		}
+
+		const maxLeft = Math.max(margin, window.innerWidth - tooltipRect.width - margin);
+		left = Math.min(Math.max(left, margin), maxLeft);
+
+		this.tooltipOverlay.style.left = `${Math.round(left)}px`;
+		this.tooltipOverlay.style.top = `${Math.round(top)}px`;
+		this.tooltipOverlay.style.visibility = 'visible';
+	}
+
+	private hideTooltip(): void {
+		this.tooltipTarget = undefined;
+		if (!this.tooltipOverlay) {
+			return;
+		}
+		this.tooltipOverlay.classList.remove('visible');
+		this.tooltipOverlay.style.visibility = 'hidden';
 	}
 
 	private loadHistorySessions(): void {
-		let parsed: unknown = [];
-		try {
-			const raw = localStorage.getItem(ChatViewPane.CHAT_HISTORY_STORAGE_KEY);
-			if (raw) {
-				parsed = JSON.parse(raw);
-			}
-		} catch {
-			parsed = [];
-		}
-		const records = Array.isArray(parsed) ? parsed : [];
+		const records = this.historyUiStore.loadItems();
 		this.historySessions = records
 			.map(record => this.normalizeHistorySession(record))
 			.filter((record): record is HistorySessionRecord => !!record)
@@ -2384,11 +2622,7 @@ export class ChatViewPane extends ViewPane {
 	}
 
 	private saveHistorySessions(): void {
-		try {
-			localStorage.setItem(ChatViewPane.CHAT_HISTORY_STORAGE_KEY, JSON.stringify(this.historySessions.slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS)));
-		} catch {
-			// Ignore persistence failures.
-		}
+		this.historyUiStore.saveItems(this.historySessions);
 	}
 
 	private createSessionAndSwitch(baseTitle?: string): void {
@@ -2404,6 +2638,7 @@ export class ChatViewPane extends ViewPane {
 		};
 		this.historySessions = [session, ...this.historySessions].slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
 		this.activeSessionId = session.id;
+		this.historyPanelState.selectedSessionId = session.id;
 		this.clearConversationSurface();
 		this.saveHistorySessions();
 		this.renderHistoryList();
@@ -2470,6 +2705,7 @@ export class ChatViewPane extends ViewPane {
 			return;
 		}
 		this.activeSessionId = session.id;
+		this.historyPanelState.selectedSessionId = session.id;
 		session.lastViewedAt = Date.now();
 		this.clearConversationSurface();
 		for (const message of session.messages) {
@@ -2582,11 +2818,12 @@ export class ChatViewPane extends ViewPane {
 		if (!this.historyList) {
 			return;
 		}
+		const perfStart = this.devProfileEnabled ? performance.now() : 0;
 		while (this.historyList.firstChild) {
 			this.historyList.removeChild(this.historyList.firstChild);
 		}
 
-		const query = this.historySearchInput?.value.trim().toLowerCase() ?? '';
+		const query = this.historyPanelState.query.trim().toLowerCase();
 		const filtered = this.historySessions.filter(session => {
 			if (!query) {
 				return true;
@@ -2669,6 +2906,12 @@ export class ChatViewPane extends ViewPane {
 					event.stopPropagation();
 					this.removeSessionFromHistory(session.id);
 				});
+			}
+		}
+		if (this.devProfileEnabled) {
+			const duration = performance.now() - perfStart;
+			if (duration >= 8) {
+				console.log(`[Qwen UI Perf] history render ${duration.toFixed(1)}ms (${filtered.length} sessions)`);
 			}
 		}
 	}

@@ -357,6 +357,9 @@ import './contrib/welcomeViews/common/newFile.contribution.js';
 // Void Welcome Screen
 import './contrib/voidWelcome/browser/voidWelcome.contribution.js';
 
+// Void Product Shell Cleanup
+import './contrib/voidShell/browser/voidShell.contribution.js';
+
 // Void Game Runner
 import './contrib/voidGameRunner/browser/voidGameRunner.contribution.js';
 
