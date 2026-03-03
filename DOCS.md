@@ -97,5 +97,6 @@ cargo run
 
 Фаза E: Производительность и модульность
 - [ ] Разделить тяжелую логику chat UI на изолированные модули.
+- В прогрессе: вынесены `chatLayoutController`, `chatPerfController`, `chatTooltipController`, `chatHistoryModel`, `chatHistoryRenderer`.
 - [x] Убрать лишние reflow/перерисовки в сообщениях и карточках.
 - [x] Добавить профилирование рендера (FPS/long task markers) в dev режиме.
