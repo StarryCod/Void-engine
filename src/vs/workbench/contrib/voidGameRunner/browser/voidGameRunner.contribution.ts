@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine - Game Runner Contribution
- *  Registers commands and services for running Rust/Bevy games
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
@@ -11,13 +11,12 @@ import { CargoService } from '../electron-sandbox/cargoService.js';
 import { IGameWindowService } from '../common/gameWindowService.js';
 import { GameWindowService } from '../electron-sandbox/gameWindowService.js';
 import { VoidGameRunnerToolbar } from './voidGameRunnerToolbar.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { VoidGameWindow } from './voidGameWindow.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
-import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 
 // Register services
 registerSingleton(ICargoService, CargoService, InstantiationType.Delayed);
@@ -40,7 +39,7 @@ class VoidGameRunnerContribution extends Disposable implements IWorkbenchContrib
 		
 		// Prevent multiple instances
 		if (VoidGameRunnerContribution.instance) {
-			return VoidGameRunnerContribution.instance as any;
+			return VoidGameRunnerContribution.instance;
 		}
 		VoidGameRunnerContribution.instance = this;
 		
@@ -93,7 +92,6 @@ class VoidGameRunnerContribution extends Disposable implements IWorkbenchContrib
 		this.isRunning = true;
 
 		try {
-			// Показываем компактное окно с камином
 			if (!this.gameWindow) {
 				this.gameWindow = this.instantiationService.createInstance(VoidGameWindow, {
 					workspacePath,
@@ -102,24 +100,20 @@ class VoidGameRunnerContribution extends Disposable implements IWorkbenchContrib
 				});
 				this._register(this.gameWindow);
 				
-				// Когда окно закрывается
 				this._register(this.gameWindow.onDidClose(() => {
 					this.gameWindow = null;
 					this.isRunning = false;
 				}));
 			}
 
-			// Начинаем компиляцию
 			const result = await this.cargoService.runRelease(workspacePath);
 			
 			if (result) {
-				// Успех - закрываем окно, игра запустится в Bevy
 				if (this.gameWindow) {
 					this.gameWindow.dispose();
 					this.gameWindow = null;
 				}
 			} else {
-				// Ошибка - окно покажет логи
 				if (this.gameWindow) {
 					this.gameWindow.showError('Compilation failed. Check logs above.');
 				}
@@ -135,8 +129,8 @@ class VoidGameRunnerContribution extends Disposable implements IWorkbenchContrib
 		}
 	}
 
-	async startWatch(): Promise<void> {
-		console.log('[Void Game Runner] Starting cargo watch');
+	async buildProject(): Promise<void> {
+		console.log('[Void Game Runner] Build project');
 		
 		const workspace = this.workspaceService.getWorkspace();
 		if (!workspace.folders.length) {
@@ -145,7 +139,12 @@ class VoidGameRunnerContribution extends Disposable implements IWorkbenchContrib
 		}
 
 		const workspacePath = workspace.folders[0].uri.fsPath;
-		await this.cargoService.startWatch(workspacePath);
+		await this.cargoService.buildProject(workspacePath);
+	}
+
+	async startWatch(): Promise<void> {
+		// Legacy alias for old command wiring.
+		await this.buildProject();
 	}
 }
 
@@ -177,12 +176,12 @@ class BuildAndRunAction extends Action2 {
 	}
 }
 
-// Register F6 command - Start Cargo Watch
-class StartWatchAction extends Action2 {
+// Register F6 command - Build Project
+class BuildProjectAction extends Action2 {
 	constructor() {
 		super({
-			id: 'voidGameRunner.startWatch',
-			title: { value: 'Start Cargo Watch', original: 'Start Cargo Watch' },
+			id: 'voidGameRunner.buildProject',
+			title: { value: 'Build Project', original: 'Build Project' },
 			keybinding: {
 				primary: KeyCode.F6,
 				weight: KeybindingWeight.WorkbenchContrib + 300
@@ -191,12 +190,29 @@ class StartWatchAction extends Action2 {
 	}
 
 	async run(accessor: ServicesAccessor): Promise<void> {
-		console.log('[Void Game Runner] Start Watch triggered');
+		console.log('[Void Game Runner] Build project triggered');
 		const instantiationService = accessor.get(IInstantiationService);
 		const contribution = VoidGameRunnerContribution.getInstance(instantiationService);
-		await contribution.startWatch();
+		await contribution.buildProject();
+	}
+}
+
+// Legacy alias action for compatibility with existing toolbar wiring.
+class StartWatchAction extends Action2 {
+	constructor() {
+		super({
+			id: 'voidGameRunner.startWatch',
+			title: { value: 'Build Project (Legacy Alias)', original: 'Build Project (Legacy Alias)' }
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const instantiationService = accessor.get(IInstantiationService);
+		const contribution = VoidGameRunnerContribution.getInstance(instantiationService);
+		await contribution.buildProject();
 	}
 }
 
 registerAction2(BuildAndRunAction);
+registerAction2(BuildProjectAction);
 registerAction2(StartWatchAction);

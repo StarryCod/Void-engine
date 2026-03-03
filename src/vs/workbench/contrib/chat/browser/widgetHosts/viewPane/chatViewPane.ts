@@ -26,7 +26,7 @@ import { ITerminalService } from '../../../../terminal/browser/terminal.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IExplorerService } from '../../../../files/browser/files.js';
 import { QwenChatService } from './qwenChatService.js';
-import { IChatHistoryPanelState, IChatHistoryUiStore, LocalChatHistoryUiStore } from './chatHistoryUiStore.js';
+import { IChatHistoryItemUI, IChatHistoryPanelState, IChatHistoryUiStore, LocalChatHistoryUiStore } from './chatHistoryUiStore.js';
 import { ChatLayoutController, ChatPaneLayoutMode } from './chatLayoutController.js';
 import { ChatLongTaskObserverController, ChatRafScheduler } from './chatPerfController.js';
 import { ChatTooltipOverlayController } from './chatTooltipController.js';
@@ -2574,7 +2574,7 @@ export class ChatViewPane extends ViewPane {
 
 	private saveHistorySessions(): void {
 		this.pruneHistorySessionsForStorage();
-		this.historyUiStore.saveItems(this.historySessions);
+		this.historyUiStore.saveItems(this.historySessions as ReadonlyArray<IChatHistoryItemUI>);
 	}
 
 	private pruneHistorySessionsForStorage(): void {

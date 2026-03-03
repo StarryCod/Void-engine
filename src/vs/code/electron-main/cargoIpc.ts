@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine - Cargo IPC Handler
- *  Handles cargo build/run operations in main process
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import { ipcMain } from 'electron';
@@ -9,8 +9,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
-let gameProcesses = new Map<number, ChildProcess>();
-let lastBuildHashes = new Map<string, string>(); // workspace -> hash
+const gameProcesses = new Map<number, ChildProcess>();
+const lastBuildHashes = new Map<string, string>(); // workspace -> hash
 
 /**
  * Calculate hash of all Rust source files in workspace
@@ -246,8 +246,7 @@ export function setupCargoIPC(): void {
 		});
 	});
 
-	// F6: cargo build (single pass, no cargo-watch dependency)
-	ipcMain.handle('vscode:cargo-watch', async (event, { windowId, workspacePath }) => {
+	const runCargoBuild = async (event: any, { windowId, workspacePath }: { windowId: number; workspacePath: string }) => {
 		console.log(`[Cargo IPC] cargo build for window ${windowId}:`, workspacePath);
 
 		// Stop any existing process for this window
@@ -257,7 +256,7 @@ export function setupCargoIPC(): void {
 			gameProcesses.delete(windowId);
 		}
 
-		return new Promise((resolve) => {
+		return new Promise<{ success: boolean; error?: string }>((resolve) => {
 			const buildProc = spawn('cargo', ['build'], {
 				cwd: workspacePath,
 				shell: true
@@ -353,7 +352,13 @@ export function setupCargoIPC(): void {
 				resolve({ success: false, error: error.message });
 			});
 		});
-	});
+	};
+
+	// F6: cargo build (single pass, no cargo-watch dependency)
+	ipcMain.handle('vscode:cargo-build', async (event, payload) => runCargoBuild(event, payload));
+
+	// Legacy channel alias for older client builds.
+	ipcMain.handle('vscode:cargo-watch', async (event, payload) => runCargoBuild(event, payload));
 
 	// Stop game
 	ipcMain.handle('vscode:cargo-stop', async (_event, { windowId }) => {

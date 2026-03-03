@@ -1,5 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine - Product Shell Cleanup
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import './media/voidShell.css';
@@ -8,28 +9,10 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IWorkbenchContributionsRegistry, Extensions as WorkbenchExtensions } from '../../../common/contributions.js';
 import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
+import { VOID_PRODUCT_UI_PROFILE } from '../common/voidProductProfileService.js';
 
 class VoidShellContribution extends Disposable {
-	private readonly activityHidePatterns: ReadonlyArray<RegExp> = [
-		/accounts/i,
-		/extensions?/i,
-		/marketplace/i,
-		/debug/i,
-		/search/i,
-		/testing/i,
-		/notebook/i,
-		/remote/i,
-		/ports?/i,
-		/comments?/i,
-		/timeline/i
-	];
-
-	private readonly titlebarHidePatterns: ReadonlyArray<RegExp> = [
-		/accounts?/i,
-		/extensions?/i,
-		/marketplace/i,
-		/settings sync/i
-	];
+	private readonly profile = VOID_PRODUCT_UI_PROFILE;
 
 	private mutationObserver: MutationObserver | undefined;
 	private pruneScheduled = false;
@@ -112,14 +95,28 @@ class VoidShellContribution extends Disposable {
 	private pruneWorkbenchSurface(): void {
 		this.pruneActivityBar();
 		this.pruneTitlebarActions();
+		this.pruneStatusbarActions();
 		this.pruneLegacyViews();
 	}
 
 	private pruneActivityBar(): void {
 		const actionItems = Array.from(document.querySelectorAll<HTMLElement>('.monaco-workbench .activitybar .action-item'));
 		for (const item of actionItems) {
+			const compositeId = this.resolveCompositeId(item);
+			if (compositeId && this.profile.hiddenViewContainers.has(compositeId)) {
+				this.hideNode(item);
+				continue;
+			}
+
+			if (compositeId && compositeId.startsWith('workbench.view.') && this.profile.allowedViewContainers.size > 0) {
+				if (!this.profile.allowedViewContainers.has(compositeId)) {
+					this.hideNode(item);
+					continue;
+				}
+			}
+
 			const label = `${item.getAttribute('aria-label') ?? ''} ${item.getAttribute('title') ?? ''}`.trim();
-			if (label && this.activityHidePatterns.some(pattern => pattern.test(label))) {
+			if (label && this.shouldHideByPatterns(label)) {
 				this.hideNode(item);
 			}
 		}
@@ -129,25 +126,41 @@ class VoidShellContribution extends Disposable {
 		const titleActions = Array.from(document.querySelectorAll<HTMLElement>('.monaco-workbench .part.titlebar .action-item'));
 		for (const item of titleActions) {
 			const label = `${item.getAttribute('aria-label') ?? ''} ${item.getAttribute('title') ?? ''}`.trim();
-			if (label && this.titlebarHidePatterns.some(pattern => pattern.test(label))) {
+			if (label && this.shouldHideByPatterns(label)) {
+				this.hideNode(item);
+			}
+		}
+	}
+
+	private pruneStatusbarActions(): void {
+		const statusItems = Array.from(document.querySelectorAll<HTMLElement>('.monaco-workbench .part.statusbar .statusbar-item'));
+		for (const item of statusItems) {
+			const label = `${item.getAttribute('aria-label') ?? ''} ${item.getAttribute('title') ?? ''}`.trim();
+			if (label && this.shouldHideByPatterns(label)) {
 				this.hideNode(item);
 			}
 		}
 	}
 
 	private pruneLegacyViews(): void {
-		const selectors: ReadonlyArray<string> = [
-			'.composite[data-id="workbench.view.extensions"]',
-			'.composite[data-id="workbench.view.search"]',
-			'.composite[data-id="workbench.panel.repl"]',
-			'.composite[data-id="workbench.panel.markers"]'
-		];
-
-		for (const selector of selectors) {
+		for (const selector of this.profile.hiddenCompositeSelectors) {
 			for (const node of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
 				this.hideNode(node);
 			}
 		}
+	}
+
+	private shouldHideByPatterns(label: string): boolean {
+		return this.profile.hiddenActionPatterns.some(pattern => pattern.test(label));
+	}
+
+	private resolveCompositeId(item: HTMLElement): string | undefined {
+		const directId = item.getAttribute('data-id') ?? item.id;
+		if (directId) {
+			return directId;
+		}
+		const nested = item.querySelector<HTMLElement>('[data-id]');
+		return nested?.getAttribute('data-id') ?? undefined;
 	}
 
 	private hideNode(node: HTMLElement): void {

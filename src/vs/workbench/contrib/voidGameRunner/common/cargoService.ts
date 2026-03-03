@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine - Cargo Build Service
- *  Simple cargo integration: F5 = cargo run (debug), F6 = cargo watch
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
@@ -32,7 +32,13 @@ export interface ICargoService {
 	runRelease(workspacePath: string): Promise<boolean>;
 
 	/**
-	 * Start cargo watch (F6)
+	 * Build project once (F6)
+	 * @param workspacePath Path to workspace
+	 */
+	buildProject(workspacePath: string): Promise<boolean>;
+
+	/**
+	 * Legacy alias for old command wiring.
 	 * @param workspacePath Path to workspace
 	 */
 	startWatch(workspacePath: string): Promise<boolean>;

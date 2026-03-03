@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine - Cargo Service Implementation (Electron Sandbox)
- *  Simple: F5 = cargo run (debug), F6 = cargo watch
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../../base/common/event.js';
@@ -83,17 +83,17 @@ export class CargoService extends Disposable implements ICargoService {
 		}
 	}
 
-	async startWatch(workspacePath: string): Promise<boolean> {
-		this.logService.info(`[Cargo Service] Starting cargo watch at: ${workspacePath}`);
+	async buildProject(workspacePath: string): Promise<boolean> {
+		this.logService.info(`[Cargo Service] Starting cargo build at: ${workspacePath}`);
 
 		this._onBuildProgress.fire({
 			stage: 'compiling',
-			message: 'Starting cargo watch...',
+			message: 'Starting cargo build...',
 			progress: 0
 		});
 
 		try {
-			const result = await ipcRenderer.invoke('vscode:cargo-watch', {
+			const result = await ipcRenderer.invoke('vscode:cargo-build', {
 				windowId: this.windowId,
 				workspacePath
 			}) as { success: boolean; error?: string };
@@ -101,20 +101,20 @@ export class CargoService extends Disposable implements ICargoService {
 			if (result.success) {
 				this._onBuildProgress.fire({
 					stage: 'finished',
-					message: 'Cargo watch started',
+					message: 'Build completed',
 					progress: 100
 				});
 			} else {
 				this._onBuildProgress.fire({
 					stage: 'error',
-					message: result.error || 'Failed to start watch',
+					message: result.error || 'Failed to build',
 					progress: 0
 				});
 			}
 
 			return result.success;
 		} catch (error) {
-			this.logService.error('[Cargo Service] Start watch failed:', error);
+			this.logService.error('[Cargo Service] Build failed:', error);
 			this._onBuildProgress.fire({
 				stage: 'error',
 				message: `Error: ${error}`,
@@ -122,6 +122,11 @@ export class CargoService extends Disposable implements ICargoService {
 			});
 			return false;
 		}
+	}
+
+	async startWatch(workspacePath: string): Promise<boolean> {
+		// Legacy alias for old command path.
+		return this.buildProject(workspacePath);
 	}
 
 	async stop(): Promise<void> {
