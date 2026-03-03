@@ -32,16 +32,13 @@ import { ChatLongTaskObserverController, ChatRafScheduler } from './chatPerfCont
 import { ChatTooltipOverlayController } from './chatTooltipController.js';
 import {
 	buildSessionTitleFromText,
-	filterHistorySessions,
-	formatHistoryTime,
-	getOrderedHistoryGroupKeys,
-	groupHistorySessions,
 	HistoryAttachmentPreview,
 	HistorySessionRecord,
 	normalizeHistorySessionRecord,
 	selectPreferredSession,
 	sortHistorySessions
 } from './chatHistoryModel.js';
+import { buildHistoryListNodes } from './chatHistoryRenderer.js';
 
 interface AttachedFile {
 	id: string;
@@ -2642,70 +2639,17 @@ export class ChatViewPane extends ViewPane {
 			return;
 		}
 		const perfStart = this.devProfileEnabled ? performance.now() : 0;
-		const nextTree = document.createElement('div');
-
 		const query = this.historyPanelState.query.trim();
-		const filtered = filterHistorySessions(this.historySessions, query);
-		if (!filtered.length) {
-			const empty = append(nextTree, $('.void-chat-history-empty'));
-			empty.textContent = query ? 'No matching chats' : 'No saved chats yet';
-			this.historyList.replaceChildren(...Array.from(nextTree.childNodes));
-			return;
-		}
-
-		const groups = groupHistorySessions(filtered);
-		const orderedKeys = getOrderedHistoryGroupKeys(groups);
-
-		for (const key of orderedKeys) {
-			const section = append(nextTree, $('.void-chat-history-section'));
-			const sectionTitle = append(section, $('.void-chat-history-section-title'));
-			sectionTitle.textContent = key;
-			const groupList = append(section, $('.void-chat-history-section-list'));
-			for (const session of groups.get(key) ?? []) {
-				const item = append(groupList, $('.void-chat-history-item'));
-				if (session.id === this.activeSessionId) {
-					item.classList.add('active');
-				}
-
-				const openButton = append(item, $('button.void-chat-history-open')) as HTMLButtonElement;
-				openButton.setAttribute('type', 'button');
-				openButton.setAttribute('data-history-action', 'open');
-				openButton.setAttribute('data-session-id', session.id);
-
-				const title = append(openButton, $('.void-chat-history-item-title'));
-				title.textContent = session.title;
-				const subtitle = append(openButton, $('.void-chat-history-item-subtitle'));
-				subtitle.textContent = `${formatHistoryTime(session.updatedAt)}  |  ${session.messages.length} messages`;
-
-				const actions = append(item, $('.void-chat-history-item-actions'));
-				const pinButton = append(actions, $('button.void-chat-history-icon-btn.codicon')) as HTMLButtonElement;
-				pinButton.classList.add('codicon-pin');
-				if (session.pinned) {
-					pinButton.classList.add('pinned');
-				}
-				pinButton.setAttribute('aria-label', session.pinned ? 'Unpin' : 'Pin');
-				pinButton.setAttribute('data-tooltip', session.pinned ? 'Unpin' : 'Pin');
-				pinButton.setAttribute('data-history-action', 'pin');
-				pinButton.setAttribute('data-session-id', session.id);
-
-				const renameButton = append(actions, $('button.void-chat-history-icon-btn.codicon.codicon-edit')) as HTMLButtonElement;
-				renameButton.setAttribute('aria-label', 'Rename');
-				renameButton.setAttribute('data-tooltip', 'Rename');
-				renameButton.setAttribute('data-history-action', 'rename');
-				renameButton.setAttribute('data-session-id', session.id);
-
-				const deleteButton = append(actions, $('button.void-chat-history-icon-btn.codicon.codicon-trash')) as HTMLButtonElement;
-				deleteButton.setAttribute('aria-label', 'Delete');
-				deleteButton.setAttribute('data-tooltip', 'Delete');
-				deleteButton.setAttribute('data-history-action', 'delete');
-				deleteButton.setAttribute('data-session-id', session.id);
-			}
-		}
-		this.historyList.replaceChildren(...Array.from(nextTree.childNodes));
+		const { nodes, filteredCount } = buildHistoryListNodes({
+			sessions: this.historySessions,
+			query,
+			activeSessionId: this.activeSessionId
+		});
+		this.historyList.replaceChildren(...nodes);
 		if (this.devProfileEnabled) {
 			const duration = performance.now() - perfStart;
 			if (duration >= 8) {
-				console.log(`[Qwen UI Perf] history render ${duration.toFixed(1)}ms (${filtered.length} sessions)`);
+				console.log(`[Qwen UI Perf] history render ${duration.toFixed(1)}ms (${filteredCount} sessions)`);
 			}
 		}
 	}
