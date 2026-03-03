@@ -2518,9 +2518,10 @@ export class ThreeViewport extends Disposable {
                         this.camera.position[0], this.camera.position[1], this.camera.position[2]);
                 gl.uniformMatrix4fv(gl.getUniformLocation(this.bgProgram, 'uInvViewProj'), false, this.camera.invVpMatrix);
 
+                const allowDirectionalFallback = !worldEnv;
                 const sunDirection = skySource?.sun_position
                         ? normalize3(skySource.sun_position[0], skySource.sun_position[1], skySource.sun_position[2])
-                        : (sunDirectionFromLight ?? [0.35, 0.78, -0.22]);
+                        : (allowDirectionalFallback ? (sunDirectionFromLight ?? [0.35, 0.78, -0.22]) : [0.35, 0.78, -0.22]);
                 const sunHeight = clamp01(sunDirection[1] * 0.5 + 0.5);
                 const dusk = Math.pow(1.0 - sunHeight, 1.35);
 
@@ -2557,8 +2558,11 @@ export class ThreeViewport extends Disposable {
                 gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uGroundEnergy'), clamp(skySource?.ground_energy ?? 0.96, 0.2, 2.0));
 
                 const sunEnabled = skySource ? (skySource.sun_enabled !== false) : useSkyBackground;
-                const sunColor = skySource?.sun_color ?? [...(sunColorFromLight ?? [1.0, 0.96, 0.88]), 1.0];
-                const mappedSunEnergy = skySource?.sun_energy ?? sunEnergyFromLight ?? 3.6;
+                const sunColor = skySource?.sun_color ?? [
+                        ...(allowDirectionalFallback ? (sunColorFromLight ?? [1.0, 0.96, 0.88]) : [1.0, 0.96, 0.88]),
+                        1.0
+                ];
+                const mappedSunEnergy = skySource?.sun_energy ?? (allowDirectionalFallback ? (sunEnergyFromLight ?? 3.6) : 3.6);
                 gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uSunEnabled'), sunEnabled ? 1 : 0);
                 gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSunDirection'), sunDirection[0], sunDirection[1], sunDirection[2]);
                 gl.uniform3f(gl.getUniformLocation(this.bgProgram, 'uSunColor'), sunColor[0], sunColor[1], sunColor[2]);

@@ -8,11 +8,21 @@ export interface HistoryAttachmentPreview {
 	preview: string;
 }
 
+export interface HistoryToolPayload {
+	toolName?: string;
+	toolInput?: any;
+	toolCallId?: string;
+	startedAt?: number;
+	content?: any;
+	isError?: boolean;
+}
+
 export interface HistoryMessageRecord {
-	role: 'user' | 'assistant' | 'error';
+	role: 'user' | 'assistant' | 'error' | 'tool_call' | 'tool_result';
 	text: string;
 	timestamp: number;
 	attachments?: HistoryAttachmentPreview[];
+	toolPayload?: HistoryToolPayload;
 }
 
 export interface HistorySessionRecord {
@@ -45,10 +55,16 @@ export function normalizeHistorySessionRecord(record: unknown): HistorySessionRe
 			continue;
 		}
 		const entry = message as Partial<HistoryMessageRecord>;
-		if (entry.role !== 'user' && entry.role !== 'assistant' && entry.role !== 'error') {
+		if (
+			entry.role !== 'user'
+			&& entry.role !== 'assistant'
+			&& entry.role !== 'error'
+			&& entry.role !== 'tool_call'
+			&& entry.role !== 'tool_result'
+		) {
 			continue;
 		}
-		if (typeof entry.text !== 'string') {
+		if (typeof entry.text !== 'string' && entry.role !== 'tool_call' && entry.role !== 'tool_result') {
 			continue;
 		}
 		const attachments = Array.isArray(entry.attachments)
@@ -68,11 +84,16 @@ export function normalizeHistorySessionRecord(record: unknown): HistorySessionRe
 				})
 				.filter((item): item is HistoryAttachmentPreview => !!item)
 			: undefined;
+		const toolPayload = entry.toolPayload && typeof entry.toolPayload === 'object'
+			? { ...(entry.toolPayload as HistoryToolPayload) }
+			: undefined;
+
 		normalizedMessages.push({
 			role: entry.role,
-			text: entry.text,
+			text: typeof entry.text === 'string' ? entry.text : '',
 			timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : Date.now(),
-			attachments
+			attachments,
+			toolPayload
 		});
 	}
 	return {
@@ -178,4 +199,3 @@ export function buildSessionTitleFromText(text: string): string {
 	}
 	return normalized.slice(0, 60);
 }
-

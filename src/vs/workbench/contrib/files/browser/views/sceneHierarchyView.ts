@@ -188,7 +188,7 @@ export class SceneHierarchyView extends ViewPane {
                         const empty = DOM.$('.empty-message');
                         empty.textContent = this.showHidden 
                                 ? 'No entities in scene' 
-                                : 'No visible entities (toggle 👁 to see hidden)';
+                                : 'No visible entities (toggle eye to see hidden)';
                         DOM.append(this.treeContainer, empty);
                         return;
                 }
@@ -235,7 +235,6 @@ export class SceneHierarchyView extends ViewPane {
                 const iconDef = this.getEntityIcon(entity);
                 const icon = DOM.append(item, DOM.$('.item-icon.codicon'));
                 icon.classList.add(iconDef.icon);
-                icon.style.color = iconDef.color;
                 icon.title = iconDef.label;
 
                 // ── Name ──
@@ -311,7 +310,6 @@ export class SceneHierarchyView extends ViewPane {
                 const iconDef = this.getComponentIcon(component.type);
                 const icon = DOM.append(item, DOM.$('.item-icon.codicon'));
                 icon.classList.add(iconDef.icon);
-                icon.style.color = iconDef.color;
 
                 const name = DOM.append(item, DOM.$('.item-name'));
                 name.textContent = component.type;
@@ -481,7 +479,7 @@ export class SceneHierarchyView extends ViewPane {
                         height: ${rect.height}px;
                         font: inherit;
                         background: #1e1e1e;
-                        border: 1px solid #007acc;
+                        border: 1px solid #d47a4a;
                         color: #fff;
                         padding: 0 4px;
                         z-index: 10000;

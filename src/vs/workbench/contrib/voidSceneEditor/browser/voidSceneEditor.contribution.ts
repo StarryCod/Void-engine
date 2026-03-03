@@ -14,6 +14,7 @@ import { ThreeViewport } from './threeViewport.js';
 import { Viewport2D } from './viewport2D.js';
 import { InspectorView } from './inspectorView.js';
 import { sceneBridge } from '../common/voidSceneBridge.js';
+import './media/voidSceneEditorToolbar.css';
 
 type EditorMode = '3D' | '2D' | 'Script';
 
@@ -22,6 +23,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 
 	private currentMode: EditorMode = 'Script';
 	private toolbar: HTMLElement | null = null;
+	private readonly modeButtons = new Map<EditorMode, HTMLButtonElement>();
 	
 	// Container for viewport (3D or 2D)
 	private viewportContainer: HTMLElement | null = null;
@@ -66,10 +68,36 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		}));
 		
 		// Editor changes
-		this._register(this.editorService.onDidActiveEditorChange(() => this.attachModelListener()));
+		this._register(this.editorService.onDidActiveEditorChange(() => this.handleActiveEditorChange()));
 		
 		// Load scene
 		this.loadScene();
+	}
+
+	private handleActiveEditorChange(): void {
+		this.attachModelListener();
+		if (!this.isVecnEditorActive() && this.currentMode !== 'Script') {
+			this.switchMode('Script');
+		}
+	}
+
+	private isVecnEditorActive(): boolean {
+		const resource = this.editorService.activeEditor?.resource;
+		return !!resource?.path && resource.path.toLowerCase().endsWith('.vecn');
+	}
+
+	private getActiveMonacoEditor(): HTMLElement | null {
+		const activeEditor = document.querySelector('.part.editor .editor-instance.active .monaco-editor') as HTMLElement | null;
+		if (activeEditor) {
+			return activeEditor;
+		}
+		return document.querySelector('.part.editor .monaco-editor') as HTMLElement | null;
+	}
+
+	private unhideMonacoEditors(): void {
+		for (const editor of Array.from(document.querySelectorAll<HTMLElement>('.part.editor .monaco-editor.void-scene-editor-hidden'))) {
+			editor.classList.remove('void-scene-editor-hidden');
+		}
 	}
 
 	private initWhenReady(): void {
@@ -91,22 +119,21 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 
 	private createToolbar(editorPart: HTMLElement): void {
 		// Remove old toolbar if exists
-		const oldToolbar = editorPart.querySelector('.void-editor-toolbar');
+		const oldToolbar = editorPart.querySelector('.void-scene-editor-toolbar');
 		if (oldToolbar) oldToolbar.remove();
 
 		this.toolbar = document.createElement('div');
-		this.toolbar.className = 'void-editor-toolbar';
-		this.toolbar.style.cssText = `
-			position: absolute; top: 0; left: 0; right: 0; height: 32px;
-			background: #171717; border-bottom: 1px solid #2d2d2d;
-			display: flex; align-items: center; padding: 0 8px; gap: 2px;
-			z-index: 100; font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 12px;
-		`;
+		this.toolbar.className = 'void-scene-editor-toolbar';
+		const toolbarButtons = document.createElement('div');
+		toolbarButtons.className = 'toolbar-buttons';
+		this.modeButtons.clear();
 
 		// Create buttons
 		const modes: EditorMode[] = ['3D', '2D', 'Script'];
 		modes.forEach(mode => {
 			const btn = document.createElement('button');
+			btn.type = 'button';
+			btn.className = 'mode-button';
 			btn.textContent = mode;
 			btn.dataset.mode = mode;
 			this.updateButtonStyle(btn, mode === this.currentMode);
@@ -115,30 +142,22 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 				e.stopPropagation();
 				this.switchMode(mode);
 			};
-			this.toolbar!.appendChild(btn);
+			toolbarButtons.appendChild(btn);
+			this.modeButtons.set(mode, btn);
 		});
+		this.toolbar.appendChild(toolbarButtons);
 
 		editorPart.insertBefore(this.toolbar, editorPart.firstChild);
 
 		// Adjust editor container
 		const editorContainer = editorPart.querySelector('.editor-container');
 		if (editorContainer) {
-			(editorContainer as HTMLElement).style.paddingTop = '32px';
+			(editorContainer as HTMLElement).classList.add('void-scene-editor-host');
 		}
 	}
 
 	private updateButtonStyle(btn: HTMLButtonElement, isActive: boolean): void {
-		btn.style.cssText = `
-			padding: 3px 14px;
-			border: 1px solid ${isActive ? '#d47a4a' : '#2d2d2d'};
-			border-radius: 2px;
-			background: ${isActive ? '#232323' : 'transparent'};
-			color: ${isActive ? '#f0f0f0' : '#9a9a9a'};
-			font-size: 11px;
-			font-weight: ${isActive ? '600' : '500'};
-			cursor: pointer;
-			outline: none;
-		`;
+		btn.classList.toggle('active', isActive);
 	}
 
 	// ════════════════════════════════════════════════════════════════
@@ -152,34 +171,16 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 		// Create main container (hidden by default)
 		this.viewportContainer = document.createElement('div');
 		this.viewportContainer.className = 'void-viewport-wrapper';
-		this.viewportContainer.style.cssText = `
-			position: absolute;
-			top: 32px; left: 0; right: 0; bottom: 0;
-			display: none;
-			background: #171717;
-			z-index: 50;
-		`;
 
 		// Create viewport pane (left)
 		const viewportPane = document.createElement('div');
 		viewportPane.className = 'void-viewport-pane';
-		viewportPane.style.cssText = `
-			position: absolute;
-			top: 0; left: 0; right: 280px; bottom: 0;
-			background: #171717;
-		`;
 		viewportPane.id = 'void-viewport-pane';
 		this.viewportContainer.appendChild(viewportPane);
 
 		// Create inspector pane (right)
 		this.inspectorContainer = document.createElement('div');
 		this.inspectorContainer.className = 'void-inspector-pane';
-		this.inspectorContainer.style.cssText = `
-			position: absolute;
-			top: 0; right: 0; width: 280px; bottom: 0;
-			background: #171717;
-			border-left: 1px solid #2d2d2d;
-		`;
 		this.viewportContainer.appendChild(this.inspectorContainer);
 
 		editorContainer.appendChild(this.viewportContainer);
@@ -225,8 +226,7 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			}
 
 			// Get editor elements
-			const editorPart = document.querySelector('.part.editor');
-			const monacoEditor = editorPart?.querySelector('.monaco-editor') as HTMLElement;
+			const monacoEditor = this.getActiveMonacoEditor();
 
 			// Stop all viewports
 			if (this.viewport3D) this.viewport3D.stopRendering();
@@ -235,18 +235,25 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			// === SCRIPT MODE ===
 			if (mode === 'Script') {
 				// Show Monaco editor
-				if (monacoEditor) monacoEditor.style.display = '';
+				this.unhideMonacoEditors();
 				// Hide viewport container
-				if (this.viewportContainer) this.viewportContainer.style.display = 'none';
+				if (this.viewportContainer) this.viewportContainer.classList.remove('visible');
+				return;
+			}
+
+			if (!this.isVecnEditorActive()) {
+				this.currentMode = 'Script';
+				this.unhideMonacoEditors();
+				if (this.viewportContainer) this.viewportContainer.classList.remove('visible');
 				return;
 			}
 
 			// === 3D MODE ===
 			if (mode === '3D') {
 				// Hide Monaco editor
-				if (monacoEditor) monacoEditor.style.display = 'none';
+				if (monacoEditor) monacoEditor.classList.add('void-scene-editor-hidden');
 				// Show viewport container
-				if (this.viewportContainer) this.viewportContainer.style.display = 'block';
+				if (this.viewportContainer) this.viewportContainer.classList.add('visible');
 
 				// Dispose 2D viewport before creating/restoring 3D.
 				// Both modes share the same DOM pane, so keeping both instances breaks switching.
@@ -295,9 +302,9 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			// === 2D MODE ===
 			if (mode === '2D') {
 				// Hide Monaco editor
-				if (monacoEditor) monacoEditor.style.display = 'none';
+				if (monacoEditor) monacoEditor.classList.add('void-scene-editor-hidden');
 				// Show viewport container
-				if (this.viewportContainer) this.viewportContainer.style.display = 'block';
+				if (this.viewportContainer) this.viewportContainer.classList.add('visible');
 
 				// Dispose 3D viewport before creating/restoring 2D.
 				// Both modes share the same DOM pane, so keeping both instances breaks switching.
@@ -536,6 +543,9 @@ class VoidSceneEditorContribution extends Disposable implements IWorkbenchContri
 			this.fileWatcher.dispose();
 			this.fileWatcher = null;
 		}
+		const editorContainer = document.querySelector('.part.editor .editor-container') as HTMLElement | null;
+		editorContainer?.classList.remove('void-scene-editor-host');
+		this.unhideMonacoEditors();
 		if (this.toolbar) this.toolbar.remove();
 		if (this.viewportContainer) this.viewportContainer.remove();
 		super.dispose();

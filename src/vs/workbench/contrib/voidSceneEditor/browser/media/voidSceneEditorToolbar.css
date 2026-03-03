@@ -17,6 +17,11 @@
 	right: 0;
 }
 
+.part.editor .editor-container.void-scene-editor-host {
+	position: relative;
+	padding-top: 40px !important;
+}
+
 .void-scene-editor-toolbar .toolbar-buttons {
 	display: flex;
 	gap: 12px;
@@ -57,4 +62,43 @@
 
 .void-scene-editor-toolbar .mode-button:hover .button-icon {
 	opacity: 1;
+}
+
+.void-scene-editor-hidden {
+	display: none !important;
+}
+
+.void-viewport-wrapper {
+	position: absolute;
+	top: 40px;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	display: none;
+	background: var(--vscode-editor-background);
+	z-index: 50;
+}
+
+.void-viewport-wrapper.visible {
+	display: block;
+}
+
+.void-viewport-pane {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 360px;
+	bottom: 0;
+	background: var(--vscode-editor-background);
+}
+
+.void-inspector-pane {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 360px;
+	bottom: 0;
+	background: var(--vscode-sideBar-background);
+	border-left: 1px solid var(--vscode-panel-border);
+	overflow: auto;
 }

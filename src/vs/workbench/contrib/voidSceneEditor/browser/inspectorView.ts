@@ -195,10 +195,11 @@ export class InspectorView extends Disposable {
 
                 // Entity icon
                 const icon = document.createElement('span');
-                icon.textContent = '🎬';
+                icon.className = 'codicon codicon-symbol-field';
                 icon.style.cssText = `
-                        font-size: 16px; width: 20px;
-                        display: flex; align-items: center; justify-content: center;
+                        font-size: 14px; width: 20px; height: 20px;
+                        color: ${COLORS.labelText};
+                        display: inline-flex; align-items: center; justify-content: center;
                 `;
                 mainRow.appendChild(icon);
 
@@ -246,9 +247,9 @@ export class InspectorView extends Disposable {
                 `);
                 
                 const icon = document.createElement('div');
-                icon.textContent = '🔍';
+                icon.className = 'codicon codicon-inspect';
                 icon.style.cssText = `
-                        font-size: 32px;
+                        font-size: 24px;
                         margin-bottom: 12px;
                         opacity: 0.3;
                 `;

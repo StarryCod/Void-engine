@@ -1,55 +1,88 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine - Game Runner Toolbar Styles
+ *  Void Engine - Product Build/Run Toolbar Styles
  *--------------------------------------------------------------------------------------------*/
 
 .void-game-runner-toolbar {
-	display: flex;
+	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	margin-left: 16px;
-	z-index: 9999 !important;
-	position: relative;
-	padding: 0;
-	border-radius: 0;
-	background: transparent;
+	gap: 6px;
+	margin-left: 12px;
+	z-index: 9999;
+	pointer-events: auto;
+	-webkit-app-region: no-drag;
 }
 
 .void-game-runner-button {
-	display: flex;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border-radius: 10px;
+	border: 1px solid var(--ve-border, #343434);
+	background: var(--ve-bg-surface, #232323);
+	color: var(--ve-text-primary, #e7e7e7);
+	font-size: 16px;
+	cursor: pointer;
+	transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 120ms ease;
+	position: relative;
+	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	padding: 0;
-	background: transparent;
-	border: none;
-	border-radius: 4px;
-	color: rgba(255, 255, 255, 0.7);
-	cursor: pointer !important;
-	transition: all 0.15s ease;
+	-webkit-app-region: no-drag;
+	pointer-events: auto;
 	user-select: none;
-	width: 34px;
-	height: 34px;
-	pointer-events: auto !important;
-	z-index: 10000 !important;
-	position: relative;
+	outline: none;
+	line-height: 0;
 }
 
-.void-game-runner-button:hover {
-	background: rgba(255, 255, 255, 0.04);
-	color: rgba(255, 255, 255, 0.95);
+.void-game-runner-button.codicon::before {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	line-height: 1;
 }
 
-.void-game-runner-button:active {
-	background: rgba(255, 255, 255, 0.06);
-	transform: scale(0.96);
+.void-game-runner-button:hover:not(:disabled) {
+	background: #2c2c2c;
+	border-color: #454545;
 }
 
-.void-runner-icon {
-	width: 24px;
-	height: 24px;
-	flex-shrink: 0;
+.void-game-runner-button:active:not(:disabled) {
+	transform: translateY(1px);
+}
+
+.void-game-runner-button[aria-busy="true"] {
+	cursor: progress;
+	opacity: 0.82;
+}
+
+.void-game-runner-button[data-state="running"] {
+	border-color: #5d5d5d;
+	background: #343434;
+}
+
+.void-game-runner-button[data-state="success"] {
+	border-color: var(--ve-success, #79b98f);
+	color: #dff5e6;
+}
+
+.void-game-runner-button[data-state="error"] {
+	border-color: var(--ve-danger, #d9756d);
+	color: #ffd6d1;
+}
+
+.void-game-runner-button:focus-visible {
+	box-shadow: 0 0 0 1px var(--ve-accent, #4f8fd7);
+}
+
+.void-game-runner-button > .void-runner-icon {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	width: 16px;
+	height: 16px;
+	display: block;
+	flex: 0 0 auto;
 	pointer-events: none;
-}
-
-.void-runner-label {
-	display: none;
 }

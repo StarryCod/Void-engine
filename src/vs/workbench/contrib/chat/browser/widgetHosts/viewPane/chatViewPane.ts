@@ -33,6 +33,7 @@ import { ChatTooltipOverlayController } from './chatTooltipController.js';
 import {
 	buildSessionTitleFromText,
 	HistoryAttachmentPreview,
+	HistoryToolPayload,
 	HistorySessionRecord,
 	normalizeHistorySessionRecord,
 	selectPreferredSession,
@@ -91,6 +92,8 @@ export class ChatViewPane extends ViewPane {
 	private attachedFilesContainer: HTMLElement | undefined;
 	private attachmentLimitNotice: HTMLElement | undefined;
 	private attachmentLimitNoticeHideHandle: number | undefined;
+	private composerNotice: HTMLElement | undefined;
+	private composerNoticeHideHandle: number | undefined;
 	private sendButton: HTMLButtonElement | undefined;
 	private contextMeter: HTMLElement | undefined;
 	private contextMeterBar: HTMLElement | undefined;
@@ -119,11 +122,19 @@ export class ChatViewPane extends ViewPane {
 	private devProfileEnabled = false;
 	private longTaskObserverController: ChatLongTaskObserverController | undefined;
 	private tooltipController: ChatTooltipOverlayController | undefined;
+	private webSearchEnabled = false;
+	private connectorsEnabled = false;
+	private responseStyleMode: 'default' | 'precise' | 'concise' | 'detailed' = 'default';
 	private static readonly CONTEXT_WINDOW_TOKENS = 1048600;
 	private static readonly CONTEXT_HARD_LIMIT = 0.92;
 	private static readonly MAX_ATTACHED_FILES = 9;
 	private static readonly CHAT_HISTORY_STORAGE_KEY = 'void.chat.history.v1';
 	private static readonly CHAT_HISTORY_MAX_SESSIONS = 80;
+	private static readonly CHAT_HISTORY_MAX_MESSAGES_PER_SESSION = 400;
+	private static readonly CHAT_HISTORY_MAX_TEXT_CHARS = 16000;
+	private static readonly CHAT_HISTORY_MAX_PAYLOAD_STRING_CHARS = 8000;
+	private static readonly CHAT_HISTORY_MAX_ARRAY_ITEMS = 40;
+	private static readonly CHAT_HISTORY_MAX_OBJECT_KEYS = 48;
 	private static readonly SUPPORTED_ATTACHMENT_EXTENSIONS = new Set([
 		'txt', 'md', 'json', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'log', 'xml', 'csv',
 		'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'rs', 'go', 'java', 'c', 'cc', 'cpp', 'h', 'hpp',
@@ -181,9 +192,11 @@ export class ChatViewPane extends ViewPane {
 		brand.textContent = 'CODEX';
 		const headerActions = append(header, $('.void-chat-header-actions'));
 		const historyButton = append(headerActions, $('button.void-chat-header-btn.void-chat-header-btn-text')) as HTMLButtonElement;
-		historyButton.textContent = 'Chat History';
 		historyButton.setAttribute('data-tooltip', 'Open saved chats');
-		historyButton.classList.add('codicon', 'codicon-history');
+		const historyButtonIcon = append(historyButton, $('span.void-chat-header-btn-glyph.codicon.codicon-history'));
+		void historyButtonIcon;
+		const historyButtonLabel = append(historyButton, $('span.void-chat-header-btn-label'));
+		historyButtonLabel.textContent = 'Chat History';
 		this.historyButton = historyButton;
 		const newChatButton = append(headerActions, $('button.void-chat-header-btn.void-chat-header-btn-icon.codicon.codicon-edit')) as HTMLButtonElement;
 		newChatButton.textContent = '';
@@ -227,6 +240,7 @@ export class ChatViewPane extends ViewPane {
 		const attachmentLimitNotice = append(inputBox, $('.void-attachment-limit-notice'));
 		attachmentLimitNotice.textContent = `Up to ${ChatViewPane.MAX_ATTACHED_FILES} files. Remove one before attaching more.`;
 		this.attachmentLimitNotice = attachmentLimitNotice;
+		this.composerNotice = append(inputBox, $('.void-composer-notice'));
 
 		const input = append(inputBox, $('textarea.void-input')) as HTMLTextAreaElement;
 		this.inputElement = input;
@@ -269,15 +283,33 @@ export class ChatViewPane extends ViewPane {
 			'Attach text/PDF files',
 			() => {
 				this.toggleMenu(plusMenu, false);
-				this.openFilePicker();
+				void this.openFilePicker();
 			}
 		);
 
 		append(plusMenu, $('.void-plus-menu-separator'));
-		createMenuItem('Add to project', 'codicon-folder', 'Add context from project', () => this.toggleMenu(plusMenu, false), 'codicon-chevron-right');
-		createMenuItem('Web search', 'codicon-globe', 'Use web search in this chat', () => this.toggleMenu(plusMenu, false), 'codicon-check');
-		createMenuItem('Use style', 'codicon-symbol-color', 'Configure response style', () => this.toggleMenu(plusMenu, false), 'codicon-chevron-right');
-		createMenuItem('Add connectors', 'codicon-plug', 'Connect external tools', () => this.toggleMenu(plusMenu, false));
+		createMenuItem('Add to project', 'codicon-folder', 'Add context from project', () => {
+			this.toggleMenu(plusMenu, false);
+			this.handleAddProjectContext();
+		}, 'codicon-chevron-right');
+		const webSearchItem = createMenuItem('Web search', 'codicon-globe', 'Use web search in this chat', () => {
+			this.toggleMenu(plusMenu, false);
+			this.webSearchEnabled = !this.webSearchEnabled;
+			webSearchItem.classList.toggle('active', this.webSearchEnabled);
+			this.showComposerNotice(this.webSearchEnabled ? 'Web search enabled' : 'Web search disabled');
+		}, 'codicon-check');
+		const styleItem = createMenuItem('Use style', 'codicon-symbol-color', 'Configure response style', () => {
+			this.toggleMenu(plusMenu, false);
+			this.responseStyleMode = this.nextStyleMode(this.responseStyleMode);
+			styleItem.classList.add('active');
+			this.showComposerNotice(`Style: ${this.responseStyleMode}`);
+		}, 'codicon-chevron-right');
+		const connectorsItem = createMenuItem('Add connectors', 'codicon-plug', 'Connect external tools', () => {
+			this.toggleMenu(plusMenu, false);
+			this.connectorsEnabled = !this.connectorsEnabled;
+			connectorsItem.classList.toggle('active', this.connectorsEnabled);
+			this.showComposerNotice(this.connectorsEnabled ? 'Connectors enabled' : 'Connectors disabled');
+		});
 
 		plusBtn.addEventListener('click', () => {
 			this.toggleMenu(plusMenu, !plusMenu.classList.contains('visible'));
@@ -337,6 +369,10 @@ export class ChatViewPane extends ViewPane {
 				if (typeof this.historySearchDebounceHandle === 'number') {
 					window.clearTimeout(this.historySearchDebounceHandle);
 					this.historySearchDebounceHandle = undefined;
+				}
+				if (typeof this.composerNoticeHideHandle === 'number') {
+					window.clearTimeout(this.composerNoticeHideHandle);
+					this.composerNoticeHideHandle = undefined;
 				}
 			}
 		});
@@ -458,11 +494,15 @@ export class ChatViewPane extends ViewPane {
 			await this.maybeCompactContext();
 			const rollingContext = this.buildRollingContextBlock();
 			const attachmentContext = await this.buildAttachmentContext(attachments);
+			const optionContext = this.buildComposerOptionContext();
 			if (rollingContext) {
 				payload = `${rollingContext}\n\n[CURRENT USER REQUEST]\n${payload}`;
 			}
 			if (attachmentContext) {
 				payload += `\n\n[ATTACHED FILE CONTEXT]\n${attachmentContext}`;
+			}
+			if (optionContext) {
+				payload += `\n\n[COMPOSER OPTIONS]\n${optionContext}`;
 			}
 			await this.qwenService.sendMessage(payload, attachments.map(file => file.uri?.toString() ?? `attachment:${file.name}`));
 		} catch (error: any) {
@@ -823,7 +863,7 @@ export class ChatViewPane extends ViewPane {
 		}
 	}
 	
-	private addToolCallMessage(data: any): void {
+	private addToolCallMessage(data: any, persistToHistory: boolean = true, replayMode: boolean = false): void {
 		if (!this.messagesContainer) {
 			return;
 		}
@@ -838,7 +878,7 @@ export class ChatViewPane extends ViewPane {
 		this.seenToolCalls.add(toolCallId);
 		
 		// Intercept terminal commands and execute in VSCode terminal
-		if (toolName.includes('shell') || toolName.includes('execute') || toolName.includes('command') || toolName.includes('run')) {
+		if (!replayMode && this.isCommandTool(toolName)) {
 			const command = toolInput.command || toolInput.cmd || toolInput.code || '';
 			if (command) {
 				// Execute in VSCode terminal (async, don't wait)
@@ -893,6 +933,14 @@ export class ChatViewPane extends ViewPane {
 			commandMeta,
 			inputPaths: resolvedPaths
 		});
+		if (persistToHistory) {
+			this.appendHistoryToolMessage('tool_call', {
+				toolName,
+				toolInput,
+				toolCallId,
+				startedAt
+			});
+		}
 		this.scrollToBottom();
 	}
 	
@@ -903,15 +951,15 @@ export class ChatViewPane extends ViewPane {
 		}
 		
 		// Set CSS class based on tool for custom icons
-		if (toolName.includes('write') || toolName.includes('edit') || toolName.includes('str_replace')) {
+		if (this.isFileMutationTool(toolName)) {
 			iconDiv.classList.add('success');
-		} else if (toolName.includes('read')) {
+		} else if (this.isFileReadTool(toolName)) {
 			iconDiv.classList.add('read');
-		} else if (toolName.includes('search') || toolName.includes('grep')) {
+		} else if (this.isSearchTool(toolName)) {
 			iconDiv.classList.add('search');
-		} else if (toolName.includes('web')) {
+		} else if (this.isWebTool(toolName)) {
 			iconDiv.classList.add('web');
-		} else if (toolName.includes('execute') || toolName.includes('command')) {
+		} else if (this.isCommandTool(toolName)) {
 			iconDiv.classList.add('command');
 		} else if (toolName.includes('process') || toolName.includes('control')) {
 			iconDiv.classList.add('process');
@@ -920,36 +968,125 @@ export class ChatViewPane extends ViewPane {
 		}
 	}
 
+	private isTodoLikeTool(toolName: string): boolean {
+		const name = toolName.toLowerCase();
+		return name.includes('todo') || name.includes('checklist') || name.includes('task');
+	}
+
 	private isPlanTool(toolName: string): boolean {
 		const name = toolName.toLowerCase();
-		return name.includes('plan') || name.includes('task');
+		return name.includes('plan') || this.isTodoLikeTool(toolName);
+	}
+
+	private hasFilePathHints(toolInput: any): boolean {
+		if (!toolInput || typeof toolInput !== 'object') {
+			return false;
+		}
+		const scalarKeys = [
+			'absolute_path', 'absolutePath',
+			'path', 'file', 'filepath', 'filePath', 'file_path',
+			'targetFile', 'target_file', 'target_path',
+			'source', 'source_path', 'oldPath', 'old_path',
+			'destination', 'destination_path', 'dest', 'newPath', 'new_path',
+			'to', 'from'
+		];
+		for (const key of scalarKeys) {
+			if (typeof toolInput[key] === 'string' && toolInput[key].trim().length > 0) {
+				return true;
+			}
+		}
+		const listKeys = ['paths', 'files', 'file_paths', 'targets'];
+		for (const key of listKeys) {
+			if (Array.isArray(toolInput[key]) && toolInput[key].some((entry: unknown) => typeof entry === 'string' && entry.trim().length > 0)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private isFileReadTool(toolName: string, toolInput?: any): boolean {
+		const name = toolName.toLowerCase();
+		if (this.isTodoLikeTool(toolName)) {
+			return false;
+		}
+		const looksLikeRead = name.includes('read') && !name.includes('thread') && !name.includes('spread');
+		if (!looksLikeRead) {
+			return false;
+		}
+		if (toolInput === undefined) {
+			return true;
+		}
+		return this.hasFilePathHints(toolInput);
+	}
+
+	private isFileMutationTool(toolName: string, toolInput?: any): boolean {
+		const name = toolName.toLowerCase();
+		if (this.isTodoLikeTool(toolName)) {
+			return false;
+		}
+		const looksLikeMutation =
+			name.includes('write') ||
+			name.includes('edit') ||
+			name.includes('str_replace') ||
+			name.includes('append');
+		if (!looksLikeMutation) {
+			return false;
+		}
+		if (toolInput === undefined) {
+			return true;
+		}
+		return this.hasFilePathHints(toolInput)
+			|| this.pickFirstEditOldValue(toolInput).length > 0
+			|| this.pickFirstEditNewValue(toolInput).length > 0
+			|| this.pickFirstDiffPayload(toolInput).length > 0;
+	}
+
+	private isFilePathActionTool(toolName: string, toolInput?: any): boolean {
+		const name = toolName.toLowerCase();
+		if (this.isTodoLikeTool(toolName)) {
+			return false;
+		}
+		const looksLikePathAction = name.includes('delete') || name.includes('rename') || name.includes('move');
+		if (!looksLikePathAction) {
+			return false;
+		}
+		return toolInput === undefined ? true : this.hasFilePathHints(toolInput);
+	}
+
+	private isSearchTool(toolName: string): boolean {
+		const name = toolName.toLowerCase();
+		return name.includes('search') || name.includes('grep') || name.includes('glob');
+	}
+
+	private isWebTool(toolName: string): boolean {
+		const name = toolName.toLowerCase();
+		return name.includes('web') || name.includes('fetch_url') || name.includes('http');
 	}
 
 	private isCommandTool(toolName: string): boolean {
 		const name = toolName.toLowerCase();
-		return name.includes('shell') || name.includes('execute') || name.includes('command') || name.includes('run');
-	}
-
-	private isReadTool(toolName: string): boolean {
-		const name = toolName.toLowerCase();
-		return name.includes('read') && !name.includes('thread') && !name.includes('spread');
+		return name.includes('shell')
+			|| name.includes('execute')
+			|| name.includes('command')
+			|| name.includes('terminal')
+			|| /^run[_-]/.test(name);
 	}
 	
 	private getToolTitle(toolName: string): string {
 		const normalized = toolName.toLowerCase();
 		if (normalized.includes('plan')) {
 			return 'Plan';
-		} else if (normalized.includes('task')) {
+		} else if (this.isTodoLikeTool(toolName)) {
 			return 'Task';
-		} else if (normalized.includes('write') || normalized.includes('edit') || normalized.includes('str_replace')) {
+		} else if (this.isFileMutationTool(toolName) || this.isFilePathActionTool(toolName)) {
 			return 'Edit file(s)';
-		} else if (normalized.includes('read')) {
+		} else if (this.isFileReadTool(toolName)) {
 			return 'Read file(s)';
-		} else if (normalized.includes('grep') || normalized.includes('search')) {
+		} else if (this.isSearchTool(toolName)) {
 			return 'Search';
-		} else if (normalized.includes('web')) {
+		} else if (this.isWebTool(toolName)) {
 			return 'Web Search';
-		} else if (normalized.includes('execute')) {
+		} else if (this.isCommandTool(toolName)) {
 			return 'Command';
 		} else if (normalized.includes('control') || normalized.includes('process')) {
 			return 'Background Process';
@@ -1034,9 +1171,16 @@ export class ChatViewPane extends ViewPane {
 		let commandMeta: CommandCardMeta | undefined;
 
 		const normalizedName = toolName.toLowerCase();
+		const isPlanTool = this.isPlanTool(toolName);
+		const isFileReadTool = this.isFileReadTool(toolName, toolInput);
+		const isFileMutationTool = this.isFileMutationTool(toolName, toolInput);
+		const isFilePathActionTool = this.isFilePathActionTool(toolName, toolInput);
+		const isSearchTool = this.isSearchTool(toolName);
+		const isWebTool = this.isWebTool(toolName);
+		const isCommandTool = this.isCommandTool(toolName);
 
 		// Plan/Todo tools
-		if (this.isPlanTool(toolName)) {
+		if (isPlanTool) {
 			const tasks = this.extractPlanTasks(toolInput);
 			if (tasks.length > 0) {
 				this.createInlinePlanCard(filesContainer, tasks);
@@ -1060,20 +1204,11 @@ export class ChatViewPane extends ViewPane {
 		}
 
 		// File operations (read, write, edit, delete, append, move)
-		if (
-			normalizedName.includes('read') ||
-			normalizedName.includes('write') ||
-			normalizedName.includes('edit') ||
-			normalizedName.includes('str_replace') ||
-			normalizedName.includes('delete') ||
-			normalizedName.includes('append') ||
-			normalizedName.includes('rename') ||
-			normalizedName.includes('move')
-		) {
+		if (isFileReadTool || isFileMutationTool || isFilePathActionTool) {
 			const paths = resolvedPaths ?? this.extractToolPaths(toolInput);
 			if (paths.length > 0) {
 				for (const path of paths) {
-					if (normalizedName.includes('edit') || normalizedName.includes('str_replace') || normalizedName.includes('write') || normalizedName.includes('append')) {
+					if (isFileMutationTool) {
 						const oldStr = this.pickFirstEditOldValue(toolInput);
 						const newStr = this.pickFirstEditNewValue(toolInput);
 						const diffPayload = this.pickFirstDiffPayload(toolInput);
@@ -1083,7 +1218,7 @@ export class ChatViewPane extends ViewPane {
 					}
 				}
 			}
-			if (normalizedName.includes('write') || normalizedName.includes('edit') || normalizedName.includes('str_replace') || normalizedName.includes('append') || normalizedName.includes('delete') || normalizedName.includes('rename') || normalizedName.includes('move')) {
+			if (isFileMutationTool || isFilePathActionTool) {
 				void this.captureRunFileSnapshots(paths);
 			}
 		}
@@ -1102,7 +1237,7 @@ export class ChatViewPane extends ViewPane {
 			}
 		}
 		// Grep/Content search operations
-		else if (normalizedName.includes('grep') || normalizedName.includes('search')) {
+		else if (isSearchTool) {
 			const query = this.pickFirstString(toolInput, ['pattern', 'query', 'search']);
 			const glob = this.pickFirstString(toolInput, ['glob']);
 			if (query) {
@@ -1114,7 +1249,7 @@ export class ChatViewPane extends ViewPane {
 			}
 		}
 		// Web search/fetch
-		else if (normalizedName.includes('web')) {
+		else if (isWebTool) {
 			const query = this.pickFirstString(toolInput, ['query', 'url', 'search']);
 			if (query) {
 				this.createQueryCard(filesContainer, query);
@@ -1125,7 +1260,7 @@ export class ChatViewPane extends ViewPane {
 			}
 		}
 		// Shell/Execute/Command operations
-		else if (normalizedName.includes('shell') || normalizedName.includes('execute') || normalizedName.includes('command') || normalizedName.includes('run')) {
+		else if (isCommandTool) {
 			const command = this.pickFirstString(toolInput, ['command', 'cmd', 'code']);
 			if (command) {
 				commandMeta = this.createCommandCard(filesContainer, command, toolCallId, startedAt);
@@ -1713,16 +1848,16 @@ export class ChatViewPane extends ViewPane {
 		};
 	}
 	
-	private addToolResultMessage(data: any): void {
+	private addToolResultMessage(data: any, persistToHistory: boolean = true): void {
 		const toolUseId = data.metadata?.toolUseId;
 		if (toolUseId && this.toolCards.has(toolUseId)) {
 			const ref = this.toolCards.get(toolUseId)!;
 			ref.marker.classList.remove('pending');
 			ref.marker.classList.toggle('error', Boolean(data.metadata?.isError));
 			ref.marker.classList.toggle('success', !Boolean(data.metadata?.isError));
-			const readEntries = this.isReadTool(ref.name) ? this.extractReadResultEntries(data.content, ref.inputPaths ?? []) : [];
+			const readEntries = this.isFileReadTool(ref.name) ? this.extractReadResultEntries(data.content, ref.inputPaths ?? []) : [];
 			if (!data.metadata?.isError && ref.statusLine) {
-				if (this.isReadTool(ref.name) && readEntries.length > 0) {
+				if (this.isFileReadTool(ref.name) && readEntries.length > 0) {
 					ref.statusLine.textContent = readEntries.length === 1 ? 'Read 1 file' : `Read ${readEntries.length} files`;
 					ref.statusLine.style.display = 'block';
 				} else {
@@ -1747,6 +1882,13 @@ export class ChatViewPane extends ViewPane {
 				errorLine.textContent = errorText;
 				ref.root.classList.remove('collapsed');
 			}
+			if (persistToHistory) {
+				this.appendHistoryToolMessage('tool_result', {
+					toolCallId: toolUseId,
+					content: data.content,
+					isError: Boolean(data.metadata?.isError)
+				});
+			}
 			return;
 		}
 
@@ -1759,6 +1901,13 @@ export class ChatViewPane extends ViewPane {
 			}
 		} catch {
 			// Intentionally ignore raw output to avoid output-card spam.
+		}
+		if (persistToHistory) {
+			this.appendHistoryToolMessage('tool_result', {
+				toolCallId: toolUseId,
+				content: data.content,
+				isError: Boolean(data.metadata?.isError)
+			});
 		}
 	}
 
@@ -1810,7 +1959,7 @@ export class ChatViewPane extends ViewPane {
 	}
 
 	private hydrateReadPreviewFromResult(ref: ToolCardRef, content: unknown, preParsedEntries?: Array<{ path: string; text: string }>): void {
-		if (!this.isReadTool(ref.name)) {
+		if (!this.isFileReadTool(ref.name)) {
 			return;
 		}
 		if (ref.body.querySelector('.void-tool-edit-card')) {
@@ -1933,7 +2082,7 @@ export class ChatViewPane extends ViewPane {
 	}
 
 	private hydrateGenericResultSummary(ref: ToolCardRef, content: unknown): void {
-		if (this.isCommandTool(ref.name) || this.isPlanTool(ref.name) || this.isReadTool(ref.name)) {
+		if (!this.shouldRenderGenericResultFallback(ref)) {
 			return;
 		}
 		if (ref.body.querySelector('.void-tool-result-summary') || ref.body.querySelector('.void-tool-edit-card')) {
@@ -1999,19 +2148,19 @@ export class ChatViewPane extends ViewPane {
 
 	private stringifyToolResult(content: unknown): string {
 		if (typeof content === 'string') {
-			return content;
+			return this.sanitizeToolText(content);
 		}
 		if (Array.isArray(content)) {
-			return content.map(item => this.stringifyToolResult(item)).join('\n');
+			return this.sanitizeToolText(content.map(item => this.stringifyToolResult(item)).join('\n'));
 		}
 		if (content && typeof content === 'object') {
 			try {
-				return JSON.stringify(content, null, 2);
+				return this.sanitizeToolText(JSON.stringify(content, null, 2));
 			} catch {
-				return String(content);
+				return this.sanitizeToolText(String(content));
 			}
 		}
-		return String(content ?? '');
+		return this.sanitizeToolText(String(content ?? ''));
 	}
 
 	private tryExtractFileCount(content: unknown): number {
@@ -2424,7 +2573,75 @@ export class ChatViewPane extends ViewPane {
 	}
 
 	private saveHistorySessions(): void {
+		this.pruneHistorySessionsForStorage();
 		this.historyUiStore.saveItems(this.historySessions);
+	}
+
+	private pruneHistorySessionsForStorage(): void {
+		for (const session of this.historySessions) {
+			if (session.messages.length > ChatViewPane.CHAT_HISTORY_MAX_MESSAGES_PER_SESSION) {
+				session.messages = session.messages.slice(-ChatViewPane.CHAT_HISTORY_MAX_MESSAGES_PER_SESSION);
+			}
+			for (const message of session.messages) {
+				message.text = this.clampHistoryText(message.text);
+				if (message.attachments?.length) {
+					message.attachments = message.attachments.map(item => ({
+						name: this.clampHistoryText(item.name, 260),
+						preview: this.clampHistoryText(item.preview, 2000)
+					}));
+				}
+				if (message.toolPayload) {
+					message.toolPayload = this.shrinkHistoryToolPayload(message.toolPayload);
+				}
+			}
+		}
+	}
+
+	private clampHistoryText(text: string, max: number = ChatViewPane.CHAT_HISTORY_MAX_TEXT_CHARS): string {
+		if (!text || text.length <= max) {
+			return text;
+		}
+		return `${text.slice(0, max)}…`;
+	}
+
+	private shrinkHistoryToolPayload(payload: HistoryToolPayload): HistoryToolPayload {
+		return {
+			toolName: typeof payload.toolName === 'string' ? this.clampHistoryText(payload.toolName, 120) : undefined,
+			toolInput: this.shrinkHistoryValue(payload.toolInput, 0),
+			toolCallId: typeof payload.toolCallId === 'string' ? this.clampHistoryText(payload.toolCallId, 180) : undefined,
+			startedAt: typeof payload.startedAt === 'number' ? payload.startedAt : undefined,
+			content: this.shrinkHistoryValue(payload.content, 0),
+			isError: Boolean(payload.isError)
+		};
+	}
+
+	private shrinkHistoryValue(value: unknown, depth: number): unknown {
+		if (value === null || value === undefined) {
+			return value;
+		}
+		if (typeof value === 'string') {
+			return this.clampHistoryText(value, ChatViewPane.CHAT_HISTORY_MAX_PAYLOAD_STRING_CHARS);
+		}
+		if (typeof value === 'number' || typeof value === 'boolean') {
+			return value;
+		}
+		if (depth >= 4) {
+			return this.clampHistoryText(String(value), 240);
+		}
+		if (Array.isArray(value)) {
+			return value
+				.slice(0, ChatViewPane.CHAT_HISTORY_MAX_ARRAY_ITEMS)
+				.map(item => this.shrinkHistoryValue(item, depth + 1));
+		}
+		if (typeof value === 'object') {
+			const entries = Object.entries(value as Record<string, unknown>).slice(0, ChatViewPane.CHAT_HISTORY_MAX_OBJECT_KEYS);
+			const reduced: Record<string, unknown> = {};
+			for (const [key, entryValue] of entries) {
+				reduced[key] = this.shrinkHistoryValue(entryValue, depth + 1);
+			}
+			return reduced;
+		}
+		return this.clampHistoryText(String(value), 240);
 	}
 
 	private createSessionAndSwitch(baseTitle?: string): void {
@@ -2479,15 +2696,39 @@ export class ChatViewPane extends ViewPane {
 		const now = Date.now();
 		session.messages.push({
 			role,
-			text,
+			text: this.clampHistoryText(text),
 			timestamp: now,
-			attachments: attachments && attachments.length ? attachments : undefined
+			attachments: attachments && attachments.length
+				? attachments.map(item => ({
+					name: this.clampHistoryText(item.name, 260),
+					preview: this.clampHistoryText(item.preview, 2000)
+				}))
+				: undefined
 		});
 		session.updatedAt = now;
 		session.lastViewedAt = now;
 		if (role === 'user' && (session.title === 'New chat' || session.messages.length <= 2)) {
 			session.title = buildSessionTitleFromText(text);
 		}
+		this.historySessions = sortHistorySessions(this.historySessions).slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
+		this.saveHistorySessions();
+		this.renderHistoryList();
+	}
+
+	private appendHistoryToolMessage(
+		role: 'tool_call' | 'tool_result',
+		toolPayload: HistoryToolPayload
+	): void {
+		const session = this.ensureActiveSession();
+		const now = Date.now();
+		session.messages.push({
+			role,
+			text: '',
+			timestamp: now,
+			toolPayload: this.shrinkHistoryToolPayload(toolPayload)
+		});
+		session.updatedAt = now;
+		session.lastViewedAt = now;
 		this.historySessions = sortHistorySessions(this.historySessions).slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
 		this.saveHistorySessions();
 		this.renderHistoryList();
@@ -2510,6 +2751,28 @@ export class ChatViewPane extends ViewPane {
 					this.contextSegments.push({ role: 'user', text: `Attached file ${attachment.name}: ${attachment.preview}` });
 				}
 				this.currentRunContainer = undefined;
+				continue;
+			}
+			if (message.role === 'tool_call') {
+				const payload = message.toolPayload ?? {};
+				this.addToolCallMessage({
+					metadata: {
+						toolName: payload.toolName ?? '',
+						toolInput: payload.toolInput ?? {},
+						toolCallId: payload.toolCallId ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+					}
+				}, false, true);
+				continue;
+			}
+			if (message.role === 'tool_result') {
+				const payload = message.toolPayload ?? {};
+				this.addToolResultMessage({
+					content: payload.content,
+					metadata: {
+						toolUseId: payload.toolCallId,
+						isError: payload.isError
+					}
+				}, false);
 				continue;
 			}
 			if (message.role === 'assistant') {
@@ -2696,6 +2959,99 @@ export class ChatViewPane extends ViewPane {
 			window.clearTimeout(this.attachmentLimitNoticeHideHandle);
 			this.attachmentLimitNoticeHideHandle = undefined;
 		}
+	}
+
+	private showComposerNotice(text: string): void {
+		if (!this.composerNotice) {
+			return;
+		}
+		this.composerNotice.textContent = text;
+		this.composerNotice.classList.add('visible');
+		if (typeof this.composerNoticeHideHandle === 'number') {
+			window.clearTimeout(this.composerNoticeHideHandle);
+		}
+		this.composerNoticeHideHandle = window.setTimeout(() => {
+			this.composerNotice?.classList.remove('visible');
+			this.composerNoticeHideHandle = undefined;
+		}, 2200);
+	}
+
+	private handleAddProjectContext(): void {
+		if (!this.inputElement) {
+			return;
+		}
+		const workspace = this.workspaceContextService.getWorkspace();
+		const workspacePath = workspace.folders[0]?.uri.fsPath;
+		if (!workspacePath) {
+			this.showComposerNotice('No workspace opened');
+			return;
+		}
+		const projectHint = `Use project context from: ${workspacePath}`;
+		if (!this.inputElement.value.includes(projectHint)) {
+			this.inputElement.value = this.inputElement.value.trim().length > 0
+				? `${this.inputElement.value}\n${projectHint}`
+				: projectHint;
+			this.inputElement.dispatchEvent(new Event('input'));
+		}
+		this.showComposerNotice('Project context added');
+	}
+
+	private nextStyleMode(current: 'default' | 'precise' | 'concise' | 'detailed'): 'default' | 'precise' | 'concise' | 'detailed' {
+		switch (current) {
+			case 'default':
+				return 'precise';
+			case 'precise':
+				return 'concise';
+			case 'concise':
+				return 'detailed';
+			default:
+				return 'default';
+		}
+	}
+
+	private buildComposerOptionContext(): string {
+		const options: string[] = [];
+		if (this.webSearchEnabled) {
+			options.push('- web_search: enabled');
+		}
+		if (this.responseStyleMode !== 'default') {
+			options.push(`- response_style: ${this.responseStyleMode}`);
+		}
+		if (this.connectorsEnabled) {
+			options.push('- connectors: enabled');
+		}
+		return options.join('\n');
+	}
+
+	private shouldRenderGenericResultFallback(ref: ToolCardRef): boolean {
+		if (this.isPlanTool(ref.name) || this.isFileReadTool(ref.name)) {
+			return false;
+		}
+		if (this.isCommandTool(ref.name)) {
+			return !ref.commandMeta;
+		}
+		if (this.isFileMutationTool(ref.name)) {
+			if (!ref.inputPaths?.length) {
+				return false;
+			}
+			return !Boolean(ref.body.querySelector('.void-tool-edit-card'));
+		}
+		if (this.isWebTool(ref.name) || this.isSearchTool(ref.name)) {
+			return !Boolean(ref.body.querySelector('.void-tool-sources'));
+		}
+		return false;
+	}
+
+	private sanitizeToolText(text: string): string {
+		if (!text) {
+			return '';
+		}
+		return text
+			.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, '')
+			.replace(/Your todo list has changed\.[^\n]*\n?/gi, '')
+			.replace(/Here are the latest contents of your todo list:[\s\S]*/gi, '')
+			.replace(/^\s*\{"todos"\s*:\s*\[[\s\S]*?\]\}\s*$/gmi, '')
+			.trim();
 	}
 
 	private async openFilePicker(): Promise<void> {

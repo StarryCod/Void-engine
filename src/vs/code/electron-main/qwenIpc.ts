@@ -74,19 +74,25 @@ export class QwenIPCHandler {
 		return new Promise((resolve, reject) => {
 			const events: IQwenEvent[] = [];
 			let errorOutput = '';
+			const nonJsonStdoutLines: string[] = [];
+			const spawnCwd = workspacePath && existsSync(workspacePath) ? workspacePath : process.cwd();
+			const nodeBinary = process.execPath || 'node';
+			if (workspacePath && spawnCwd !== workspacePath) {
+				this.logService.warn('[Qwen IPC] Workspace path does not exist, falling back to cwd:', workspacePath);
+			}
 
 			try {
-				// Spawn void-ai-chat.js process в директории workspace
-				this.currentProcess = spawn('node', [this.qwenScriptPath, query], {
+				// Spawn void-ai-chat.js process in workspace directory
+				this.currentProcess = spawn(nodeBinary, [this.qwenScriptPath, query], {
 					stdio: ['ignore', 'pipe', 'pipe'],
 					shell: false,
-					cwd: workspacePath, // Запускаем в папке проекта пользователя
+					cwd: spawnCwd,
 					env: {
 						...process.env,
-						// Передаем workspace path через переменную окружения
 						QWEN_WORKSPACE_PATH: workspacePath || process.cwd(),
 					},
 				});
+				this.logService.info('[Qwen IPC] Spawned process pid:', this.currentProcess.pid ?? 'unknown');
 
 				// Parse stdout line by line
 				const rl = createInterface({
@@ -103,13 +109,18 @@ export class QwenIPCHandler {
 						const event = JSON.parse(line);
 						events.push(event);
 						this.logService.trace('[Qwen IPC] Event:', event.type);
-						
-						// Отправляем событие немедленно через callback для streaming
+
 						if (onEvent) {
 							onEvent(event);
 						}
 					} catch {
-						// Ignore non-JSON transport noise from external tooling.
+						const trimmed = line.trim();
+						if (trimmed) {
+							nonJsonStdoutLines.push(trimmed);
+							if (nonJsonStdoutLines.length > 12) {
+								nonJsonStdoutLines.shift();
+							}
+						}
 						this.logService.trace('[Qwen IPC] Ignored non-JSON line');
 					}
 				});
@@ -120,14 +131,20 @@ export class QwenIPCHandler {
 				});
 
 				// Handle process completion
-				this.currentProcess.on('close', (code: number | null) => {
+				this.currentProcess.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
 					this.currentProcess = undefined;
 
 					if (code === 0) {
 						this.logService.info('[Qwen IPC] Process completed successfully, events:', events.length);
 						resolve({ events });
 					} else {
-						const error = `Process exited with code ${code}: ${errorOutput}`;
+						const stderrText = errorOutput.trim();
+						const stdoutText = nonJsonStdoutLines.join('\n').trim();
+						const diagnostics = stderrText || stdoutText;
+						const exitSuffix = signal ? ` (signal: ${signal})` : '';
+						const error = diagnostics
+							? `Process exited with code ${code}${exitSuffix}: ${diagnostics}`
+							: `Process exited with code ${code}${exitSuffix}: no stderr/stdout diagnostics (script: ${this.qwenScriptPath}, cwd: ${spawnCwd})`;
 						this.logService.error('[Qwen IPC] Process failed:', error);
 						resolve({ events, error });
 					}

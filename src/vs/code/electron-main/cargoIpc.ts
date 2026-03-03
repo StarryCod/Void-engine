@@ -246,9 +246,9 @@ export function setupCargoIPC(): void {
 		});
 	});
 
-	// F6: cargo watch
+	// F6: cargo build (single pass, no cargo-watch dependency)
 	ipcMain.handle('vscode:cargo-watch', async (event, { windowId, workspacePath }) => {
-		console.log(`[Cargo IPC] cargo watch for window ${windowId}:`, workspacePath);
+		console.log(`[Cargo IPC] cargo build for window ${windowId}:`, workspacePath);
 
 		// Stop any existing process for this window
 		const existing = gameProcesses.get(windowId);
@@ -258,65 +258,99 @@ export function setupCargoIPC(): void {
 		}
 
 		return new Promise((resolve) => {
-			const watchProc = spawn('cargo', ['watch', '-x', 'run'], {
+			const buildProc = spawn('cargo', ['build'], {
 				cwd: workspacePath,
 				shell: true
 			});
 
-			gameProcesses.set(windowId, watchProc);
+			gameProcesses.set(windowId, buildProc);
 
-			let settled = false;
-			const resolveOnce = (result: { success: boolean; error?: string }) => {
-				if (!settled) {
-					settled = true;
-					resolve(result);
+			buildProc.once('spawn', () => {
+				event.sender.send('vscode:cargo-build-progress', {
+					stage: 'compiling',
+					message: 'Starting cargo build...',
+					progress: 0
+				});
+			});
+
+			let totalCrates = 0;
+			let completedCrates = 0;
+
+			const handleBuildOutput = (text: string): void => {
+				const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+				for (const line of lines) {
+					const compilingMatch = line.match(/^Compiling\s+(\S+)/);
+					if (compilingMatch) {
+						completedCrates++;
+						if (totalCrates === 0) {
+							totalCrates = 80;
+						}
+						const progress = Math.min(95, Math.round((completedCrates / totalCrates) * 100));
+						event.sender.send('vscode:cargo-build-progress', {
+							stage: 'compiling',
+							message: `Compiling ${compilingMatch[1]}...`,
+							progress,
+							currentCrate: compilingMatch[1],
+							totalCrates,
+							completedCrates
+						});
+						continue;
+					}
+
+					if (line.includes('Finished')) {
+						event.sender.send('vscode:cargo-build-progress', {
+							stage: 'finished',
+							message: 'Build complete',
+							progress: 100
+						});
+						continue;
+					}
+
+					event.sender.send('vscode:cargo-build-progress', {
+						stage: 'compiling',
+						message: line,
+						progress: Math.min(95, completedCrates)
+					});
 				}
 			};
 
-			watchProc.once('spawn', () => {
-				event.sender.send('vscode:cargo-build-progress', {
-					stage: 'finished',
-					message: 'Cargo watch started',
-					progress: 100
-				});
-				resolveOnce({ success: true });
-			});
-
-			watchProc.stdout?.on('data', (data: Buffer) => {
+			buildProc.stdout?.on('data', (data: Buffer) => {
 				const text = data.toString();
-				console.log(`[Cargo Watch] ${text}`);
+				console.log(`[Cargo Build] ${text}`);
+				handleBuildOutput(text);
 			});
 
-			watchProc.stderr?.on('data', (data: Buffer) => {
+			buildProc.stderr?.on('data', (data: Buffer) => {
 				const text = data.toString();
-				console.error(`[Cargo Watch] ${text}`);
+				console.error(`[Cargo Build] ${text}`);
+				handleBuildOutput(text);
 			});
 
-			watchProc.on('close', (code) => {
+			buildProc.on('close', (code) => {
 				gameProcesses.delete(windowId);
-				console.log(`[Cargo IPC] cargo watch exited with code ${code}`);
+				console.log(`[Cargo IPC] cargo build exited with code ${code}`);
 				if (code !== 0) {
 					event.sender.send('vscode:cargo-build-progress', {
 						stage: 'error',
-						message: `cargo watch exited with code ${code}`,
+						message: `cargo build exited with code ${code}`,
 						progress: 0
 					});
 				}
-				resolveOnce({
+				resolve({
 					success: code === 0,
-					error: code === 0 ? undefined : `cargo watch exited with code ${code}`
+					error: code === 0 ? undefined : `cargo build exited with code ${code}`
 				});
 			});
 
-			watchProc.on('error', (error) => {
+			buildProc.on('error', (error) => {
 				gameProcesses.delete(windowId);
 				event.sender.send('vscode:cargo-build-progress', {
 					stage: 'error',
 					message: `Error: ${error.message}`,
 					progress: 0
 				});
-				console.error('[Cargo IPC] Watch error:', error);
-				resolveOnce({ success: false, error: error.message });
+				console.error('[Cargo IPC] Build error:', error);
+				resolve({ success: false, error: error.message });
 			});
 		});
 	});

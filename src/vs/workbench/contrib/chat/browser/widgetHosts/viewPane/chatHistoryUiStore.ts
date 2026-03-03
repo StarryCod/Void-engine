@@ -7,11 +7,21 @@ export interface IChatHistoryAttachmentUI {
 	preview: string;
 }
 
+export interface IChatHistoryToolPayloadUI {
+	toolName?: string;
+	toolInput?: unknown;
+	toolCallId?: string;
+	startedAt?: number;
+	content?: unknown;
+	isError?: boolean;
+}
+
 export interface IChatHistoryMessageUI {
-	role: 'user' | 'assistant' | 'error';
+	role: 'user' | 'assistant' | 'error' | 'tool_call' | 'tool_result';
 	text: string;
 	timestamp: number;
 	attachments?: IChatHistoryAttachmentUI[];
+	toolPayload?: IChatHistoryToolPayloadUI;
 }
 
 export interface IChatHistoryItemUI {
