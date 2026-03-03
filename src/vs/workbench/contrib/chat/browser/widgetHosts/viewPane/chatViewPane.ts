@@ -27,6 +27,21 @@ import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IExplorerService } from '../../../../files/browser/files.js';
 import { QwenChatService } from './qwenChatService.js';
 import { IChatHistoryPanelState, IChatHistoryUiStore, LocalChatHistoryUiStore } from './chatHistoryUiStore.js';
+import { ChatLayoutController, ChatPaneLayoutMode } from './chatLayoutController.js';
+import { ChatLongTaskObserverController, ChatRafScheduler } from './chatPerfController.js';
+import { ChatTooltipOverlayController } from './chatTooltipController.js';
+import {
+	buildSessionTitleFromText,
+	filterHistorySessions,
+	formatHistoryTime,
+	getOrderedHistoryGroupKeys,
+	groupHistorySessions,
+	HistoryAttachmentPreview,
+	HistorySessionRecord,
+	normalizeHistorySessionRecord,
+	selectPreferredSession,
+	sortHistorySessions
+} from './chatHistoryModel.js';
 
 interface AttachedFile {
 	id: string;
@@ -71,30 +86,6 @@ interface RunChangeSummary {
 	removed: number;
 }
 
-interface HistoryAttachmentPreview {
-	name: string;
-	preview: string;
-}
-
-interface HistoryMessageRecord {
-	role: 'user' | 'assistant' | 'error';
-	text: string;
-	timestamp: number;
-	attachments?: HistoryAttachmentPreview[];
-}
-
-interface HistorySessionRecord {
-	id: string;
-	title: string;
-	pinned: boolean;
-	createdAt: number;
-	updatedAt: number;
-	lastViewedAt: number;
-	messages: HistoryMessageRecord[];
-}
-
-type ChatPaneLayoutMode = 'home' | 'conversation' | 'history';
-
 export class ChatViewPane extends ViewPane {
 	private container: HTMLElement | undefined;
 	private messagesContainer: HTMLElement | undefined;
@@ -125,12 +116,11 @@ export class ChatViewPane extends ViewPane {
 	private readonly historyUiStore: IChatHistoryUiStore;
 	private historyPanelState: IChatHistoryPanelState = { query: '', mode: 'list' };
 	private activeSessionId: string | undefined;
-	private layoutMode: ChatPaneLayoutMode = 'home';
-	private scrollToBottomHandle: number | undefined;
+	private layoutController: ChatLayoutController | undefined;
+	private scrollScheduler: ChatRafScheduler | undefined;
 	private devProfileEnabled = false;
-	private longTaskObserver: PerformanceObserver | undefined;
-	private tooltipOverlay: HTMLElement | undefined;
-	private tooltipTarget: HTMLElement | undefined;
+	private longTaskObserverController: ChatLongTaskObserverController | undefined;
+	private tooltipController: ChatTooltipOverlayController | undefined;
 	private static readonly CONTEXT_WINDOW_TOKENS = 1048600;
 	private static readonly CONTEXT_HARD_LIMIT = 0.92;
 	private static readonly MAX_ATTACHED_FILES = 9;
@@ -177,6 +167,9 @@ export class ChatViewPane extends ViewPane {
 
 		this.container = container;
 		container.classList.add('void-chat-container');
+		this.layoutController = new ChatLayoutController(container);
+		this.scrollScheduler = new ChatRafScheduler();
+		this._register(this.scrollScheduler);
 		this.setupTooltipOverlay(container);
 
 		const header = append(container, $('.void-chat-header'));
@@ -334,14 +327,6 @@ export class ChatViewPane extends ViewPane {
 		};
 		document.addEventListener('click', onDocumentClick, true);
 		this._register({ dispose: () => document.removeEventListener('click', onDocumentClick, true) });
-		this._register({
-			dispose: () => {
-				if (typeof this.scrollToBottomHandle === 'number') {
-					window.cancelAnimationFrame(this.scrollToBottomHandle);
-					this.scrollToBottomHandle = undefined;
-				}
-			}
-		});
 
 		historyButton.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -2348,14 +2333,10 @@ export class ChatViewPane extends ViewPane {
 	}
 
 	private scrollToBottom(): void {
-		if (!this.messagesContainer) {
+		if (!this.messagesContainer || !this.scrollScheduler) {
 			return;
 		}
-		if (typeof this.scrollToBottomHandle === 'number') {
-			return;
-		}
-		this.scrollToBottomHandle = window.requestAnimationFrame(() => {
-			this.scrollToBottomHandle = undefined;
+		this.scrollScheduler.schedule(() => {
 			if (this.messagesContainer) {
 				this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
 			}
@@ -2383,242 +2364,44 @@ export class ChatViewPane extends ViewPane {
 	}
 
 	private setLayoutMode(mode: ChatPaneLayoutMode): void {
-		if (!this.container) {
-			return;
-		}
-		if (this.layoutMode === mode && this.container.classList.contains(`void-layout-${mode}`)) {
-			return;
-		}
-		this.container.classList.remove('void-layout-home', 'void-layout-conversation', 'void-layout-history');
-		this.container.classList.add(`void-layout-${mode}`);
-		this.layoutMode = mode;
+		this.layoutController?.setMode(mode);
 	}
 
 	private installLongTaskObserver(): void {
-		if (!('PerformanceObserver' in window) || this.longTaskObserver) {
+		if (this.longTaskObserverController) {
 			return;
 		}
-		try {
-			this.longTaskObserver = new PerformanceObserver((entries) => {
-				for (const entry of entries.getEntries()) {
-					if (entry.duration >= 50) {
-						console.warn(`[Qwen UI Perf] long task ${Math.round(entry.duration)}ms`);
-					}
-				}
-			});
-			this.longTaskObserver.observe({ entryTypes: ['longtask'] });
-			this._register({
-				dispose: () => {
-					this.longTaskObserver?.disconnect();
-					this.longTaskObserver = undefined;
-				}
-			});
-		} catch {
-			// Ignore unsupported observer environments.
-		}
+		this.longTaskObserverController = new ChatLongTaskObserverController(50, duration =>
+			console.warn(`[Qwen UI Perf] long task ${Math.round(duration)}ms`)
+		);
+		this.longTaskObserverController.start();
+		this._register(this.longTaskObserverController);
 	}
 
 	private setupTooltipOverlay(container: HTMLElement): void {
-		const overlay = append(container, $('.void-chat-tooltip-overlay'));
-		this.tooltipOverlay = overlay;
-
-		const onPointerOver = (event: PointerEvent): void => {
-			const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-tooltip]');
-			if (!target || !container.contains(target)) {
-				return;
-			}
-			this.showTooltip(target);
-		};
-
-		const onPointerOut = (event: PointerEvent): void => {
-			const relatedTarget = event.relatedTarget as HTMLElement | null;
-			const nextTarget = relatedTarget?.closest<HTMLElement>('[data-tooltip]');
-			if (nextTarget && container.contains(nextTarget)) {
-				this.showTooltip(nextTarget);
-				return;
-			}
-			this.hideTooltip();
-		};
-
-		const onFocusIn = (event: FocusEvent): void => {
-			const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-tooltip]');
-			if (!target || !container.contains(target)) {
-				return;
-			}
-			this.showTooltip(target);
-		};
-
-		const onFocusOut = (event: FocusEvent): void => {
-			const relatedTarget = event.relatedTarget as HTMLElement | null;
-			const nextTarget = relatedTarget?.closest<HTMLElement>('[data-tooltip]');
-			if (nextTarget && container.contains(nextTarget)) {
-				this.showTooltip(nextTarget);
-				return;
-			}
-			this.hideTooltip();
-		};
-
-		const onResize = (): void => {
-			if (this.tooltipTarget) {
-				this.positionTooltip(this.tooltipTarget);
-			}
-		};
-
-		const onContainerScroll = (): void => {
-			if (this.tooltipTarget) {
-				this.positionTooltip(this.tooltipTarget);
-			}
-		};
-
-		container.addEventListener('pointerover', onPointerOver);
-		container.addEventListener('pointerout', onPointerOut);
-		container.addEventListener('focusin', onFocusIn);
-		container.addEventListener('focusout', onFocusOut);
-		container.addEventListener('scroll', onContainerScroll, true);
-		window.addEventListener('resize', onResize);
-
-		this._register({
-			dispose: () => {
-				container.removeEventListener('pointerover', onPointerOver);
-				container.removeEventListener('pointerout', onPointerOut);
-				container.removeEventListener('focusin', onFocusIn);
-				container.removeEventListener('focusout', onFocusOut);
-				container.removeEventListener('scroll', onContainerScroll, true);
-				window.removeEventListener('resize', onResize);
-				this.hideTooltip();
-				this.tooltipOverlay?.remove();
-				this.tooltipOverlay = undefined;
-			}
-		});
-	}
-
-	private showTooltip(target: HTMLElement): void {
-		if (!this.tooltipOverlay) {
+		if (this.tooltipController) {
 			return;
 		}
-		const tooltipText = target.getAttribute('data-tooltip')?.trim();
-		if (!tooltipText) {
-			this.hideTooltip();
-			return;
-		}
-
-		this.tooltipTarget = target;
-		this.tooltipOverlay.textContent = tooltipText;
-		this.tooltipOverlay.classList.add('visible');
-		this.positionTooltip(target);
-	}
-
-	private positionTooltip(target: HTMLElement): void {
-		if (!this.tooltipOverlay) {
-			return;
-		}
-		this.tooltipOverlay.style.left = '0px';
-		this.tooltipOverlay.style.top = '0px';
-		this.tooltipOverlay.style.visibility = 'hidden';
-
-		const margin = 8;
-		const targetRect = target.getBoundingClientRect();
-		const tooltipRect = this.tooltipOverlay.getBoundingClientRect();
-		let left = targetRect.left + (targetRect.width / 2) - (tooltipRect.width / 2);
-		let top = targetRect.top - tooltipRect.height - 8;
-
-		if (top < margin) {
-			top = targetRect.bottom + 8;
-		}
-
-		const maxLeft = Math.max(margin, window.innerWidth - tooltipRect.width - margin);
-		left = Math.min(Math.max(left, margin), maxLeft);
-
-		this.tooltipOverlay.style.left = `${Math.round(left)}px`;
-		this.tooltipOverlay.style.top = `${Math.round(top)}px`;
-		this.tooltipOverlay.style.visibility = 'visible';
-	}
-
-	private hideTooltip(): void {
-		this.tooltipTarget = undefined;
-		if (!this.tooltipOverlay) {
-			return;
-		}
-		this.tooltipOverlay.classList.remove('visible');
-		this.tooltipOverlay.style.visibility = 'hidden';
+		this.tooltipController = new ChatTooltipOverlayController(container);
+		this._register(this.tooltipController);
 	}
 
 	private loadHistorySessions(): void {
 		const records = this.historyUiStore.loadItems();
-		this.historySessions = records
-			.map(record => this.normalizeHistorySession(record))
-			.filter((record): record is HistorySessionRecord => !!record)
-			.sort((a, b) => {
-				if (a.pinned !== b.pinned) {
-					return a.pinned ? -1 : 1;
-				}
-				return b.updatedAt - a.updatedAt;
-			})
-			.slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
+		this.historySessions = sortHistorySessions(
+			records
+				.map(record => this.normalizeHistorySession(record))
+				.filter((record): record is HistorySessionRecord => !!record)
+		).slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
 
-		if (this.historySessions.length > 0) {
-			const preferred = [...this.historySessions].sort((a, b) => b.lastViewedAt - a.lastViewedAt)[0];
+		const preferred = selectPreferredSession(this.historySessions);
+		if (preferred) {
 			this.openSessionFromHistory(preferred.id, false);
 		}
 	}
 
 	private normalizeHistorySession(record: unknown): HistorySessionRecord | undefined {
-		if (!record || typeof record !== 'object') {
-			return undefined;
-		}
-		const candidate = record as Partial<HistorySessionRecord>;
-		if (typeof candidate.id !== 'string' || !candidate.id.trim()) {
-			return undefined;
-		}
-		if (typeof candidate.title !== 'string') {
-			return undefined;
-		}
-		const messages = Array.isArray(candidate.messages) ? candidate.messages : [];
-		const normalizedMessages: HistoryMessageRecord[] = [];
-		for (const message of messages) {
-			if (!message || typeof message !== 'object') {
-				continue;
-			}
-			const entry = message as Partial<HistoryMessageRecord>;
-			if (entry.role !== 'user' && entry.role !== 'assistant' && entry.role !== 'error') {
-				continue;
-			}
-			if (typeof entry.text !== 'string') {
-				continue;
-			}
-			const attachments = Array.isArray(entry.attachments)
-				? entry.attachments
-					.map(item => {
-						if (!item || typeof item !== 'object') {
-							return undefined;
-						}
-						const attachment = item as Partial<HistoryAttachmentPreview>;
-						if (typeof attachment.name !== 'string' || typeof attachment.preview !== 'string') {
-							return undefined;
-						}
-						return {
-							name: attachment.name,
-							preview: attachment.preview
-						};
-					})
-					.filter((item): item is HistoryAttachmentPreview => !!item)
-				: undefined;
-			normalizedMessages.push({
-				role: entry.role,
-				text: entry.text,
-				timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : Date.now(),
-				attachments
-			});
-		}
-		return {
-			id: candidate.id.trim(),
-			title: candidate.title.trim() || 'New chat',
-			pinned: !!candidate.pinned,
-			createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : Date.now(),
-			updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now(),
-			lastViewedAt: typeof candidate.lastViewedAt === 'number' ? candidate.lastViewedAt : Date.now(),
-			messages: normalizedMessages
-		};
+		return normalizeHistorySessionRecord(record);
 	}
 
 	private saveHistorySessions(): void {
@@ -2656,7 +2439,7 @@ export class ChatViewPane extends ViewPane {
 		const now = Date.now();
 		const session: HistorySessionRecord = {
 			id: `session-${now}-${Math.random().toString(36).slice(2, 8)}`,
-			title: this.buildSessionTitleFromText(seedText ?? ''),
+			title: buildSessionTitleFromText(seedText ?? ''),
 			pinned: false,
 			createdAt: now,
 			updatedAt: now,
@@ -2684,17 +2467,9 @@ export class ChatViewPane extends ViewPane {
 		session.updatedAt = now;
 		session.lastViewedAt = now;
 		if (role === 'user' && (session.title === 'New chat' || session.messages.length <= 2)) {
-			session.title = this.buildSessionTitleFromText(text);
+			session.title = buildSessionTitleFromText(text);
 		}
-		this.historySessions = this.historySessions
-			.slice()
-			.sort((a, b) => {
-				if (a.pinned !== b.pinned) {
-					return a.pinned ? -1 : 1;
-				}
-				return b.updatedAt - a.updatedAt;
-			})
-			.slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
+		this.historySessions = sortHistorySessions(this.historySessions).slice(0, ChatViewPane.CHAT_HISTORY_MAX_SESSIONS);
 		this.saveHistorySessions();
 		this.renderHistoryList();
 	}
@@ -2780,14 +2555,7 @@ export class ChatViewPane extends ViewPane {
 		}
 		session.pinned = pinned;
 		session.updatedAt = Date.now();
-		this.historySessions = this.historySessions
-			.slice()
-			.sort((a, b) => {
-				if (a.pinned !== b.pinned) {
-					return a.pinned ? -1 : 1;
-				}
-				return b.updatedAt - a.updatedAt;
-			});
+		this.historySessions = sortHistorySessions(this.historySessions);
 		this.saveHistorySessions();
 		this.renderHistoryList();
 	}
@@ -2819,47 +2587,22 @@ export class ChatViewPane extends ViewPane {
 			return;
 		}
 		const perfStart = this.devProfileEnabled ? performance.now() : 0;
-		while (this.historyList.firstChild) {
-			this.historyList.removeChild(this.historyList.firstChild);
-		}
+		const nextTree = document.createElement('div');
 
-		const query = this.historyPanelState.query.trim().toLowerCase();
-		const filtered = this.historySessions.filter(session => {
-			if (!query) {
-				return true;
-			}
-			return session.title.toLowerCase().includes(query) || session.messages.some(message => message.text.toLowerCase().includes(query));
-		});
+		const query = this.historyPanelState.query.trim();
+		const filtered = filterHistorySessions(this.historySessions, query);
 		if (!filtered.length) {
-			const empty = append(this.historyList, $('.void-chat-history-empty'));
+			const empty = append(nextTree, $('.void-chat-history-empty'));
 			empty.textContent = query ? 'No matching chats' : 'No saved chats yet';
+			this.historyList.replaceChildren(...Array.from(nextTree.childNodes));
 			return;
 		}
 
-		const groups = new Map<string, HistorySessionRecord[]>();
-		for (const session of filtered) {
-			const key = this.getHistoryGroupKey(session.updatedAt);
-			const entries = groups.get(key);
-			if (entries) {
-				entries.push(session);
-			} else {
-				groups.set(key, [session]);
-			}
-		}
-
-		const orderedKeys: string[] = [];
-		if (groups.has('Today')) {
-			orderedKeys.push('Today');
-		}
-		if (groups.has('Yesterday')) {
-			orderedKeys.push('Yesterday');
-		}
-		if (groups.has('Older')) {
-			orderedKeys.push('Older');
-		}
+		const groups = groupHistorySessions(filtered);
+		const orderedKeys = getOrderedHistoryGroupKeys(groups);
 
 		for (const key of orderedKeys) {
-			const section = append(this.historyList, $('.void-chat-history-section'));
+			const section = append(nextTree, $('.void-chat-history-section'));
 			const sectionTitle = append(section, $('.void-chat-history-section-title'));
 			sectionTitle.textContent = key;
 			const groupList = append(section, $('.void-chat-history-section-list'));
@@ -2876,7 +2619,7 @@ export class ChatViewPane extends ViewPane {
 				const title = append(openButton, $('.void-chat-history-item-title'));
 				title.textContent = session.title;
 				const subtitle = append(openButton, $('.void-chat-history-item-subtitle'));
-				subtitle.textContent = `${this.formatHistoryTime(session.updatedAt)}  |  ${session.messages.length} messages`;
+				subtitle.textContent = `${formatHistoryTime(session.updatedAt)}  |  ${session.messages.length} messages`;
 
 				const actions = append(item, $('.void-chat-history-item-actions'));
 				const pinButton = append(actions, $('button.void-chat-history-icon-btn.codicon')) as HTMLButtonElement;
@@ -2908,43 +2651,13 @@ export class ChatViewPane extends ViewPane {
 				});
 			}
 		}
+		this.historyList.replaceChildren(...Array.from(nextTree.childNodes));
 		if (this.devProfileEnabled) {
 			const duration = performance.now() - perfStart;
 			if (duration >= 8) {
 				console.log(`[Qwen UI Perf] history render ${duration.toFixed(1)}ms (${filtered.length} sessions)`);
 			}
 		}
-	}
-
-	private getHistoryGroupKey(timestamp: number): 'Today' | 'Yesterday' | 'Older' {
-		const target = new Date(timestamp);
-		const now = new Date();
-		const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		const startOfYesterday = new Date(startOfToday);
-		startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-		if (target >= startOfToday) {
-			return 'Today';
-		}
-		if (target >= startOfYesterday) {
-			return 'Yesterday';
-		}
-		return 'Older';
-	}
-
-	private formatHistoryTime(timestamp: number): string {
-		try {
-			return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-		} catch {
-			return '--:--';
-		}
-	}
-
-	private buildSessionTitleFromText(text: string): string {
-		const normalized = text.replace(/\s+/g, ' ').trim();
-		if (!normalized) {
-			return 'New chat';
-		}
-		return normalized.slice(0, 60);
 	}
 
 	private updateComposerState(): void {
