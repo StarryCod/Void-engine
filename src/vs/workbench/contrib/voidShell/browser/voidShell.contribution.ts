@@ -32,6 +32,9 @@ class VoidShellContribution extends Disposable {
 	];
 
 	private mutationObserver: MutationObserver | undefined;
+	private pruneScheduled = false;
+	private pruneFrameHandle: number | undefined;
+	private pruneInProgress = false;
 
 	constructor(
 		@IConfigurationService private readonly configurationService: IConfigurationService
@@ -56,7 +59,7 @@ class VoidShellContribution extends Disposable {
 			return;
 		}
 
-		this.pruneWorkbenchSurface();
+		this.schedulePrune();
 		this.ensureObserver();
 	}
 
@@ -64,18 +67,46 @@ class VoidShellContribution extends Disposable {
 		if (this.mutationObserver) {
 			return;
 		}
-		this.mutationObserver = new MutationObserver(() => this.pruneWorkbenchSurface());
+		this.mutationObserver = new MutationObserver(() => this.schedulePrune());
 		this.mutationObserver.observe(document.body, {
 			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeFilter: ['aria-label', 'title', 'class']
+			subtree: true
 		});
 	}
 
 	private stopObserver(): void {
 		this.mutationObserver?.disconnect();
 		this.mutationObserver = undefined;
+		if (typeof this.pruneFrameHandle === 'number') {
+			window.cancelAnimationFrame(this.pruneFrameHandle);
+			this.pruneFrameHandle = undefined;
+		}
+		this.pruneScheduled = false;
+		this.pruneInProgress = false;
+	}
+
+	private schedulePrune(): void {
+		if (this.pruneScheduled) {
+			return;
+		}
+		this.pruneScheduled = true;
+		this.pruneFrameHandle = window.requestAnimationFrame(() => {
+			this.pruneFrameHandle = undefined;
+			this.pruneScheduled = false;
+			this.runPrune();
+		});
+	}
+
+	private runPrune(): void {
+		if (this.pruneInProgress) {
+			return;
+		}
+		this.pruneInProgress = true;
+		try {
+			this.pruneWorkbenchSurface();
+		} finally {
+			this.pruneInProgress = false;
+		}
 	}
 
 	private pruneWorkbenchSurface(): void {
@@ -89,8 +120,7 @@ class VoidShellContribution extends Disposable {
 		for (const item of actionItems) {
 			const label = `${item.getAttribute('aria-label') ?? ''} ${item.getAttribute('title') ?? ''}`.trim();
 			if (label && this.activityHidePatterns.some(pattern => pattern.test(label))) {
-				item.classList.add('void-shell-hidden');
-				item.setAttribute('aria-hidden', 'true');
+				this.hideNode(item);
 			}
 		}
 	}
@@ -100,8 +130,7 @@ class VoidShellContribution extends Disposable {
 		for (const item of titleActions) {
 			const label = `${item.getAttribute('aria-label') ?? ''} ${item.getAttribute('title') ?? ''}`.trim();
 			if (label && this.titlebarHidePatterns.some(pattern => pattern.test(label))) {
-				item.classList.add('void-shell-hidden');
-				item.setAttribute('aria-hidden', 'true');
+				this.hideNode(item);
 			}
 		}
 	}
@@ -116,9 +145,17 @@ class VoidShellContribution extends Disposable {
 
 		for (const selector of selectors) {
 			for (const node of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
-				node.classList.add('void-shell-hidden');
-				node.setAttribute('aria-hidden', 'true');
+				this.hideNode(node);
 			}
+		}
+	}
+
+	private hideNode(node: HTMLElement): void {
+		if (!node.classList.contains('void-shell-hidden')) {
+			node.classList.add('void-shell-hidden');
+		}
+		if (node.getAttribute('aria-hidden') !== 'true') {
+			node.setAttribute('aria-hidden', 'true');
 		}
 	}
 
@@ -130,4 +167,3 @@ class VoidShellContribution extends Disposable {
 
 Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench)
 	.registerWorkbenchContribution(VoidShellContribution, LifecyclePhase.Eventually);
-
