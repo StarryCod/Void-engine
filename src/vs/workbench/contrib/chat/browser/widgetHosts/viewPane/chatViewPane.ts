@@ -115,6 +115,7 @@ export class ChatViewPane extends ViewPane {
 	private historySessions: HistorySessionRecord[] = [];
 	private readonly historyUiStore: IChatHistoryUiStore;
 	private historyPanelState: IChatHistoryPanelState = { query: '', mode: 'list' };
+	private historySearchDebounceHandle: number | undefined;
 	private activeSessionId: string | undefined;
 	private layoutController: ChatLayoutController | undefined;
 	private scrollScheduler: ChatRafScheduler | undefined;
@@ -126,6 +127,12 @@ export class ChatViewPane extends ViewPane {
 	private static readonly MAX_ATTACHED_FILES = 9;
 	private static readonly CHAT_HISTORY_STORAGE_KEY = 'void.chat.history.v1';
 	private static readonly CHAT_HISTORY_MAX_SESSIONS = 80;
+	private static readonly SUPPORTED_ATTACHMENT_EXTENSIONS = new Set([
+		'txt', 'md', 'json', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'log', 'xml', 'csv',
+		'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'rs', 'go', 'java', 'c', 'cc', 'cpp', 'h', 'hpp',
+		'cs', 'php', 'rb', 'swift', 'kt', 'scala', 'sh', 'ps1', 'bat', 'cmd', 'sql',
+		'html', 'css', 'scss', 'less', 'vue', 'svelte', 'astro', 'pdf'
+	]);
 
 	constructor(
 		options: IViewPaneOptions,
@@ -210,6 +217,7 @@ export class ChatViewPane extends ViewPane {
 		historySearchInput.placeholder = 'Search chats';
 		const historyList = append(historyPanel, $('.void-chat-history-list'));
 		this.historyList = historyList;
+		historyList.addEventListener('click', (event) => this.onHistoryListClick(event));
 
 		const inputBox = append(container, $('.void-input-shell'));
 		this.inputShell = inputBox;
@@ -327,6 +335,14 @@ export class ChatViewPane extends ViewPane {
 		};
 		document.addEventListener('click', onDocumentClick, true);
 		this._register({ dispose: () => document.removeEventListener('click', onDocumentClick, true) });
+		this._register({
+			dispose: () => {
+				if (typeof this.historySearchDebounceHandle === 'number') {
+					window.clearTimeout(this.historySearchDebounceHandle);
+					this.historySearchDebounceHandle = undefined;
+				}
+			}
+		});
 
 		historyButton.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -339,10 +355,16 @@ export class ChatViewPane extends ViewPane {
 			this.toggleHistoryPanel(false);
 		});
 		historySearchInput.addEventListener('input', () => {
-			const query = historySearchInput.value.trim();
-			this.historyPanelState.query = query;
-			this.historyPanelState.mode = query.length > 0 ? 'search' : 'list';
-			this.renderHistoryList();
+			if (typeof this.historySearchDebounceHandle === 'number') {
+				window.clearTimeout(this.historySearchDebounceHandle);
+			}
+			this.historySearchDebounceHandle = window.setTimeout(() => {
+				this.historySearchDebounceHandle = undefined;
+				const query = historySearchInput.value.trim();
+				this.historyPanelState.query = query;
+				this.historyPanelState.mode = query.length > 0 ? 'search' : 'list';
+				this.renderHistoryList();
+			}, 90);
 		});
 
 		let dragCounter = 0;
@@ -2582,6 +2604,39 @@ export class ChatViewPane extends ViewPane {
 		this.updateEmptyStateVisibility();
 	}
 
+	private onHistoryListClick(event: MouseEvent): void {
+		const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-history-action][data-session-id]');
+		if (!target) {
+			return;
+		}
+		const action = target.getAttribute('data-history-action');
+		const sessionId = target.getAttribute('data-session-id');
+		if (!action || !sessionId) {
+			return;
+		}
+		event.stopPropagation();
+
+		switch (action) {
+			case 'open':
+				this.openSessionFromHistory(sessionId);
+				break;
+			case 'pin': {
+				const session = this.historySessions.find(item => item.id === sessionId);
+				if (!session) {
+					return;
+				}
+				this.pinSession(sessionId, !session.pinned);
+				break;
+			}
+			case 'rename':
+				this.renameSessionInHistory(sessionId);
+				break;
+			case 'delete':
+				this.removeSessionFromHistory(sessionId);
+				break;
+		}
+	}
+
 	private renderHistoryList(): void {
 		if (!this.historyList) {
 			return;
@@ -2614,7 +2669,8 @@ export class ChatViewPane extends ViewPane {
 
 				const openButton = append(item, $('button.void-chat-history-open')) as HTMLButtonElement;
 				openButton.setAttribute('type', 'button');
-				openButton.addEventListener('click', () => this.openSessionFromHistory(session.id));
+				openButton.setAttribute('data-history-action', 'open');
+				openButton.setAttribute('data-session-id', session.id);
 
 				const title = append(openButton, $('.void-chat-history-item-title'));
 				title.textContent = session.title;
@@ -2629,26 +2685,20 @@ export class ChatViewPane extends ViewPane {
 				}
 				pinButton.setAttribute('aria-label', session.pinned ? 'Unpin' : 'Pin');
 				pinButton.setAttribute('data-tooltip', session.pinned ? 'Unpin' : 'Pin');
-				pinButton.addEventListener('click', (event) => {
-					event.stopPropagation();
-					this.pinSession(session.id, !session.pinned);
-				});
+				pinButton.setAttribute('data-history-action', 'pin');
+				pinButton.setAttribute('data-session-id', session.id);
 
 				const renameButton = append(actions, $('button.void-chat-history-icon-btn.codicon.codicon-edit')) as HTMLButtonElement;
 				renameButton.setAttribute('aria-label', 'Rename');
 				renameButton.setAttribute('data-tooltip', 'Rename');
-				renameButton.addEventListener('click', (event) => {
-					event.stopPropagation();
-					this.renameSessionInHistory(session.id);
-				});
+				renameButton.setAttribute('data-history-action', 'rename');
+				renameButton.setAttribute('data-session-id', session.id);
 
 				const deleteButton = append(actions, $('button.void-chat-history-icon-btn.codicon.codicon-trash')) as HTMLButtonElement;
 				deleteButton.setAttribute('aria-label', 'Delete');
 				deleteButton.setAttribute('data-tooltip', 'Delete');
-				deleteButton.addEventListener('click', (event) => {
-					event.stopPropagation();
-					this.removeSessionFromHistory(session.id);
-				});
+				deleteButton.setAttribute('data-history-action', 'delete');
+				deleteButton.setAttribute('data-session-id', session.id);
 			}
 		}
 		this.historyList.replaceChildren(...Array.from(nextTree.childNodes));
@@ -2720,13 +2770,7 @@ export class ChatViewPane extends ViewPane {
 	}
 
 	private isSupportedAttachment(ext: string): boolean {
-		const supported = new Set([
-			'txt', 'md', 'json', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'log', 'xml', 'csv',
-			'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'rs', 'go', 'java', 'c', 'cc', 'cpp', 'h', 'hpp',
-			'cs', 'php', 'rb', 'swift', 'kt', 'scala', 'sh', 'ps1', 'bat', 'cmd', 'sql',
-			'html', 'css', 'scss', 'less', 'vue', 'svelte', 'astro', 'pdf'
-		]);
-		return supported.has(ext);
+		return ChatViewPane.SUPPORTED_ATTACHMENT_EXTENSIONS.has(ext);
 	}
 
 	private attachFile(uri: URI): void {
