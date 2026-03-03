@@ -545,8 +545,6 @@ export class VoidWelcomeScreen extends Disposable {
 
 	async render(parent: HTMLElement): Promise<void> {
 		await this.ensureRoot();
-		await this.scanDisk();
-		this.loadPins();
 
 		this.shell = dom.append(parent, dom.$('.vs'));
 		this.shell.setAttribute('data-s', 'intro');
@@ -557,10 +555,27 @@ export class VoidWelcomeScreen extends Disposable {
 		this.bindKeys();
 
 		this.measure();
-		window.addEventListener('resize', () => this.measure());
+		this._register(dom.addDisposableListener(window, dom.EventType.RESIZE, () => this.measure()));
 
 		this.setState('intro');
 		setTimeout(() => this.setState('desktop'), 1500);
+
+		void this.hydrateProjects();
+	}
+
+	private async hydrateProjects(): Promise<void> {
+		try {
+			await this.scanDisk();
+			this.loadPins();
+			this.rebuildGrid();
+			this.rebuildOrbits();
+			this.measure();
+			if (this.state === 'search') {
+				this.filter();
+			}
+		} catch (error) {
+			console.error('[Void] Failed to hydrate projects:', error);
+		}
 	}
 
 	private measure(): void {
