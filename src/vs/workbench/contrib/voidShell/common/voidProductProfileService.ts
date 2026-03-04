@@ -1,5 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine - Product UI Profile
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 export interface IProductUiProfile {
@@ -18,6 +19,8 @@ export const VOID_PRODUCT_UI_PROFILE: IProductUiProfile = {
 	hiddenViewContainers: new Set<string>([
 		'workbench.view.debug',
 		'workbench.view.search',
+		'workbench.view.testing',
+		'workbench.view.comments',
 		'workbench.view.extensions',
 		'workbench.panel.repl',
 		'workbench.panel.markers'
@@ -26,6 +29,8 @@ export const VOID_PRODUCT_UI_PROFILE: IProductUiProfile = {
 		'.composite[data-id="workbench.view.debug"]',
 		'.composite[data-id="workbench.view.extensions"]',
 		'.composite[data-id="workbench.view.search"]',
+		'.composite[data-id="workbench.view.testing"]',
+		'.composite[data-id="workbench.view.comments"]',
 		'.composite[data-id="workbench.panel.repl"]',
 		'.composite[data-id="workbench.panel.markers"]'
 	],

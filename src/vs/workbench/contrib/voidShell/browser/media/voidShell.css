@@ -1,5 +1,6 @@
 /*---------------------------------------------------------------------------------------------
- *  Void Engine - Product Shell Cleanup Styles
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .void-shell-hidden {
@@ -7,49 +8,103 @@ body.void-engine-shell:not(.void-shell-dev-fallback) .void-shell-hidden {
 }
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench {
-	--void-shell-bg-0: #141414;
-	--void-shell-bg-1: #1b1b1b;
-	--void-shell-border: #2f2f2f;
-	--void-shell-text: #d9d9d9;
-	--void-shell-text-muted: #8e8e8e;
-	--void-shell-accent: #d47a4a;
+	background: #1b1b1b;
 }
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.activitybar {
-	background: linear-gradient(180deg, #171717 0%, #151515 100%);
-	border-right: 1px solid var(--void-shell-border);
+	background: #141414;
+	border-right: 1px solid #2f2f2f;
 	width: 52px !important;
 }
 
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.sidebar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.editor,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.panel,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.auxiliarybar {
+	background: #1b1b1b !important;
+}
+
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-label.codicon {
-	color: var(--void-shell-text-muted);
+	color: #8e8e8e;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item .action-label {
+	width: 30px;
+	height: 30px;
+	margin: 0 auto;
+	border-radius: 9px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item .action-label.codicon::before {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	line-height: 1;
 }
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item:hover .action-label.codicon,
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item.checked .action-label.codicon {
-	color: var(--void-shell-text);
+	color: #d9d9d9;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item:hover .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item.checked .action-label {
+	background: #252525;
 }
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item.checked .active-item-indicator::before {
-	background-color: var(--void-shell-accent) !important;
+	background-color: #d47a4a !important;
 }
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar {
 	background: #1a1a1a !important;
-	border-bottom: 1px solid var(--void-shell-border);
+	border-bottom: 1px solid #2f2f2f;
 }
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item {
-	color: var(--void-shell-text-muted);
+	color: #8e8e8e;
 }
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item:hover {
-	color: var(--void-shell-text);
+	color: #d9d9d9;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item .action-label {
+	width: 28px;
+	height: 28px;
+	border-radius: 8px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item .action-label.codicon::before {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	line-height: 1;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item:hover .action-label {
+	background: #272727;
 }
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.statusbar {
 	background: #151515 !important;
-	border-top: 1px solid var(--void-shell-border);
+	border-top: 1px solid #2f2f2f;
 }
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.statusbar .statusbar-item {
@@ -59,5 +114,33 @@ body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.sta
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.statusbar .statusbar-item:hover {
 	background: #242424 !important;
 	color: #d7d7d7 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .pane-header .actions-container .action-item {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .pane-header .actions-container .action-item .action-label {
+	width: 24px;
+	height: 24px;
+	border-radius: 7px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .pane-header .actions-container .action-item .action-label.codicon::before {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	line-height: 1;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .pane-header .actions-container .action-item:hover .action-label {
+	background: #272727;
 }
 
