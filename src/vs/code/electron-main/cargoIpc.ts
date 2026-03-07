@@ -12,6 +12,73 @@ import * as crypto from 'crypto';
 const gameProcesses = new Map<number, ChildProcess>();
 const lastBuildHashes = new Map<string, string>(); // workspace -> hash
 
+interface ICargoPreflightResult {
+	cargoAvailable: boolean;
+	rustcAvailable: boolean;
+	cargoWatchAvailable: boolean;
+	workspaceExists: boolean;
+	cargoTomlExists: boolean;
+	hasVoidSceneLoaderDependency: boolean;
+	voidSceneLoaderUsesPathDependency: boolean;
+	recommendedVoidSceneLoaderPath?: string;
+	diagnostics: string[];
+}
+
+function probeCommand(command: string, args: string[], cwd?: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		const proc = spawn(command, args, {
+			shell: true,
+			cwd
+		});
+		proc.on('close', (code) => resolve(code === 0));
+		proc.on('error', () => resolve(false));
+	});
+}
+
+function inspectVoidSceneLoaderDependency(cargoTomlContent: string): { hasDependency: boolean; usesPathDependency: boolean } {
+	if (!cargoTomlContent.trim()) {
+		return { hasDependency: false, usesPathDependency: false };
+	}
+
+	const hasDependency = /\bvoid-scene-loader\b/.test(cargoTomlContent);
+	const usesPathInline = /void-scene-loader\s*=\s*\{[^}]*\bpath\s*=/.test(cargoTomlContent);
+	const tableMatch = cargoTomlContent.match(/\[dependencies\.void-scene-loader\]([\s\S]*?)(?:\n\[|$)/);
+	const usesPathTable = Boolean(tableMatch?.[1] && /\bpath\s*=/.test(tableMatch[1]));
+	return {
+		hasDependency,
+		usesPathDependency: usesPathInline || usesPathTable
+	};
+}
+
+function findLocalVoidSceneLoaderPath(workspacePath: string): string | undefined {
+	const candidates = [
+		path.resolve(workspacePath, '..', 'vscode', 'engine', 'void-scene-loader'),
+		path.resolve(workspacePath, '..', '..', 'vscode', 'engine', 'void-scene-loader'),
+		path.resolve(workspacePath, '..', '..', '..', 'vscode', 'engine', 'void-scene-loader'),
+		path.resolve(process.cwd(), 'engine', 'void-scene-loader'),
+		path.resolve(process.cwd(), 'vscode', 'engine', 'void-scene-loader'),
+		path.resolve(process.cwd(), '..', 'vscode', 'engine', 'void-scene-loader')
+	];
+	for (const candidate of candidates) {
+		if (!fs.existsSync(candidate)) {
+			continue;
+		}
+		if (!fs.existsSync(path.join(candidate, 'Cargo.toml'))) {
+			continue;
+		}
+		return candidate;
+	}
+	return undefined;
+}
+
+function toRelativePosixPath(fromDir: string, toPath: string): string {
+	const relative = path.relative(fromDir, toPath).replace(/\\/g, '/');
+	if (!relative.length) {
+		return '.';
+	}
+	return relative.startsWith('.') ? relative : `./${relative}`;
+}
+
 /**
  * Calculate hash of all Rust source files in workspace
  */
@@ -96,6 +163,61 @@ export function setupCargoIPC(): void {
 				resolve(false);
 			});
 		});
+	});
+
+	ipcMain.handle('vscode:cargo-preflight', async (_event, { workspacePath }: { workspacePath: string }) => {
+		const workspaceExists = typeof workspacePath === 'string' && workspacePath.length > 0 && fs.existsSync(workspacePath);
+		const cargoTomlPath = workspaceExists ? path.join(workspacePath, 'Cargo.toml') : '';
+		const cargoTomlExists = workspaceExists && fs.existsSync(cargoTomlPath);
+		const cargoTomlContent = cargoTomlExists ? fs.readFileSync(cargoTomlPath, 'utf8') : '';
+		const dep = inspectVoidSceneLoaderDependency(cargoTomlContent);
+		const localLoaderPath = workspaceExists ? findLocalVoidSceneLoaderPath(workspacePath) : undefined;
+		const cargoAvailable = await probeCommand('cargo', ['--version'], workspacePath);
+		const rustcAvailable = await probeCommand('rustc', ['--version'], workspacePath);
+		const cargoWatchAvailable = await probeCommand('cargo', ['watch', '--version'], workspacePath);
+		const recommendedVoidSceneLoaderPath = localLoaderPath && workspaceExists
+			? toRelativePosixPath(workspacePath, localLoaderPath)
+			: undefined;
+
+		const diagnostics: string[] = [];
+		if (!workspaceExists) {
+			diagnostics.push('Workspace path does not exist.');
+		}
+		if (workspaceExists && !cargoTomlExists) {
+			diagnostics.push('Cargo.toml not found in workspace root.');
+		}
+		if (!cargoAvailable) {
+			diagnostics.push('Cargo is not available in PATH.');
+		}
+		if (!rustcAvailable) {
+			diagnostics.push('rustc is not available in PATH.');
+		}
+		if (!cargoWatchAvailable) {
+			diagnostics.push('cargo-watch is not installed. Fallback to cargo build will be used.');
+		}
+		if (cargoTomlExists && !dep.hasDependency) {
+			diagnostics.push('Dependency `void-scene-loader` is missing in Cargo.toml.');
+		}
+		if (cargoTomlExists && dep.hasDependency && !dep.usesPathDependency) {
+			diagnostics.push('`void-scene-loader` is not configured as local path dependency.');
+		}
+		if (cargoTomlExists && dep.hasDependency && !dep.usesPathDependency && recommendedVoidSceneLoaderPath) {
+			diagnostics.push(`Recommended dependency: void-scene-loader = { path = "${recommendedVoidSceneLoaderPath}" }`);
+		}
+
+		const result: ICargoPreflightResult = {
+			cargoAvailable,
+			rustcAvailable,
+			cargoWatchAvailable,
+			workspaceExists,
+			cargoTomlExists,
+			hasVoidSceneLoaderDependency: dep.hasDependency,
+			voidSceneLoaderUsesPathDependency: dep.usesPathDependency,
+			recommendedVoidSceneLoaderPath,
+			diagnostics
+		};
+
+		return result;
 	});
 
 	// F5: cargo run (debug mode for faster compilation)

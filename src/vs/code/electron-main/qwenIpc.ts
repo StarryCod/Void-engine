@@ -71,6 +71,12 @@ export class QwenIPCHandler {
 			this.logService.info('[Qwen IPC] Working directory:', workspacePath);
 		}
 
+		if (!existsSync(this.qwenScriptPath)) {
+			const error = `Process exited with code 1: script file does not exist: ${this.qwenScriptPath}`;
+			this.logService.error('[Qwen IPC] Process failed:', error);
+			return { events: [], error };
+		}
+
 		return new Promise((resolve, reject) => {
 			const events: IQwenEvent[] = [];
 			let errorOutput = '';

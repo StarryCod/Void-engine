@@ -1,5 +1,5 @@
-/*---------------------------------------------------------------------------------------------
- *  Void Engine — WebGL2 3D Viewport v8
+﻿/*---------------------------------------------------------------------------------------------
+ *  Void Engine вЂ” WebGL2 3D Viewport v8
  *  Pure WebGL2, no dependencies, CSP-safe.
  *  FIXED: RON anonymous tuples, Some() wrappers, camera fly mode
  *  UPDATED: Professional wireframe gizmos from gizmoHelpers.ts
@@ -104,6 +104,8 @@ export { GIZMO_COLORS };
 
 type Vec3 = Float32Array;
 type Mat4 = Float32Array;
+type ShadowProfile = 'low' | 'med' | 'high' | 'ultra';
+type RenderDebugView = 'final' | 'albedo' | 'normal' | 'depth' | 'lighting';
 
 const EPSILON = 1e-6;
 const DEG2RAD = Math.PI / 180;
@@ -397,6 +399,9 @@ uniform float uCloudsSpeed;
 uniform float uCloudsHeight;
 uniform float uCloudsCoverage;
 uniform float uCloudsThickness;
+uniform float uCloudsLayer1Speed;
+uniform float uCloudsLayer2Speed;
+uniform float uCloudsDetailStrength;
 uniform float uTime;
 
 // Fog
@@ -596,18 +601,22 @@ float getClouds(vec3 dir, float depth) {
         if (t < 0.0) return 0.0;
 
         vec3 cloudPos = dir * t;
-        float time = uTime * uCloudsSpeed;
+        float baseSpeed = max(0.0, uCloudsSpeed);
+        float layer1Speed = max(0.0, uCloudsLayer1Speed);
+        float layer2Speed = max(0.0, uCloudsLayer2Speed);
+        float time = uTime * baseSpeed;
 
         vec2 baseUv = cloudPos.xz * (0.0024 + 0.0010 * saturate(1.0 - dir.y));
-        vec2 windA = vec2(0.013, 0.005) * (time * 120.0);
-        vec2 windB = vec2(-0.008, 0.011) * (time * 90.0);
+        vec2 windA = vec2(0.013, 0.005) * (time * 120.0 * mix(0.4, 2.0, layer1Speed * 0.25));
+        vec2 windB = vec2(-0.008, 0.011) * (time * 90.0 * mix(0.35, 2.2, layer2Speed * 0.25));
         vec2 windC = vec2(0.021, -0.014) * (time * 70.0);
 
         float shapeNoise = fbm(baseUv + windA);
         float detailNoise = fbm(baseUv * 3.6 + windB);
         float erosionNoise = fbm(baseUv * 6.5 + windC);
 
-        float shape = mix(shapeNoise, detailNoise, 0.35);
+        float detailStrength = clamp(uCloudsDetailStrength, 0.0, 3.0);
+        float shape = mix(shapeNoise, detailNoise, clamp(0.2 + detailStrength * 0.18, 0.2, 0.8));
         float coverage = clamp(uCloudsCoverage, 0.05, 0.95);
         float density = smoothstep(coverage - 0.22, coverage + 0.18, shape);
 
@@ -770,10 +779,10 @@ void main() {
         if (fadeFar < 0.001) discard;
         float fade = fadeNear * fadeFar;
 
-        // Minor grid: every 1 unit — barely visible, light whisper
+        // Minor grid: every 1 unit вЂ” barely visible, light whisper
         float minor = pristineGrid(fragPos, 1.0) * 0.07;
 
-        // Major grid: every 10 units — darker, structural
+        // Major grid: every 10 units вЂ” darker, structural
         float major = pristineGrid(fragPos, 0.1) * 0.18;
 
         // Combine: major is dominant
@@ -787,7 +796,7 @@ void main() {
         // Base grid color: neutral grey
         vec3 color = vec3(g * 0.6);
 
-        // Axis coloring — subtle but readable
+        // Axis coloring вЂ” subtle but readable
         color = mix(color, vec3(0.72, 0.18, 0.16), xAxis * 0.85); // X red
         color = mix(color, vec3(0.16, 0.38, 0.72), zAxis * 0.85); // Z blue
 
@@ -826,89 +835,200 @@ uniform vec3 uAmbientColor;
 uniform float uMetallic;
 uniform float uRoughness;
 uniform float uNumLights;  // 0 = no lights, use preview lighting
+uniform float uTonemapExposure;
+uniform int uTonemapMode;      // 0=Linear,1=Reinhard,2=Filmic,3=ACES
+uniform float uTonemapWhite;
+uniform bool uBloomEnabled;
+uniform float uBloomIntensity;
+uniform float uBloomThreshold;
+uniform bool uAOEnabled;
+uniform float uAOIntensity;
+uniform float uAORadius;
+uniform bool uColorGradingEnabled;
+uniform float uColorGradeTemperature;
+uniform float uColorGradeContrast;
+uniform float uColorGradeSaturation;
+uniform float uShadowQuality;  // 0..3
+uniform int uRenderDebugView;  // 0=final,1=albedo,2=normal,3=depth,4=lighting
 out vec4 fragColor;
 
-// Improved 3-point lighting for preview mode
+float saturate(float v) { return clamp(v, 0.0, 1.0); }
+
+vec3 applyTonemap(vec3 color) {
+        color = max(color, vec3(0.0));
+        color *= max(0.01, uTonemapExposure);
+
+        if (uTonemapMode == 0) {
+                return min(color, vec3(max(0.1, uTonemapWhite)));
+        }
+        if (uTonemapMode == 1) {
+                return color / (vec3(1.0) + color);
+        }
+        if (uTonemapMode == 2) {
+                color = max(vec3(0.0), color - 0.004);
+                return (color * (6.2 * color + 0.5)) / (color * (6.2 * color + 1.7) + 0.06);
+        }
+        float a = 2.51;
+        float b = 0.03;
+        float c = 2.43;
+        float d = 0.59;
+        float e = 0.14;
+        return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
+}
+
+vec3 applyColorGrading(vec3 color) {
+        float temp = clamp(uColorGradeTemperature, -1.0, 1.0);
+        vec3 temperatureBalance = vec3(1.0 + temp * 0.10, 1.0, 1.0 - temp * 0.10);
+        color *= temperatureBalance;
+
+        float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        color = mix(vec3(luma), color, clamp(uColorGradeSaturation, 0.0, 2.0));
+        color = (color - 0.5) * max(0.05, uColorGradeContrast) + 0.5;
+        return max(color, vec3(0.0));
+}
+
+float computeAO(vec3 N, vec3 V) {
+        if (!uAOEnabled) {
+                return 1.0;
+        }
+        float radiusNorm = saturate(uAORadius / 5.0);
+        float curve = mix(0.7, 1.8, radiusNorm);
+        float grazing = pow(1.0 - max(dot(N, V), 0.0), curve);
+        float strength = clamp(uAOIntensity * 0.35, 0.0, 0.92);
+        return clamp(1.0 - grazing * strength, 0.22, 1.0);
+}
+
+float computeShadowProfileFactor(vec3 N, vec3 L) {
+        float quality01 = saturate(uShadowQuality / 3.0);
+        float nDotL = dot(N, L);
+        float softness = mix(0.28, 0.08, quality01);
+        float litBand = smoothstep(-softness, softness, nDotL);
+        float shadowStrength = mix(0.10, 0.40, quality01);
+        return mix(1.0 - shadowStrength, 1.0, litBand);
+}
+
+vec3 applyBloom(vec3 color) {
+        if (!uBloomEnabled) {
+                return color;
+        }
+        float threshold = max(0.001, uBloomThreshold);
+        float knee = max(0.05, threshold * 0.5 + 0.25);
+        float brightness = max(max(color.r, color.g), color.b);
+        float bloomMask = smoothstep(threshold - knee, threshold + knee, brightness);
+        float bloomStrength = clamp(uBloomIntensity, 0.0, 4.0) * 0.16;
+        return color + color * bloomMask * bloomStrength;
+}
+
 void main() {
         vec3 N = normalize(vWorldNormal);
         vec3 V = normalize(uCameraPos - vWorldPos);
-        
+        vec3 baseAlbedo = max(uColor, vec3(0.0));
+
         // Fresnel for rim lighting
         float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-        
-        vec3 finalColor = vec3(0.0);
-        
+        vec3 lightingColor = vec3(0.0);
+
         if (uNumLights < 0.5) {
                 // === PREVIEW MODE: Professional 3-point studio lighting ===
-                
+
                 // Key light (main, warm, from upper-right-front)
                 vec3 keyDir = normalize(vec3(0.6, 0.8, 0.5));
                 float keyNdotL = max(dot(N, keyDir), 0.0);
-                vec3 keyDiff = uColor * keyNdotL * vec3(1.0, 0.98, 0.95) * 0.85;
-                
+                vec3 keyDiff = baseAlbedo * keyNdotL * vec3(1.0, 0.98, 0.95) * 0.85;
+
                 // Fill light (softer, cooler, from left)
                 vec3 fillDir = normalize(vec3(-0.5, 0.3, 0.4));
                 float fillNdotL = max(dot(N, fillDir), 0.0);
-                vec3 fillDiff = uColor * fillNdotL * vec3(0.85, 0.88, 1.0) * 0.35;
-                
+                vec3 fillDiff = baseAlbedo * fillNdotL * vec3(0.85, 0.88, 1.0) * 0.35;
+
                 // Rim/back light (from behind, creates edge definition)
                 vec3 rimDir = normalize(vec3(-0.3, 0.2, -0.7));
                 float rimNdotL = max(dot(N, rimDir), 0.0);
-                vec3 rimDiff = uColor * rimNdotL * vec3(0.9, 0.95, 1.0) * 0.25;
-                
+                vec3 rimDiff = baseAlbedo * rimNdotL * vec3(0.9, 0.95, 1.0) * 0.25;
+
                 // Sky dome ambient (hemisphere)
                 float skyFactor = N.y * 0.5 + 0.5;
-                vec3 skyAmbient = uColor * mix(vec3(0.12, 0.13, 0.18), vec3(0.22, 0.24, 0.30), skyFactor) * 0.5;
-                
+                vec3 skyAmbient = baseAlbedo * mix(vec3(0.12, 0.13, 0.18), vec3(0.22, 0.24, 0.30), skyFactor) * 0.5;
+
                 // Ground bounce (subtle warm from below)
                 float groundFactor = -N.y * 0.5 + 0.5;
-                vec3 groundBounce = uColor * vec3(0.15, 0.12, 0.10) * groundFactor * 0.3;
-                
+                vec3 groundBounce = baseAlbedo * vec3(0.15, 0.12, 0.10) * groundFactor * 0.3;
+
                 // Combine diffuse terms
-                finalColor = keyDiff + fillDiff + rimDiff + skyAmbient + groundBounce;
-                
+                lightingColor = keyDiff + fillDiff + rimDiff + skyAmbient + groundBounce;
+
                 // Specular for key light
                 vec3 keyH = normalize(keyDir + V);
                 float keySpec = pow(max(dot(N, keyH), 0.0), mix(16.0, 256.0, 1.0 - uRoughness));
-                vec3 specColor = mix(vec3(0.04), uColor, uMetallic);
-                finalColor += specColor * keySpec * vec3(1.0, 0.98, 0.95) * 0.6;
-                
+                vec3 specColor = mix(vec3(0.04), baseAlbedo, uMetallic);
+                lightingColor += specColor * keySpec * vec3(1.0, 0.98, 0.95) * 0.6;
+
                 // Fresnel rim (subtle, for edge definition)
-                finalColor += vec3(0.15, 0.17, 0.22) * fresnel * (1.0 - uRoughness * 0.5);
-                
+                lightingColor += vec3(0.15, 0.17, 0.22) * fresnel * (1.0 - uRoughness * 0.5);
+
+                // Shadow profile still affects preview via pseudo contact shading.
+                float profile01 = saturate(uShadowQuality / 3.0);
+                float cavity = pow(1.0 - saturate(N.y * 0.5 + 0.5), 1.1 + profile01 * 1.5);
+                lightingColor *= 1.0 - cavity * mix(0.06, 0.22, profile01);
         } else {
                 // === SCENE LIGHTS MODE: Use actual scene lights ===
                 vec3 L = normalize(uLightDir);
                 vec3 H = normalize(L + V);
-                
+
                 float NdotL = max(dot(N, L), 0.0);
-                vec3 diffuse = uColor * NdotL * uLightColor;
-                
+                float shadowProfile = computeShadowProfileFactor(N, L);
+                vec3 diffuse = baseAlbedo * NdotL * uLightColor * shadowProfile;
+
                 float shininess = mix(8.0, 128.0, 1.0 - uRoughness);
                 float NdotH = max(dot(N, H), 0.0);
                 float spec = pow(NdotH, shininess) * (1.0 - uRoughness * 0.8);
-                vec3 specColor = mix(vec3(0.04), uColor, uMetallic);
-                vec3 specular = specColor * spec * uLightColor;
-                
-                vec3 ambient = uColor * uAmbientColor;
-                
+                vec3 specColor = mix(vec3(0.04), baseAlbedo, uMetallic);
+                vec3 specular = specColor * spec * uLightColor * mix(1.0, shadowProfile, 0.35);
+
+                vec3 ambient = baseAlbedo * uAmbientColor;
+
                 // Hemisphere sky light
                 float skyFactor = N.y * 0.5 + 0.5;
-                vec3 skyLight = uColor * mix(vec3(0.08, 0.08, 0.10), vec3(0.14, 0.15, 0.18), skyFactor);
-                
+                vec3 skyLight = baseAlbedo * mix(vec3(0.08, 0.08, 0.10), vec3(0.14, 0.15, 0.18), skyFactor);
+
                 // Fill light (always present, subtle)
                 vec3 fillDir = normalize(vec3(-0.3, 0.2, -0.5));
                 float fillDot = max(dot(N, fillDir), 0.0);
-                vec3 fill = uColor * fillDot * vec3(0.08, 0.09, 0.12);
-                
-                finalColor = ambient + diffuse + specular + fill + skyLight;
-                
+                vec3 fill = baseAlbedo * fillDot * vec3(0.08, 0.09, 0.12);
+
+                lightingColor = ambient + diffuse + specular + fill + skyLight;
+
                 // Fresnel rim
-                finalColor += vec3(0.08, 0.10, 0.14) * fresnel * (1.0 - uRoughness * 0.5);
+                lightingColor += vec3(0.08, 0.10, 0.14) * fresnel * (1.0 - uRoughness * 0.5);
         }
-        
-        // Output
-        fragColor = vec4(finalColor, 1.0);
+
+        lightingColor *= computeAO(N, V);
+
+        if (uRenderDebugView == 1) {
+                fragColor = vec4(baseAlbedo, 1.0);
+                return;
+        }
+        if (uRenderDebugView == 2) {
+                fragColor = vec4(N * 0.5 + 0.5, 1.0);
+                return;
+        }
+        if (uRenderDebugView == 3) {
+                float depth = pow(saturate(gl_FragCoord.z), 0.35);
+                fragColor = vec4(vec3(1.0 - depth), 1.0);
+                return;
+        }
+        if (uRenderDebugView == 4) {
+                fragColor = vec4(clamp(lightingColor, 0.0, 1.0), 1.0);
+                return;
+        }
+
+        vec3 finalColor = applyBloom(lightingColor);
+        finalColor = applyTonemap(finalColor);
+        if (uColorGradingEnabled) {
+                finalColor = applyColorGrading(finalColor);
+        }
+
+        fragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);
 }`;
 
 const FLAT_VERT = `#version 300 es
@@ -1897,6 +2017,10 @@ export class ThreeViewport extends Disposable {
         private lastFPSTime: number = 0;
         private currentFPS: number = 0;
         private dpr: number = 1;
+        private runtimeShadowProfile: ShadowProfile = 'high';
+        private runtimeRenderDebugView: RenderDebugView = 'final';
+        private runtimeShadowProfileOverridden: boolean = false;
+        private runtimeRenderDebugViewOverridden: boolean = false;
 
         private _onSceneModified = this._register(new Emitter<Entity[]>());
         public readonly onSceneModified: Event<Entity[]> = this._onSceneModified.event;
@@ -1937,6 +2061,7 @@ export class ThreeViewport extends Disposable {
         ) {
                 super();
                 this.scene = VecnParser.parse(vecnContent);
+                this.syncRuntimeRenderSettingsFromScene();
                 this.logSceneDiagnostics(this.scene);
                 this.createViewport();
         }
@@ -1962,14 +2087,36 @@ export class ThreeViewport extends Disposable {
 
                 const parsed = VecnParser.parse(vecnContent);
                 if (!parsed) {
-                        // Важное поведение: пока пользователь печатает и файл временно невалидный —
-                        // не обнуляем сцену (иначе всё мигает/пропадает).
-                        // Можно вывести ошибку в this.info при желании.
+                        // Р’Р°Р¶РЅРѕРµ РїРѕРІРµРґРµРЅРёРµ: РїРѕРєР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РїРµС‡Р°С‚Р°РµС‚ Рё С„Р°Р№Р» РІСЂРµРјРµРЅРЅРѕ РЅРµРІР°Р»РёРґРЅС‹Р№ вЂ”
+                        // РЅРµ РѕР±РЅСѓР»СЏРµРј СЃС†РµРЅСѓ (РёРЅР°С‡Рµ РІСЃС‘ РјРёРіР°РµС‚/РїСЂРѕРїР°РґР°РµС‚).
+                        // РњРѕР¶РЅРѕ РІС‹РІРµСЃС‚Рё РѕС€РёР±РєСѓ РІ this.info РїСЂРё Р¶РµР»Р°РЅРёРё.
                         return;
                 }
 
                 this.scene = parsed;
+                this.syncRuntimeRenderSettingsFromScene();
                 this.logSceneDiagnostics(parsed);
+        }
+
+        private syncRuntimeRenderSettingsFromScene(): void {
+                const worldEnv = this.findWorldEnvironmentComponent();
+                if (!worldEnv) {
+                        return;
+                }
+
+                if (!this.runtimeShadowProfileOverridden) {
+                        const parsed = this.parseShadowProfile(worldEnv.shadow_profile);
+                        if (parsed) {
+                                this.runtimeShadowProfile = parsed;
+                        }
+                }
+
+                if (!this.runtimeRenderDebugViewOverridden) {
+                        const parsed = this.parseRenderDebugView(worldEnv.render_debug_view);
+                        if (parsed) {
+                                this.runtimeRenderDebugView = parsed;
+                        }
+                }
         }
 
         private flattenEntities(entities: Entity[], out: Entity[] = []): Entity[] {
@@ -2038,7 +2185,7 @@ export class ThreeViewport extends Disposable {
                         border:1px solid rgba(255,255,255,0.04);
                 `;
 
-                // Mini Inspector HUD (top-right) — COMPACT
+                // Mini Inspector HUD (top-right) вЂ” COMPACT
                 this.hud = DOM.append(this.container, DOM.$('.viewport-hud'));
                 this.hud.style.cssText = `
                         position:absolute;
@@ -2064,7 +2211,7 @@ export class ThreeViewport extends Disposable {
                 });
 
                 if (!this.gl) {
-                        if (this.info) this.info.textContent = 'WebGL2 not available';
+                        this.info.textContent = 'WebGL2 unavailable';
                         return;
                 }
 
@@ -2090,7 +2237,7 @@ export class ThreeViewport extends Disposable {
                 this.outlineProgram = createProgram(gl, OUTLINE_VERT, OUTLINE_FRAG);
                 this.lineProgram = createProgram(gl, LINE_VERT, LINE_FRAG);
 
-                // Геометрия (solid meshes)
+                // Р“РµРѕРјРµС‚СЂРёСЏ (solid meshes)
                 this.cubeGeo = createCubeGeometry(gl);
                 this.planeGeo = createPlaneGeometry(gl);
                 this.sphereGeo = createSphereGeometry(gl);
@@ -2157,11 +2304,11 @@ export class ThreeViewport extends Disposable {
 
                 this.pickingFBO = createPickingFBO(gl, 1, 1);
 
-                // --- ВАЖНЫЕ НАСТРОЙКИ РЕНДЕРА ---
-                gl.enable(gl.DEPTH_TEST);           // Включаем тест глубины (чтобы нос не просвечивал)
-                gl.depthFunc(gl.LEQUAL);            // Ближние объекты перекрывают дальние
-                gl.disable(gl.CULL_FACE);           // ОТКЛЮЧАЕМ отсечение граней (пусть рисует всё, чтобы не было "вывернутости")
-                // gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); // <-- Это было причиной "вывернутости" если нормали смотрят не туда
+                // --- Р’РђР–РќР«Р• РќРђРЎРўР РћР™РљР Р Р•РќР”Р•Р Рђ ---
+                gl.enable(gl.DEPTH_TEST);           // Р’РєР»СЋС‡Р°РµРј С‚РµСЃС‚ РіР»СѓР±РёРЅС‹ (С‡С‚РѕР±С‹ РЅРѕСЃ РЅРµ РїСЂРѕСЃРІРµС‡РёРІР°Р»)
+                gl.depthFunc(gl.LEQUAL);            // Р‘Р»РёР¶РЅРёРµ РѕР±СЉРµРєС‚С‹ РїРµСЂРµРєСЂС‹РІР°СЋС‚ РґР°Р»СЊРЅРёРµ
+                gl.disable(gl.CULL_FACE);           // РћРўРљР›Р®Р§РђР•Рњ РѕС‚СЃРµС‡РµРЅРёРµ РіСЂР°РЅРµР№ (РїСѓСЃС‚СЊ СЂРёСЃСѓРµС‚ РІСЃС‘, С‡С‚РѕР±С‹ РЅРµ Р±С‹Р»Рѕ "РІС‹РІРµСЂРЅСѓС‚РѕСЃС‚Рё")
+                // gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); // <-- Р­С‚Рѕ Р±С‹Р»Рѕ РїСЂРёС‡РёРЅРѕР№ "РІС‹РІРµСЂРЅСѓС‚РѕСЃС‚Рё" РµСЃР»Рё РЅРѕСЂРјР°Р»Рё СЃРјРѕС‚СЂСЏС‚ РЅРµ С‚СѓРґР°
 
                 gl.clearColor(0.145, 0.15, 0.165, 1);
         }
@@ -2286,6 +2433,11 @@ export class ThreeViewport extends Disposable {
                         // Removed mode switching logic
 
                         if (k === 'f' && !this.isRightMouseDown) this.focusSelected();
+                        if (k === 'f7') {
+                                this.cycleShadowProfile();
+                        } else if (k === 'f8') {
+                                this.cycleRenderDebugView();
+                        }
                 };
                 const onKeyUp = (e: KeyboardEvent) => { this.keys[e.key.toLowerCase()] = false; };
                 window.addEventListener('keydown', onKeyDown);
@@ -2326,6 +2478,100 @@ export class ThreeViewport extends Disposable {
                         else if (sh.type === 'Plane') radius = (sh.size || 1) * 0.5 * Math.max(sc[0], sc[2]);
                 }
                 this.camera.focusOn(center, radius);
+        }
+
+        private findWorldEnvironmentComponent(): any | null {
+                if (!this.scene?.entities?.length) {
+                        return null;
+                }
+
+                const stack: Entity[] = [...this.scene.entities];
+                while (stack.length) {
+                        const entity = stack.shift()!;
+                        const worldEnv = entity.components.find((component: Component) => component.type === 'WorldEnvironment');
+                        if (worldEnv) {
+                                return worldEnv;
+                        }
+                        if (entity.children.length) {
+                                for (const child of entity.children) {
+                                        stack.push(child);
+                                }
+                        }
+                }
+                return null;
+        }
+
+        private parseShadowProfile(profileRaw: string | undefined): ShadowProfile | null {
+                const normalized = (profileRaw ?? '').toLowerCase();
+                if (normalized === 'low' || normalized === 'med' || normalized === 'high' || normalized === 'ultra') {
+                        return normalized;
+                }
+                return null;
+        }
+
+        private parseRenderDebugView(viewRaw: string | undefined): RenderDebugView | null {
+                const normalized = (viewRaw ?? '').toLowerCase();
+                if (normalized === 'final' || normalized === 'albedo' || normalized === 'normal' || normalized === 'depth' || normalized === 'lighting') {
+                        return normalized;
+                }
+                return null;
+        }
+
+        private resolveShadowProfileValue(profileRaw: string | undefined): ShadowProfile {
+                if (this.runtimeShadowProfileOverridden) {
+                        return this.runtimeShadowProfile;
+                }
+                const parsed = this.parseShadowProfile(profileRaw);
+                if (parsed) return parsed;
+                return this.runtimeShadowProfile;
+        }
+
+        private resolveRenderDebugViewValue(viewRaw: string | undefined): RenderDebugView {
+                if (this.runtimeRenderDebugViewOverridden) {
+                        return this.runtimeRenderDebugView;
+                }
+                const parsed = this.parseRenderDebugView(viewRaw);
+                if (parsed) return parsed;
+                return this.runtimeRenderDebugView;
+        }
+
+        private resolveTonemapModeIndex(modeRaw: string | undefined): number {
+                const mode = modeRaw ?? 'Filmic';
+                if (mode === 'Linear') return 0;
+                if (mode === 'Reinhard') return 1;
+                if (mode === 'Filmic') return 2;
+                return 3;
+        }
+
+        private shadowProfileToQuality(profile: ShadowProfile): number {
+                if (profile === 'low') return 0;
+                if (profile === 'med') return 1;
+                if (profile === 'high') return 2;
+                return 3;
+        }
+
+        private renderDebugViewToIndex(view: RenderDebugView): number {
+                if (view === 'albedo') return 1;
+                if (view === 'normal') return 2;
+                if (view === 'depth') return 3;
+                if (view === 'lighting') return 4;
+                return 0;
+        }
+
+        private cycleShadowProfile(): void {
+                const order: ShadowProfile[] = ['low', 'med', 'high', 'ultra'];
+                const i = order.indexOf(this.runtimeShadowProfile);
+                this.runtimeShadowProfile = order[(i + 1) % order.length];
+                this.runtimeShadowProfileOverridden = true;
+                this.updateInfoText();
+        }
+
+        private cycleRenderDebugView(): void {
+                const order: RenderDebugView[] = ['final', 'albedo', 'normal', 'depth', 'lighting'];
+                const i = order.indexOf(this.runtimeRenderDebugView);
+                this.runtimeRenderDebugView = order[(i + 1) % order.length];
+                this.runtimeRenderDebugViewOverridden = true;
+                this.updateInfoText();
         }
 
         // ========================================================================
@@ -2421,7 +2667,7 @@ export class ThreeViewport extends Disposable {
                 const findEnvComponents = (list: Entity[]): void => {
                         for (const e of list) {
                                 const lname = (e.name || '').toLowerCase();
-                                if (lname.includes('sky') || lname.includes('небо') || lname.includes('worldenvironment')) {
+                                if (lname.includes('sky') || lname.includes('РЅРµР±Рѕ') || lname.includes('worldenvironment')) {
                                         hasSkyHint = true;
                                 }
 
@@ -2579,6 +2825,9 @@ export class ThreeViewport extends Disposable {
                 gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsHeight'), clamp(skySource?.clouds_height ?? 1300.0, 50.0, 8000.0));
                 gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsCoverage'), clamp(skySource?.clouds_coverage ?? 0.58, 0.05, 0.95));
                 gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsThickness'), clamp(skySource?.clouds_thickness ?? 260.0, 20.0, 1500.0));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsLayer1Speed'), clamp(skySource?.clouds_layer1_speed ?? 1.0, 0.0, 4.0));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsLayer2Speed'), clamp(skySource?.clouds_layer2_speed ?? 0.62, 0.0, 4.0));
+                gl.uniform1f(gl.getUniformLocation(this.bgProgram, 'uCloudsDetailStrength'), clamp(skySource?.clouds_detail_strength ?? 1.0, 0.0, 3.0));
 
                 gl.uniform1i(gl.getUniformLocation(this.bgProgram, 'uFogEnabled'), skySource?.fog_enabled ? 1 : 0);
                 const fogColor = skySource?.fog_color ?? [0.68, 0.72, 0.78, 1.0];
@@ -2615,7 +2864,7 @@ export class ThreeViewport extends Disposable {
                 gl.bindVertexArray(null);
         }
 
-        // Хелпер: Пройтись по дереву и получить плоский список объектов с УЖЕ посчитанными мировыми матрицами
+        // РҐРµР»РїРµСЂ: РџСЂРѕР№С‚РёСЃСЊ РїРѕ РґРµСЂРµРІСѓ Рё РїРѕР»СѓС‡РёС‚СЊ РїР»РѕСЃРєРёР№ СЃРїРёСЃРѕРє РѕР±СЉРµРєС‚РѕРІ СЃ РЈР–Р• РїРѕСЃС‡РёС‚Р°РЅРЅС‹РјРё РјРёСЂРѕРІС‹РјРё РјР°С‚СЂРёС†Р°РјРё
         private getRenderList(): { entity: Entity; worldMatrix: Mat4 }[] {
                 if (!this.scene?.entities) return [];
 
@@ -2671,7 +2920,7 @@ export class ThreeViewport extends Disposable {
                 return result;
         }
         private renderEntities(gl: WebGL2RenderingContext, pickMode: boolean): void {
-                // ИСПОЛЬЗУЕМ НОВЫЙ МЕТОД с иерархией
+                // РРЎРџРћР›Р¬Р—РЈР•Рњ РќРћР’Р«Р™ РњР•РўРћР” СЃ РёРµСЂР°СЂС…РёРµР№
                 const renderItems = this.getRenderList();
                 // Rendering entities
                 if (renderItems.length === 0) return;
@@ -2735,6 +2984,51 @@ export class ThreeViewport extends Disposable {
                         }
                         
                         gl.uniform3fv(gl.getUniformLocation(prog, 'uCameraPos'), this.camera.position);
+
+                        const clamp = (v: number, min: number, max: number): number => Math.max(min, Math.min(max, v));
+                        const worldEnv = this.findWorldEnvironmentComponent();
+
+                        const tonemapMode = this.resolveTonemapModeIndex(worldEnv?.tonemap_mode);
+                        const tonemapExposure = clamp(worldEnv?.tonemap_exposure ?? 1.0, 0.05, 8.0);
+                        const tonemapWhite = clamp(worldEnv?.tonemap_white ?? 1.0, 0.1, 8.0);
+
+                        const bloomEnabled = Boolean(worldEnv ? (worldEnv.post_bloom_enabled ?? worldEnv.glow_enabled ?? false) : false);
+                        const bloomIntensity = clamp(worldEnv?.post_bloom_intensity ?? worldEnv?.glow_intensity ?? 0.8, 0.0, 4.0);
+                        const bloomThreshold = clamp(worldEnv?.post_bloom_threshold ?? worldEnv?.glow_threshold ?? 0.9, 0.0, 4.0);
+
+                        const aoEnabled = Boolean(worldEnv ? (worldEnv.post_ao_enabled ?? worldEnv.ssao_enabled ?? false) : false);
+                        const aoIntensity = clamp(worldEnv?.post_ao_intensity ?? worldEnv?.ssao_intensity ?? 1.0, 0.0, 4.0);
+                        const aoRadius = clamp(worldEnv?.post_ao_radius ?? worldEnv?.ssao_radius ?? 1.0, 0.1, 10.0);
+
+                        const colorGradingEnabled = Boolean(worldEnv?.color_grading_enabled ?? false);
+                        const colorTemperature = clamp(worldEnv?.color_grading_temperature ?? 0.0, -1.0, 1.0);
+                        const colorContrast = clamp(worldEnv?.color_grading_contrast ?? 1.0, 0.05, 2.0);
+                        const colorSaturation = clamp(worldEnv?.color_grading_saturation ?? 1.0, 0.0, 2.0);
+
+                        const activeShadowProfile = this.resolveShadowProfileValue(worldEnv?.shadow_profile);
+                        const activeDebugView = this.resolveRenderDebugViewValue(worldEnv?.render_debug_view);
+                        this.runtimeShadowProfile = activeShadowProfile;
+                        this.runtimeRenderDebugView = activeDebugView;
+
+                        gl.uniform1i(gl.getUniformLocation(prog, 'uTonemapMode'), tonemapMode);
+                        gl.uniform1f(gl.getUniformLocation(prog, 'uTonemapExposure'), tonemapExposure);
+                        gl.uniform1f(gl.getUniformLocation(prog, 'uTonemapWhite'), tonemapWhite);
+
+                        gl.uniform1i(gl.getUniformLocation(prog, 'uBloomEnabled'), bloomEnabled ? 1 : 0);
+                        gl.uniform1f(gl.getUniformLocation(prog, 'uBloomIntensity'), bloomIntensity);
+                        gl.uniform1f(gl.getUniformLocation(prog, 'uBloomThreshold'), bloomThreshold);
+
+                        gl.uniform1i(gl.getUniformLocation(prog, 'uAOEnabled'), aoEnabled ? 1 : 0);
+                        gl.uniform1f(gl.getUniformLocation(prog, 'uAOIntensity'), aoIntensity);
+                        gl.uniform1f(gl.getUniformLocation(prog, 'uAORadius'), aoRadius);
+
+                        gl.uniform1i(gl.getUniformLocation(prog, 'uColorGradingEnabled'), colorGradingEnabled ? 1 : 0);
+                        gl.uniform1f(gl.getUniformLocation(prog, 'uColorGradeTemperature'), colorTemperature);
+                        gl.uniform1f(gl.getUniformLocation(prog, 'uColorGradeContrast'), colorContrast);
+                        gl.uniform1f(gl.getUniformLocation(prog, 'uColorGradeSaturation'), colorSaturation);
+
+                        gl.uniform1f(gl.getUniformLocation(prog, 'uShadowQuality'), this.shadowProfileToQuality(activeShadowProfile));
+                        gl.uniform1i(gl.getUniformLocation(prog, 'uRenderDebugView'), this.renderDebugViewToIndex(activeDebugView));
                 }
 
                 const normMat = m4Create(), mvp = m4Create();
@@ -4093,7 +4387,7 @@ export class ThreeViewport extends Disposable {
                 gl.bindVertexArray(geo.vao);
                 gl.drawElements(gl.TRIANGLES, geo.indexCount, gl.UNSIGNED_SHORT, 0);
 
-                // === STEP 2: Render outline — enlarged mesh, only where stencil != 1 ===
+                // === STEP 2: Render outline вЂ” enlarged mesh, only where stencil != 1 ===
                 gl.stencilFunc(gl.NOTEQUAL, 1, 0xFF);
                 gl.stencilMask(0x00);
                 gl.colorMask(true, true, true, true);
@@ -4106,7 +4400,7 @@ export class ThreeViewport extends Disposable {
                 const center = v3(drawMatrix[12], drawMatrix[13], drawMatrix[14]);
                 const dist = v3Dist(this.camera.position, center);
 
-                // Thin crisp outline — scales gently with distance
+                // Thin crisp outline вЂ” scales gently with distance
                 const outlineWidth = Math.max(0.005, Math.min(0.035, dist * 0.0018));
 
                 gl.uniformMatrix4fv(gl.getUniformLocation(this.outlineProgram, 'uModel'), false, drawMatrix);
@@ -4127,13 +4421,13 @@ export class ThreeViewport extends Disposable {
         }
 
         // ========================================================================
-        // ИКОНКИ И ГИЗМО
+        // РРљРћРќРљР Р Р“РР—РњРћ
         // ========================================================================
 
         // renderIcons removed - using renderSceneIcons2D instead
 
         // ========================================================================
-        // GIZMO (W/E/R) — render + pick + drag
+        // GIZMO (W/E/R) вЂ” render + pick + drag
         // ========================================================================
 
         private renderGizmo(gl: WebGL2RenderingContext, center: Vec3, pickMode: boolean): void {
@@ -4419,9 +4713,9 @@ export class ThreeViewport extends Disposable {
                 // Plane handles
                 if (handle === 'txy' || handle === 'txz' || handle === 'tyz') {
                         let planeN = v3(0, 1, 0); // normal of the plane
-                        if (handle === 'txy') planeN = v3(0, 0, 1);  // XY plane → normal Z
-                        else if (handle === 'txz') planeN = v3(0, 1, 0); // XZ plane → normal Y
-                        else if (handle === 'tyz') planeN = v3(1, 0, 0);  // YZ plane → normal X
+                        if (handle === 'txy') planeN = v3(0, 0, 1);  // XY plane в†’ normal Z
+                        else if (handle === 'txz') planeN = v3(0, 1, 0); // XZ plane в†’ normal Y
+                        else if (handle === 'tyz') planeN = v3(1, 0, 0);  // YZ plane в†’ normal X
 
                         const ray = getRayFromScreen(this.camera, this.gl, x, y);
                         intersectRayPlane(ray.origin, ray.dir, center, planeN, this.dragStartHit);
@@ -4597,7 +4891,7 @@ export class ThreeViewport extends Disposable {
         }
 
         private updateHud(): void {
-                // HUD no longer needed — inspector is docked
+                // HUD no longer needed вЂ” inspector is docked
                 if (this.hud) this.hud.style.display = 'none';
         }
 
@@ -4694,7 +4988,7 @@ export class ThreeViewport extends Disposable {
                 gl.readPixels(Math.floor(x), Math.floor(y), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
                 const pickedIndex = colorToEntityId(pixel);
                 
-                // Ищем в renderList (теперь используем getRenderList для правильной индексации)
+                // РС‰РµРј РІ renderList (С‚РµРїРµСЂСЊ РёСЃРїРѕР»СЊР·СѓРµРј getRenderList РґР»СЏ РїСЂР°РІРёР»СЊРЅРѕР№ РёРЅРґРµРєСЃР°С†РёРё)
                 const items = this.getRenderList();
                 const picked = (pickedIndex >= 0 && pickedIndex < items.length) ? items[pickedIndex].entity : null;
                 this.selectedEntityId = picked?.id ?? null;
@@ -4714,12 +5008,12 @@ export class ThreeViewport extends Disposable {
                 if (!this.isRightMouseDown || !this.camera.flyMode) return;
                 const speed = this.keys['shift'] ? this.flySpeed * 3 : this.flySpeed;
                 let fwd = 0, rt = 0, up = 0;
-                if (this.keys['w'] || this.keys['ц']) fwd += 1;
-                if (this.keys['s'] || this.keys['ы']) fwd -= 1;
-                if (this.keys['d'] || this.keys['в']) rt += 1;
-                if (this.keys['a'] || this.keys['ф']) rt -= 1;
-                if (this.keys['e'] || this.keys['у']) up += 1;
-                if (this.keys['q'] || this.keys['й']) up -= 1;
+                if (this.keys['w'] || this.keys['С†']) fwd += 1;
+                if (this.keys['s'] || this.keys['С‹']) fwd -= 1;
+                if (this.keys['d'] || this.keys['РІ']) rt += 1;
+                if (this.keys['a'] || this.keys['С„']) rt -= 1;
+                if (this.keys['e'] || this.keys['Сѓ']) up += 1;
+                if (this.keys['q'] || this.keys['Р№']) up -= 1;
                 this.camera.flyMove(fwd, rt, up, speed);
         }
 
@@ -4897,7 +5191,7 @@ export class ThreeViewport extends Disposable {
         private updateInfoText(): void {
                 if (!this.info) return;
                 const ec = this.getVisibleEntities().length;
-                this.info.textContent = `${this.currentFPS} fps · ${ec} obj`;
+                this.info.textContent = `${this.currentFPS} fps | ${ec} obj | sh:${this.runtimeShadowProfile} | dbg:${this.runtimeRenderDebugView}`;
         }
 
         private getVisibleEntities(): Entity[] {
@@ -4937,3 +5231,5 @@ export class ThreeViewport extends Disposable {
                 super.dispose();
         }
 }
+
+

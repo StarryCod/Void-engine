@@ -233,11 +233,55 @@ pub struct WorldEnvironmentComponent {
     #[serde(default)]
     pub tonemap_white: Option<f32>,
     #[serde(default)]
+    pub post_bloom_enabled: Option<bool>,
+    #[serde(default)]
+    pub post_bloom_intensity: Option<f32>,
+    #[serde(default)]
+    pub post_bloom_threshold: Option<f32>,
+    #[serde(default)]
+    pub post_ao_enabled: Option<bool>,
+    #[serde(default)]
+    pub post_ao_intensity: Option<f32>,
+    #[serde(default)]
+    pub post_ao_radius: Option<f32>,
+    #[serde(default)]
+    pub color_grading_enabled: Option<bool>,
+    #[serde(default)]
+    pub color_grading_temperature: Option<f32>,
+    #[serde(default)]
+    pub color_grading_contrast: Option<f32>,
+    #[serde(default)]
+    pub color_grading_saturation: Option<f32>,
+    #[serde(default)]
+    pub shadow_profile: Option<String>,
+    #[serde(default)]
+    pub render_debug_view: Option<String>,
+    #[serde(default)]
     pub sun_enabled: Option<bool>,
     #[serde(default)]
     pub sun_energy: Option<f32>,
     #[serde(default)]
+    pub sun_color: Option<(f32, f32, f32, f32)>,
+    #[serde(default)]
+    pub sun_position: Option<(f32, f32, f32)>,
+    #[serde(default)]
     pub clouds_enabled: Option<bool>,
+    #[serde(default)]
+    pub clouds_color: Option<(f32, f32, f32, f32)>,
+    #[serde(default)]
+    pub clouds_density: Option<f32>,
+    #[serde(default)]
+    pub clouds_speed: Option<f32>,
+    #[serde(default)]
+    pub clouds_coverage: Option<f32>,
+    #[serde(default)]
+    pub clouds_thickness: Option<f32>,
+    #[serde(default)]
+    pub clouds_layer1_speed: Option<f32>,
+    #[serde(default)]
+    pub clouds_layer2_speed: Option<f32>,
+    #[serde(default)]
+    pub clouds_detail_strength: Option<f32>,
     #[serde(default)]
     pub fog_enabled: Option<bool>,
     #[serde(default)]

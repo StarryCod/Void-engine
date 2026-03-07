@@ -7,6 +7,24 @@ body.void-engine-shell:not(.void-shell-dev-fallback) .void-shell-hidden {
 	display: none !important;
 }
 
+body.void-engine-shell:not(.void-shell-dev-fallback) {
+	--ve-layer-titlebar: 120;
+	--ve-layer-shell-overlay: 3200;
+	--ve-layer-context-menu: 3220;
+	--ve-layer-quick-input: 3260;
+	--ve-layer-dialog: 3300;
+	--ve-layer-tooltip: 3340;
+	--ve-popup-bg: #252525;
+	--ve-popup-elevated: #252525;
+	--ve-popup-border: rgba(255, 255, 255, 0.12);
+	--ve-popup-input-border: rgba(255, 255, 255, 0.12);
+	--ve-popup-hover: #2c2c2c;
+	--ve-popup-active: #303030;
+	--ve-popup-text: #e7e7e7;
+	--ve-popup-muted: #a4a4a4;
+	--ve-popup-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+}
+
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench {
 	background: #1b1b1b;
 }
@@ -29,23 +47,22 @@ body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activity
 }
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item {
-	display: flex;
+	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 }
 
-body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item .action-label {
-	width: 30px;
-	height: 30px;
-	margin: 0 auto;
-	border-radius: 9px;
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-label {
+	width: 32px;
+	height: 32px;
+	border-radius: 10px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	position: relative;
 }
 
-body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item .action-label.codicon::before {
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-label.codicon::before {
 	position: absolute;
 	left: 50%;
 	top: 50%;
@@ -67,20 +84,27 @@ body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activity
 	background-color: #d47a4a !important;
 }
 
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .activitybar .action-item.checked .active-item-indicator {
+	left: 0 !important;
+}
+
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar {
 	background: #1a1a1a !important;
 	border-bottom: 1px solid #2f2f2f;
 }
 
-body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item {
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .monaco-action-bar > .actions-container > .action-item {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	color: #8e8e8e;
 }
 
-body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item:hover {
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .monaco-action-bar > .actions-container > .action-item:hover {
 	color: #d9d9d9;
 }
 
-body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item .action-label {
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .monaco-action-bar > .actions-container > .action-item > .action-label {
 	width: 28px;
 	height: 28px;
 	border-radius: 8px;
@@ -90,7 +114,7 @@ body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.tit
 	position: relative;
 }
 
-body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item .action-label.codicon::before {
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .monaco-action-bar > .actions-container > .action-item > .action-label.codicon::before {
 	position: absolute;
 	left: 50%;
 	top: 50%;
@@ -98,7 +122,7 @@ body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.tit
 	line-height: 1;
 }
 
-body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar .action-item:hover .action-label {
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .monaco-action-bar > .actions-container > .action-item:hover > .action-label {
 	background: #272727;
 }
 
@@ -142,5 +166,817 @@ body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .pane-hea
 
 body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .pane-header .actions-container .action-item:hover .action-label {
 	background: #272727;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-left .menubar > .menubar-menu-button {
+	display: inline-flex;
+	align-items: center;
+	min-height: 30px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-left .menubar-menu-title {
+	min-height: 30px;
+	padding: 0 11px;
+	border-radius: 10px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: #d6d6d6;
+	transition: background 140ms ease, color 140ms ease;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-left .menubar > .menubar-menu-button:hover .menubar-menu-title,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-left .menubar > .menubar-menu-button.open .menubar-menu-title {
+	background: #262626;
+	color: #f1f1f1;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .context-view.monaco-menu-container,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .menubar .menubar-menu-items-holder.monaco-menu-container {
+	z-index: var(--ve-layer-context-menu) !important;
+	border: 1px solid var(--ve-popup-border);
+	border-radius: 16px;
+	padding: 6px;
+	background: var(--ve-popup-bg);
+	box-shadow: var(--ve-popup-shadow);
+	overflow: hidden !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu {
+	min-width: 236px;
+	border-radius: 12px;
+	background: transparent;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical {
+	padding: 0;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .actions-container {
+	display: block;
+	margin-right: 0 !important;
+	padding-right: 0 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-scrollable-element,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-menu .monaco-scrollable-element,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-scrollable-element,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-list,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-scrollable-element,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .monaco-scrollable-element,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-list,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-scrollable-element,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-list {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+	scrollbar-color: transparent transparent !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-scrollable-element::-webkit-scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-menu .monaco-scrollable-element::-webkit-scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-scrollable-element::-webkit-scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-list::-webkit-scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-scrollable-element::-webkit-scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .monaco-scrollable-element::-webkit-scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-list::-webkit-scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .monaco-list::-webkit-scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-scrollable-element::-webkit-scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-list::-webkit-scrollbar {
+	display: none;
+	width: 0;
+	height: 0;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-scrollable-element > .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-menu .monaco-scrollable-element > .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-scrollable-element > .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-scrollable-element > .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .monaco-scrollable-element > .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .scrollbar {
+	display: none !important;
+	width: 0 !important;
+	height: 0 !important;
+	min-width: 0 !important;
+	min-height: 0 !important;
+	max-width: 0 !important;
+	max-height: 0 !important;
+	opacity: 0 !important;
+	visibility: hidden !important;
+	pointer-events: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .scrollbar > .slider,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-menu .scrollbar > .slider,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .scrollbar > .slider,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .scrollbar > .slider,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container .scrollbar > .slider {
+	display: none !important;
+	width: 0 !important;
+	height: 0 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-item {
+	margin: 0;
+	border-radius: 10px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-menu-item {
+	min-height: 34px;
+	height: auto;
+	margin: 0;
+	padding-right: 0;
+	border-radius: 10px;
+	background: transparent !important;
+	box-shadow: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-item.focused .action-menu-item,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-menu-item:hover {
+	background: var(--ve-popup-hover) !important;
+	box-shadow: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-item.disabled .action-menu-item {
+	background: transparent;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-label:not(.separator) {
+	display: flex;
+	align-items: center;
+	min-height: 34px;
+	padding: 0 12px 0 34px;
+	margin: 0;
+	border-radius: 0;
+	font-size: 12px;
+	color: var(--ve-popup-text);
+	background: transparent !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-item.disabled .action-label:not(.separator),
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-item.disabled .keybinding,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-item.disabled .submenu-indicator {
+	color: #747474;
+	opacity: 1;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .keybinding,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .submenu-indicator {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	min-height: 34px;
+	padding: 0 12px;
+	font-size: 12px;
+	color: var(--ve-popup-muted);
+	opacity: 1;
+	border-radius: 0;
+	background: transparent !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .submenu-indicator.codicon::before {
+	margin-left: auto;
+	margin-right: 0;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .menu-item-check {
+	left: 10px;
+	width: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #ececec;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-label.separator {
+	margin: 5px 4px !important;
+	border-bottom: 1px solid var(--ve-popup-border);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-menu .monaco-action-bar.vertical .action-label.separator.text {
+	padding: 8px 14px 2px;
+	color: var(--ve-popup-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget {
+	z-index: var(--ve-layer-quick-input) !important;
+	width: min(700px, calc(100vw - 56px));
+	border: 1px solid var(--ve-popup-border);
+	border-radius: 16px;
+	background: var(--ve-popup-bg);
+	box-shadow: var(--ve-popup-shadow);
+	overflow: hidden;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-titlebar {
+	display: none !important;
+	height: 0 !important;
+	min-height: 0 !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	border: 0 !important;
+	overflow: hidden !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-title {
+	padding: 0;
+	font-size: 11px;
+	font-weight: 500;
+	color: #bdbdbd;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-title:empty,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-left-action-bar:empty,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-right-action-bar:empty,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-description:empty,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-message:empty {
+	display: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-header {
+	padding: 6px 6px 2px;
+	margin: 0 !important;
+	gap: 0;
+	background: transparent;
+	cursor: default;
+	align-items: stretch;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget.hidden-input .quick-input-header {
+	padding: 0 !important;
+	margin: 0 !important;
+	min-height: 0 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-filter {
+	flex-grow: 1;
+	display: flex;
+	position: relative;
+	border: none;
+	background: transparent;
+	overflow: visible;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-inputbox,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-inputbox {
+	border: 1px solid var(--ve-popup-input-border) !important;
+	border-radius: 12px !important;
+	background: var(--ve-popup-elevated) !important;
+	box-shadow: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox > .ibwrapper,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-inputbox > .ibwrapper,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-inputbox > .ibwrapper {
+	border: none !important;
+	background: transparent !important;
+	box-shadow: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox > .ibwrapper > .input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox > .ibwrapper > .mirror,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-inputbox > .ibwrapper > .input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-inputbox > .ibwrapper > .mirror,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-inputbox > .ibwrapper > .input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-inputbox > .ibwrapper > .mirror {
+	padding: 8px 12px !important;
+	color: var(--ve-popup-text) !important;
+	background: transparent !important;
+	line-height: 20px !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox > .ibwrapper > .input::placeholder,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-inputbox > .ibwrapper > .input::placeholder,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-inputbox > .ibwrapper > .input::placeholder {
+	color: #929292 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-inputbox input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-inputbox input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox textarea,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-inputbox textarea,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-inputbox textarea {
+	color: var(--ve-popup-text) !important;
+	caret-color: #efefef !important;
+	-webkit-text-fill-color: var(--ve-popup-text) !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-header .monaco-inputbox {
+	min-height: 34px;
+	border-color: var(--ve-popup-input-border) !important;
+	background: var(--ve-popup-elevated) !important;
+	border-radius: 12px !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-header .monaco-inputbox > .ibwrapper {
+	display: flex;
+	align-items: center;
+	min-height: 34px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-header .monaco-inputbox > .ibwrapper > .input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-header .input {
+	padding: 8px 12px !important;
+	color: #e7e7e7 !important;
+	line-height: 20px;
+	display: block !important;
+	height: auto !important;
+	min-height: 20px;
+	margin: 0 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-header .monaco-inputbox > .ibwrapper > .input::placeholder,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-header .input::placeholder {
+	color: #8b8b8b;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox .monaco-action-bar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-header .monaco-inputbox .monaco-action-bar {
+	right: 7px;
+	top: 50%;
+	transform: translateY(-50%);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox.synthetic-focus,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox.info.synthetic-focus,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox.warning.synthetic-focus,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox.error.synthetic-focus,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-inputbox.synthetic-focus,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-inputbox.synthetic-focus,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-inputbox:focus-within,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-inputbox:focus-within,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-inputbox:focus-within {
+	outline: none !important;
+	box-shadow: none !important;
+	border-color: var(--ve-popup-input-border) !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-header .monaco-inputbox .monaco-action-bar .action-item .codicon {
+	width: 18px;
+	height: 18px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-title {
+	color: #e7e7e7 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-description {
+	color: #b8b8b8 !important;
+	margin: 4px 2px !important;
+	flex: 1;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-message {
+	margin-top: 2px;
+	padding: 2px 10px 0;
+	color: #a7a7a7;
+	font-size: 11px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list {
+	font-size: 13px;
+	line-height: 22px;
+	padding: 0 8px 8px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget.hidden-input .quick-input-list {
+	margin-top: 4px;
+	padding-bottom: 4px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-scrollable-element {
+	padding: 0 6px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-list {
+	overflow: hidden;
+	max-height: calc(20 * 22px);
+	padding-bottom: 5px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-list-row {
+	margin: 0;
+	border-radius: 8px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-list-row.focused,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-list-row:hover {
+	background: var(--ve-popup-hover) !important;
+	box-shadow: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list > .monaco-list:focus .monaco-list-row.focused {
+	outline: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry {
+	box-sizing: border-box;
+	overflow: hidden;
+	display: flex;
+	padding: 0 6px;
+	border-radius: 8px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry.quick-input-list-separator-border {
+	border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-list-row[data-index="0"] .quick-input-list-entry.quick-input-list-separator-border {
+	border-top-style: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-label {
+	overflow: hidden;
+	display: flex;
+	height: 100%;
+	flex: 1;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-rows {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	flex: 1;
+	margin-left: 5px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-rows > .quick-input-list-row {
+	display: flex;
+	align-items: center;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-rows > .quick-input-list-row .monaco-icon-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-rows > .quick-input-list-row .monaco-icon-label .monaco-icon-label-container > .monaco-icon-name-container,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-rows > .quick-input-list-row .monaco-icon-label .monaco-icon-label-container,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-rows > .quick-input-list-row .monaco-icon-label .monaco-icon-label-container > .monaco-icon-description-container {
+	flex: 1;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry .quick-input-list-entry-keybinding {
+	margin-right: 8px;
+	color: var(--ve-popup-muted);
+	line-height: 22px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-label-meta,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-separator-as-item,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry .quick-input-list-separator {
+	color: var(--ve-popup-muted) !important;
+	opacity: 1 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-rows .label-name,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-rows .label-description,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-label-meta,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry .quick-input-list-entry-keybinding {
+	line-height: 22px !important;
+	margin-top: 0 !important;
+	margin-bottom: 0 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-rows .label-name,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-separator-as-item .label-name {
+	color: #e7e7e7 !important;
+	font-size: 13px !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-rows .label-description,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-label-meta,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-separator-as-item .label-description {
+	color: #a8a8a8 !important;
+	opacity: 1 !important;
+	font-size: 12px !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-separator-as-item {
+	padding: 6px 10px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list > .monaco-list:focus .monaco-list-row.focused {
+	outline: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-highlighted-label .highlight {
+	font-weight: 600;
+	background: transparent !important;
+	color: #efefef !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-keybinding > .monaco-keybinding-key {
+	min-width: 18px;
+	height: 18px;
+	padding: 0 5px;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 6px;
+	background: rgba(255, 255, 255, 0.04);
+	box-shadow: none;
+	color: #d6d6d6;
+	font-size: 11px;
+	line-height: 18px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-keybinding > .monaco-keybinding-key-separator,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-keybinding > .monaco-keybinding-key-chord-separator {
+	color: var(--ve-popup-muted);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-description,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-message,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-progress.monaco-progress-container {
+	margin-top: 0 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .quick-input-progress.monaco-progress-container {
+	height: 0 !important;
+	min-height: 0 !important;
+	overflow: hidden !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-titlebar .monaco-action-bar .action-label.codicon {
+	width: 28px;
+	height: 28px;
+	border-radius: 9px;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	position: relative;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry-action-bar .monaco-custom-toggle,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry-action-bar .monaco-custom-toggle {
+	display: none;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry-action-bar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry-action-bar {
+	display: flex;
+	flex: 0;
+	overflow: visible;
+	align-items: center;
+	margin-top: -2px;
+	margin-right: 4px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry-action-bar .action-item,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry-action-bar .action-item {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry .quick-input-list-entry-action-bar .action-label.always-visible,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry:hover .quick-input-list-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry.focus-inside .quick-input-list-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-list-row.focused .quick-input-list-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-list-row.passive-focused .quick-input-list-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry .quick-input-list-entry-action-bar .monaco-custom-toggle.always-visible,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry:hover .quick-input-list-entry-action-bar .monaco-custom-toggle,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry.focus-inside .quick-input-list-entry-action-bar .monaco-custom-toggle,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-list-row.focused .quick-input-list-entry-action-bar .monaco-custom-toggle,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .monaco-list-row.passive-focused .quick-input-list-entry-action-bar .monaco-custom-toggle,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry .quick-input-tree-entry-action-bar .action-label.always-visible,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry:hover .quick-input-tree-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry.focus-inside .quick-input-tree-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .monaco-list-row.focused .quick-input-tree-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .monaco-list-row.passive-focused .quick-input-tree-entry-action-bar .action-label,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry .quick-input-tree-entry-action-bar .monaco-custom-toggle.always-visible,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry:hover .quick-input-tree-entry-action-bar .monaco-custom-toggle,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry.focus-inside .quick-input-tree-entry-action-bar .monaco-custom-toggle,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .monaco-list-row.focused .quick-input-tree-entry-action-bar .monaco-custom-toggle,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .monaco-list-row.passive-focused .quick-input-tree-entry-action-bar .monaco-custom-toggle {
+	display: inline-flex;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry-action-bar .action-label.codicon::before,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry-action-bar .action-label.codicon::before,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-titlebar .monaco-action-bar .action-label.codicon::before {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	line-height: 1;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry-action-bar .action-label.codicon,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry-action-bar .action-label.codicon {
+	color: #d7d7d7 !important;
+	font-size: 14px !important;
+	transform: translateY(-1px);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-list .quick-input-list-entry-action-bar .action-label:hover,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-tree .quick-input-tree-entry-action-bar .action-label:hover,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-titlebar .monaco-action-bar .action-label.codicon:hover {
+	background: #2b2b2b;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-select-box,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-select-box {
+	min-height: 36px;
+	padding: 8px 30px 8px 12px !important;
+	border: 1px solid var(--ve-popup-input-border) !important;
+	border-radius: 12px !important;
+	background: var(--ve-popup-elevated) !important;
+	color: var(--ve-popup-text) !important;
+	display: inline-flex;
+	align-items: center;
+	box-sizing: border-box;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-select-box-dropdown-container,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container {
+	z-index: var(--ve-layer-context-menu) !important;
+	border: 1px solid var(--ve-popup-border) !important;
+	border-radius: 16px !important;
+	background: var(--ve-popup-bg) !important;
+	box-shadow: var(--ve-popup-shadow) !important;
+	overflow: hidden !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container > .select-box-dropdown-list-container,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container > .select-box-details-pane {
+	background: transparent !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container .monaco-scrollable-element,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container .monaco-list {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container .monaco-scrollable-element::-webkit-scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container .monaco-list::-webkit-scrollbar {
+	display: none;
+	width: 0;
+	height: 0;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container .monaco-scrollable-element > .scrollbar {
+	display: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container > .select-box-dropdown-list-container .monaco-list .monaco-list-row {
+	height: 34px !important;
+	padding: 0 12px !important;
+	border-radius: 10px;
+	margin: 1px 6px;
+	display: flex;
+	align-items: center;
+	color: var(--ve-popup-text);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container > .select-box-dropdown-list-container .monaco-list .monaco-list-row.focused,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container > .select-box-dropdown-list-container .monaco-list .monaco-list-row:hover {
+	background: var(--ve-popup-hover) !important;
+	box-shadow: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .monaco-scrollable-element .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .monaco-scrollable-element .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .monaco-scrollable-element .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container .monaco-scrollable-element .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-menu .monaco-scrollable-element .scrollbar,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-menu .scrollbar {
+	display: none !important;
+	opacity: 0 !important;
+	visibility: hidden !important;
+	pointer-events: none !important;
+	width: 0 !important;
+	height: 0 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .shadow.top,
+body.void-engine-shell:not(.void-shell-dev-fallback) .context-view .shadow.bottom,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .shadow.top,
+body.void-engine-shell:not(.void-shell-dev-fallback) .quick-input-widget .shadow.bottom,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container .shadow.top,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container .shadow.bottom,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-menu .shadow.top,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-menu .shadow.bottom {
+	display: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .search-widget,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .search-widget .search-container,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-findInput {
+	background: transparent !important;
+	box-shadow: none !important;
+	border: 0 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .search-widget .monaco-inputbox,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-findInput > .monaco-inputbox {
+	border: 1px solid var(--ve-popup-input-border) !important;
+	border-radius: 12px !important;
+	background: #252525 !important;
+	box-shadow: none !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .search-widget .monaco-inputbox > .ibwrapper,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-findInput > .monaco-inputbox > .ibwrapper {
+	border: 0 !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	display: flex;
+	align-items: center;
+	min-height: 32px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .search-widget .monaco-inputbox > .ibwrapper > .input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .search-widget .monaco-inputbox > .ibwrapper > .mirror,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-findInput > .monaco-inputbox > .ibwrapper > .input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-findInput > .monaco-inputbox > .ibwrapper > .mirror {
+	padding: 6px 10px !important;
+	line-height: 18px !important;
+	color: var(--ve-popup-text) !important;
+	background: transparent !important;
+	display: block !important;
+	height: auto !important;
+	min-height: 18px;
+	margin: 0 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .search-widget .monaco-inputbox > .ibwrapper > .input::placeholder,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-findInput > .monaco-inputbox > .ibwrapper > .input::placeholder {
+	color: #929292 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .search-widget .monaco-inputbox input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-findInput > .monaco-inputbox input,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .search-widget .monaco-inputbox textarea,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-findInput > .monaco-inputbox textarea {
+	color: var(--ve-popup-text) !important;
+	caret-color: #efefef !important;
+	-webkit-text-fill-color: var(--ve-popup-text) !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .search-widget .monaco-inputbox:focus-within,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-workbench .monaco-findInput > .monaco-inputbox:focus-within {
+	outline: none !important;
+	box-shadow: none !important;
+	border-color: var(--ve-popup-input-border) !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container > .select-box-dropdown-list-container .monaco-list .monaco-list-row > .option-text,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container > .select-box-dropdown-list-container .monaco-list .monaco-list-row > .option-detail,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-select-box-dropdown-container > .select-box-dropdown-list-container .monaco-list .monaco-list-row > .option-decorator-right {
+	color: var(--ve-popup-text) !important;
+	padding: 0 !important;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-modal-block {
+	z-index: var(--ve-layer-dialog) !important;
+	backdrop-filter: blur(6px);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-modal-block.dimmed {
+	background: rgba(0, 0, 0, 0.56);
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box {
+	background: var(--ve-popup-bg);
+	border: 1px solid var(--ve-popup-border);
+	border-radius: 18px;
+	padding: 18px;
+	box-shadow: var(--ve-popup-shadow);
+	color: #e7e7e7;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .dialog-toolbar-row {
+	padding-bottom: 8px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .dialog-message-row,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .dialog-footer-row {
+	padding: 0 14px;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .dialog-message-row .dialog-message-container .dialog-message {
+	font-size: 20px;
+	color: #f1f1f1;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .dialog-message-row .dialog-message-container .dialog-message-detail,
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .dialog-footer-row {
+	color: #a8a8a8;
+}
+
+body.void-engine-shell:not(.void-shell-dev-fallback) .monaco-dialog-box .dialog-message-row .dialog-message-container .dialog-message-input .monaco-inputbox {
+	border-radius: 12px !important;
+	border-color: var(--ve-popup-input-border) !important;
+	background: var(--ve-popup-elevated) !important;
 }
 

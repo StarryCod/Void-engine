@@ -39,12 +39,16 @@ export const VOID_PRODUCT_UI_PROFILE: IProductUiProfile = {
 		/extensions?/i,
 		/marketplace/i,
 		/run and debug/i,
+		/getting started/i,
+		/walkthrough/i,
+		/welcome/i,
 		/testing/i,
 		/notebook/i,
 		/remote/i,
 		/ports?/i,
 		/comments?/i,
 		/timeline/i,
-		/settings sync/i
+		/settings sync/i,
+		/update(?!d)/i
 	]
 };

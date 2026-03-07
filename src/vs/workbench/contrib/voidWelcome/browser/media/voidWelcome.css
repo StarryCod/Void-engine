@@ -26,6 +26,7 @@ body:not(.void-welcome-closed) .monaco-workbench {
 	grid-template-rows: 42px 42px 44px 1fr 30px;
 	width: 100%;
 	height: 100%;
+	position: relative;
 	background: var(--vep-bg-root);
 	color: var(--vep-text-primary);
 	font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -356,6 +357,11 @@ body:not(.void-welcome-closed) .monaco-workbench {
 	color: #d9756d;
 }
 
+.ve-library-subtitle {
+	font-size: 12px;
+	color: var(--vep-text-muted);
+}
+
 .ve-picker-path-cell {
 	font-size: 14px;
 }
@@ -372,6 +378,7 @@ body:not(.void-welcome-closed) .monaco-workbench {
 	flex-direction: column;
 	gap: 8px;
 	background: #202020;
+	overflow: auto;
 }
 
 .ve-picker-side-btn {
@@ -435,4 +442,158 @@ body:not(.void-welcome-closed) .monaco-workbench {
 .ve-picker-version {
 	font-size: 12px;
 	color: var(--vep-text-muted);
+}
+
+.ve-library-details {
+	display: none;
+	margin-top: 10px;
+	padding-top: 10px;
+	border-top: 1px solid var(--vep-border);
+}
+
+.ve-library-title {
+	display: block;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--vep-text-primary);
+	margin-bottom: 6px;
+}
+
+.ve-library-description {
+	display: block;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--vep-text-secondary);
+	margin-bottom: 8px;
+}
+
+.ve-library-meta {
+	display: block;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--vep-text-muted);
+	margin-bottom: 10px;
+}
+
+.ve-library-features {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 10px;
+}
+
+.ve-library-feature {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 24px;
+	padding: 0 8px;
+	border: 1px solid var(--vep-border);
+	border-radius: 999px;
+	background: #262626;
+	color: var(--vep-text-secondary);
+	font-size: 11px;
+	text-align: center;
+}
+
+.ve-library-readme,
+.ve-library-empty {
+	display: block;
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--vep-text-secondary);
+}
+
+.ve-picker-modal-overlay {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	background: rgba(0, 0, 0, 0.58);
+	backdrop-filter: blur(6px);
+	z-index: 40;
+}
+
+.ve-picker-modal {
+	width: min(460px, calc(100vw - 80px));
+	border: 1px solid #3a3a3a;
+	border-radius: 18px;
+	background: #232323;
+	box-shadow: 0 24px 56px rgba(0, 0, 0, 0.44);
+	padding: 18px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.ve-picker-modal-warning {
+	border-color: #4a3a34;
+}
+
+.ve-picker-modal-title {
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--vep-text-primary);
+}
+
+.ve-picker-modal-detail {
+	font-size: 13px;
+	line-height: 1.6;
+	white-space: pre-wrap;
+	color: var(--vep-text-secondary);
+}
+
+.ve-picker-modal-input {
+	height: 38px;
+	border: 1px solid #3a3a3a;
+	border-radius: 10px;
+	background: #1f1f1f;
+	color: var(--vep-text-primary);
+	padding: 0 12px;
+	font-size: 13px;
+	outline: none;
+}
+
+.ve-picker-modal-input::placeholder {
+	color: var(--vep-text-muted);
+}
+
+.ve-picker-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.ve-picker-modal-button {
+	height: 34px;
+	min-width: 96px;
+	border-radius: 10px;
+	border: 1px solid #3a3a3a;
+	background: #2a2a2a;
+	color: var(--vep-text-primary);
+	padding: 0 14px;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.ve-picker-modal-button:hover {
+	border-color: #4a4a4a;
+}
+
+.ve-picker-modal-button-secondary {
+	background: #262626;
+}
+
+.ve-picker-modal-button-primary {
+	border-color: #4a4a4a;
+	background: #303030;
+}
+
+.ve-picker-modal-button-danger {
+	border-color: #5a3e34;
+	background: #3a2623;
+	color: #f0d3cb;
 }

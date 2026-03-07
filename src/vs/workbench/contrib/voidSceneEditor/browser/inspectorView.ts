@@ -74,14 +74,22 @@ const COLORS = {
         sliderThumb: '#c88a67',
 };
 
+type ComponentFilterPreset = 'all' | 'render' | 'physics' | 'light';
+
 export class InspectorView extends Disposable {
         private container: HTMLElement;
         private headerEl: HTMLElement;
+        private filterBar: HTMLElement;
+        private componentSearchInput: HTMLInputElement;
         private entityHeader: HTMLElement;
         private body: HTMLElement;
         private selectedId: string | null = null;
         private rafId: number | null = null;
         private cssInjected = false;
+        private componentSearchQuery = '';
+        private activeFilterPreset: ComponentFilterPreset = 'all';
+        private readonly pinnedSections = new Set<string>();
+        private readonly collapsedSections = new Set<string>();
 
         private readonly _onPropertyChange = this._register(new Emitter<void>());
         public readonly onPropertyChange: Event<void> = this._onPropertyChange.event;
@@ -114,6 +122,76 @@ export class InspectorView extends Disposable {
                         flex-shrink: 0;
                 `;
                 this.headerEl.textContent = 'Inspector';
+
+                // Filter + quick-view profile row
+                this.filterBar = DOM.append(this.container, DOM.$('.vi-filter-bar'));
+                this.filterBar.style.cssText = `
+                        padding: 8px 10px;
+                        display: flex;
+                        gap: 6px;
+                        align-items: center;
+                        border-bottom: 1px solid ${COLORS.border};
+                        background: ${COLORS.sectionBody};
+                        flex-shrink: 0;
+                `;
+
+                this.componentSearchInput = document.createElement('input');
+                this.componentSearchInput.type = 'text';
+                this.componentSearchInput.placeholder = 'Filter components';
+                this.componentSearchInput.className = 'vi-filter-input';
+                this.componentSearchInput.style.cssText = `
+                        flex: 1;
+                        min-width: 0;
+                        height: 22px;
+                        border-radius: 6px;
+                        border: 1px solid ${COLORS.borderLight};
+                        background: ${COLORS.inputBg};
+                        color: ${COLORS.valueText};
+                        padding: 0 8px;
+                        font-size: 10px;
+                        outline: none;
+                `;
+                this.componentSearchInput.onfocus = () => {
+                        this.componentSearchInput.style.borderColor = COLORS.focusBorder;
+                        this.componentSearchInput.style.background = COLORS.inputFocus;
+                };
+                this.componentSearchInput.onblur = () => {
+                        this.componentSearchInput.style.borderColor = COLORS.borderLight;
+                        this.componentSearchInput.style.background = COLORS.inputBg;
+                };
+                this.componentSearchInput.oninput = () => {
+                        this.componentSearchQuery = this.componentSearchInput.value.trim().toLowerCase();
+                        this.scheduleRender();
+                };
+                this.filterBar.appendChild(this.componentSearchInput);
+
+                const presets: Array<{ key: ComponentFilterPreset; label: string }> = [
+                        { key: 'all', label: 'All' },
+                        { key: 'render', label: 'Render' },
+                        { key: 'physics', label: 'Physics' },
+                        { key: 'light', label: 'Light' },
+                ];
+
+                for (const preset of presets) {
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = 'vi-filter-pill';
+                        button.dataset.preset = preset.key;
+                        button.textContent = preset.label;
+                        button.style.cssText = `
+                                height: 22px;
+                                border-radius: 11px;
+                                border: 1px solid ${COLORS.borderLight};
+                                background: ${COLORS.inputBg};
+                                color: ${COLORS.labelText};
+                                font-size: 10px;
+                                padding: 0 8px;
+                                cursor: pointer;
+                        `;
+                        button.onclick = () => this.setFilterPreset(preset.key);
+                        this.filterBar.appendChild(button);
+                }
+                this.setFilterPreset('all');
 
                 // Entity header (dynamic - shows selected entity info)
                 this.entityHeader = DOM.append(this.container, DOM.$('.vi-entity-header'));
@@ -150,6 +228,51 @@ export class InspectorView extends Disposable {
                 this.rafId = requestAnimationFrame(() => { this.rafId = null; this.render(); });
         }
 
+        private setFilterPreset(preset: ComponentFilterPreset): void {
+                this.activeFilterPreset = preset;
+                for (const node of Array.from(this.filterBar.querySelectorAll<HTMLElement>('.vi-filter-pill'))) {
+                        const active = node.dataset.preset === preset;
+                        node.style.borderColor = active ? COLORS.focusBorder : COLORS.borderLight;
+                        node.style.color = active ? COLORS.hoverText : COLORS.labelText;
+                        node.style.background = active ? '#2b211a' : COLORS.inputBg;
+                }
+                this.scheduleRender();
+        }
+
+        private getSectionKey(componentType: string, componentIndex: number): string {
+                return `${this.selectedId ?? 'none'}:${componentType}:${componentIndex}`;
+        }
+
+        private matchesFilterPreset(componentType: string): boolean {
+                if (this.activeFilterPreset === 'all') {
+                        return true;
+                }
+
+                const type = componentType.toLowerCase();
+                if (this.activeFilterPreset === 'light') {
+                        return type.includes('light') || type === 'worldenvironment' || type === 'sky' || type === 'fogvolume';
+                }
+                if (this.activeFilterPreset === 'physics') {
+                        return type.includes('body') || type.includes('collision') || type.includes('raycast') || type.includes('shapecast') || type.includes('area');
+                }
+                if (this.activeFilterPreset === 'render') {
+                        return type.includes('mesh') || type.includes('material') || type.includes('sprite') || type.includes('camera') || type.includes('particle') || type.includes('label');
+                }
+                return true;
+        }
+
+        private shouldRenderComponent(c: Component): boolean {
+                if (!this.matchesFilterPreset(c.type)) {
+                        return false;
+                }
+                if (!this.componentSearchQuery) {
+                        return true;
+                }
+
+                const haystack = `${c.type} ${Object.keys(c as any).join(' ')} ${JSON.stringify(c).toLowerCase()}`;
+                return haystack.includes(this.componentSearchQuery);
+        }
+
         private render(): void {
                 this.clear(this.body);
                 this.clear(this.entityHeader);
@@ -178,9 +301,27 @@ export class InspectorView extends Disposable {
                 this.renderEntityHeader(ent);
 
                 // Render component sections
-                for (const c of ent.components) {
-                        
-                        this.section(c);
+                let renderedComponents = 0;
+                for (let i = 0; i < ent.components.length; i++) {
+                        const c = ent.components[i];
+                        if (!this.shouldRenderComponent(c)) {
+                                continue;
+                        }
+                        renderedComponents++;
+                        this.section(c, i);
+                }
+
+                if (renderedComponents === 0) {
+                        const hint = this.div(this.body, `
+                                margin: 10px 8px;
+                                padding: 12px;
+                                border-radius: 8px;
+                                border: 1px solid ${COLORS.border};
+                                background: ${COLORS.sectionBody};
+                                color: ${COLORS.dimmedText};
+                                font-size: 11px;
+                        `);
+                        hint.textContent = 'No components match current filters.';
                 }
         }
 
@@ -365,11 +506,12 @@ export class InspectorView extends Disposable {
         // ═══════════════════════════════════════════════════════════════════════════════
         // SECTION RENDERER - Collapsible Component Sections
         // ═══════════════════════════════════════════════════════════════════════════════
-        private section(c: Component): void {
+        private section(c: Component, componentIndex: number): void {
                 if (c.type === 'Sky') {
                         return;
                 }
                 const accentColor = this.getComponentColor(c.type);
+                const sectionKey = this.getSectionKey(c.type, componentIndex);
 
                 // Section container
                 const sec = this.div(this.body, `
@@ -429,6 +571,63 @@ export class InspectorView extends Disposable {
                 `;
                 hdr.appendChild(nameEl);
 
+                const applyAllBtn = document.createElement('button');
+                applyAllBtn.type = 'button';
+                applyAllBtn.textContent = 'Apply All';
+                applyAllBtn.title = `Apply ${c.type} values to all nodes with ${c.type}`;
+                applyAllBtn.style.cssText = `
+                        height: 18px;
+                        padding: 0 7px;
+                        border-radius: 9px;
+                        border: 1px solid ${COLORS.borderLight};
+                        background: ${COLORS.inputBg};
+                        color: ${COLORS.labelText};
+                        font-size: 9px;
+                        cursor: pointer;
+                        flex-shrink: 0;
+                `;
+                applyAllBtn.onclick = (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const changed = sceneBridge.applyComponentTemplateToAll(c.type, c);
+                        if (changed > 0) {
+                                this._onPropertyChange.fire();
+                        }
+                };
+                hdr.appendChild(applyAllBtn);
+
+                const pinBtn = document.createElement('button');
+                pinBtn.type = 'button';
+                pinBtn.className = 'codicon codicon-pin';
+                pinBtn.title = 'Pin section';
+                pinBtn.style.cssText = `
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 5px;
+                        border: 1px solid ${COLORS.borderLight};
+                        background: ${COLORS.inputBg};
+                        color: ${COLORS.labelText};
+                        font-size: 11px;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        cursor: pointer;
+                        flex-shrink: 0;
+                `;
+                pinBtn.onclick = (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const pinned = this.pinnedSections.has(sectionKey);
+                        if (pinned) {
+                                this.pinnedSections.delete(sectionKey);
+                        } else {
+                                this.pinnedSections.add(sectionKey);
+                                this.collapsedSections.delete(sectionKey);
+                        }
+                        this.scheduleRender();
+                };
+                hdr.appendChild(pinBtn);
+
                 // Section body
                 const bd = this.div(sec, `
                         padding: 8px 10px 10px;
@@ -436,11 +635,25 @@ export class InspectorView extends Disposable {
                 `);
                 bd.className = 'vi-section-body';
 
+                if (this.pinnedSections.has(sectionKey)) {
+                        pinBtn.style.borderColor = COLORS.focusBorder;
+                        pinBtn.style.color = COLORS.hoverText;
+                        pinBtn.style.background = '#2b211a';
+                }
+
                 // Collapse toggle
                 hdr.onclick = () => {
+                        if (this.pinnedSections.has(sectionKey)) {
+                                return;
+                        }
                         const vis = bd.style.display !== 'none';
                         bd.style.display = vis ? 'none' : 'block';
                         arrow.style.transform = vis ? 'rotate(-90deg)' : '';
+                        if (vis) {
+                                this.collapsedSections.add(sectionKey);
+                        } else {
+                                this.collapsedSections.delete(sectionKey);
+                        }
                 };
 
                 // Hover effect
@@ -450,6 +663,11 @@ export class InspectorView extends Disposable {
                 hdr.onmouseleave = () => {
                         hdr.style.background = COLORS.sectionHeader;
                 };
+
+                if (this.collapsedSections.has(sectionKey) && !this.pinnedSections.has(sectionKey)) {
+                        bd.style.display = 'none';
+                        arrow.style.transform = 'rotate(-90deg)';
+                }
 
                 const commit = () => { sceneBridge.commitInspectorEdit(); this._onPropertyChange.fire(); };
 
@@ -538,10 +756,10 @@ export class InspectorView extends Disposable {
 
         // ── Transform ──
         private trTransform(p: HTMLElement, c: any, commit: () => void): void {
-                this.vec3Row(p, 'Position', c.translation, v => { c.translation = v; commit(); });
+                this.vec3Row(p, 'Position (m)', c.translation, v => { c.translation = v; commit(); });
                 const eul = this.q2e(c.rotation);
-                this.vec3Row(p, 'Rotation', eul, v => { c.rotation = this.e2q(v); commit(); }, 1);
-                this.vec3Row(p, 'Scale', c.scale, v => { c.scale = v; commit(); });
+                this.vec3Row(p, 'Rotation (deg)', eul, v => { c.rotation = this.e2q(v); commit(); }, 1);
+                this.vec3Row(p, 'Scale (x)', c.scale, v => { c.scale = v; commit(); });
         }
 
         // ── Material ──
@@ -606,28 +824,28 @@ export class InspectorView extends Disposable {
         // ── Lights ──
         private trPointLight(p: HTMLElement, c: any, commit: () => void): void {
                 this.colorRow(p, 'Color', [...c.color, 1], v => { c.color = [v[0], v[1], v[2]]; commit(); });
-                this.sliderRow(p, 'Intensity', c.intensity, 0, 5000, 10, v => { c.intensity = v; commit(); });
-                this.sliderRow(p, 'Range', c.range, 0, 100, 0.5, v => { c.range = v; commit(); });
+                this.sliderRow(p, 'Intensity (lm)', c.intensity, 0, 5000, 10, v => { c.intensity = v; commit(); });
+                this.sliderRow(p, 'Range (m)', c.range, 0, 100, 0.5, v => { c.range = v; commit(); });
         }
 
         private trDirLight(p: HTMLElement, c: any, commit: () => void): void {
                 this.colorRow(p, 'Color', [...c.color, 1], v => { c.color = [v[0], v[1], v[2]]; commit(); });
-                this.sliderRow(p, 'Illuminance', c.illuminance, 0, 100000, 100, v => { c.illuminance = v; commit(); });
+                this.sliderRow(p, 'Illuminance (lx)', c.illuminance, 0, 100000, 100, v => { c.illuminance = v; commit(); });
         }
 
         private trSpotLight(p: HTMLElement, c: any, commit: () => void): void {
                 this.colorRow(p, 'Color', [...c.color, 1], v => { c.color = [v[0], v[1], v[2]]; commit(); });
-                this.sliderRow(p, 'Intensity', c.intensity, 0, 5000, 10, v => { c.intensity = v; commit(); });
-                this.sliderRow(p, 'Range', c.range, 0, 100, 0.5, v => { c.range = v; commit(); });
-                this.sliderRow(p, 'Angle', c.angle, 0, 90, 1, v => { c.angle = v; commit(); });
+                this.sliderRow(p, 'Intensity (lm)', c.intensity, 0, 5000, 10, v => { c.intensity = v; commit(); });
+                this.sliderRow(p, 'Range (m)', c.range, 0, 100, 0.5, v => { c.range = v; commit(); });
+                this.sliderRow(p, 'Angle (deg)', c.angle, 0, 90, 1, v => { c.angle = v; commit(); });
                 this.sliderRow(p, 'Attenuation', c.attenuation, 0, 1, 0.01, v => { c.attenuation = v; commit(); });
         }
 
         // ── Camera ──
         private trCamera(p: HTMLElement, c: any, commit: () => void): void {
-                this.sliderRow(p, 'FOV', c.fov ?? 60, 10, 120, 1, v => { c.fov = v; commit(); });
-                this.sliderRow(p, 'Near', c.near ?? 0.1, 0.001, 10, 0.01, v => { c.near = v; commit(); });
-                this.sliderRow(p, 'Far', c.far ?? 1000, 10, 10000, 10, v => { c.far = v; commit(); });
+                this.sliderRow(p, 'FOV (deg)', c.fov ?? 60, 10, 120, 1, v => { c.fov = v; commit(); });
+                this.sliderRow(p, 'Near (m)', c.near ?? 0.1, 0.001, 10, 0.01, v => { c.near = v; commit(); });
+                this.sliderRow(p, 'Far (m)', c.far ?? 1000, 10, 10000, 10, v => { c.far = v; commit(); });
         }
 
         // ── Physics Bodies ──
@@ -674,9 +892,9 @@ export class InspectorView extends Disposable {
 
         // ── 2D Components ──
         private trTransform2D(p: HTMLElement, c: any, commit: () => void): void {
-                this.vec2Row(p, 'Position', c.position, v => { c.position = v; commit(); });
-                this.sliderRow(p, 'Rotation', c.rotation, -180, 180, 1, v => { c.rotation = v; commit(); });
-                this.vec2Row(p, 'Scale', c.scale, v => { c.scale = v; commit(); });
+                this.vec2Row(p, 'Position (px)', c.position, v => { c.position = v; commit(); });
+                this.sliderRow(p, 'Rotation (deg)', c.rotation, -180, 180, 1, v => { c.rotation = v; commit(); });
+                this.vec2Row(p, 'Scale (x)', c.scale, v => { c.scale = v; commit(); });
         }
 
         private trSprite2D(p: HTMLElement, c: any, commit: () => void): void {
@@ -934,6 +1152,9 @@ export class InspectorView extends Disposable {
                                 this.colorRow(p, 'Color', c.clouds_color ?? [1.0, 1.0, 1.0, 1], v => { c.clouds_color = v; commit(); });
                                 this.sliderRow(p, 'Density', c.clouds_density ?? 0.5, 0, 2, 0.05, v => { c.clouds_density = v; commit(); });
                                 this.sliderRow(p, 'Speed', c.clouds_speed ?? 0.1, 0, 1, 0.01, v => { c.clouds_speed = v; commit(); });
+                                this.sliderRow(p, 'Layer 1 Speed', c.clouds_layer1_speed ?? 1.0, 0, 4, 0.05, v => { c.clouds_layer1_speed = v; commit(); });
+                                this.sliderRow(p, 'Layer 2 Speed', c.clouds_layer2_speed ?? 0.62, 0, 4, 0.05, v => { c.clouds_layer2_speed = v; commit(); });
+                                this.sliderRow(p, 'Detail', c.clouds_detail_strength ?? 1.0, 0, 3, 0.05, v => { c.clouds_detail_strength = v; commit(); });
                                 this.sliderRow(p, 'Height', c.clouds_height ?? 500, 100, 2000, 50, v => { c.clouds_height = v; commit(); });
                                 this.sliderRow(p, 'Coverage', c.clouds_coverage ?? 0.5, 0, 1, 0.05, v => { c.clouds_coverage = v; commit(); });
                                 this.sliderRow(p, 'Thickness', c.clouds_thickness ?? 100, 10, 500, 10, v => { c.clouds_thickness = v; commit(); });
@@ -979,6 +1200,68 @@ export class InspectorView extends Disposable {
                         this.sliderRow(p, 'Intensity', c.glow_intensity ?? 0.8, 0, 4, 0.1, v => { c.glow_intensity = v; commit(); });
                         this.sliderRow(p, 'Threshold', c.glow_threshold ?? 0.9, 0, 2, 0.05, v => { c.glow_threshold = v; commit(); });
                 }
+
+                // Unified Post Stack (runtime/editor parity)
+                this.sectionHeader(p, 'Post Stack');
+                this.checkboxRow(p, 'Bloom Enabled', c.post_bloom_enabled ?? c.glow_enabled ?? false, v => {
+                        c.post_bloom_enabled = v;
+                        c.glow_enabled = v;
+                        commit();
+                });
+                if (c.post_bloom_enabled ?? c.glow_enabled ?? false) {
+                        this.sliderRow(p, 'Bloom Intensity', c.post_bloom_intensity ?? c.glow_intensity ?? 0.8, 0, 4, 0.1, v => {
+                                c.post_bloom_intensity = v;
+                                c.glow_intensity = v;
+                                commit();
+                        });
+                        this.sliderRow(p, 'Bloom Threshold', c.post_bloom_threshold ?? c.glow_threshold ?? 0.9, 0, 3, 0.05, v => {
+                                c.post_bloom_threshold = v;
+                                c.glow_threshold = v;
+                                commit();
+                        });
+                }
+
+                this.checkboxRow(p, 'AO Enabled', c.post_ao_enabled ?? c.ssao_enabled ?? false, v => {
+                        c.post_ao_enabled = v;
+                        c.ssao_enabled = v;
+                        commit();
+                });
+                if (c.post_ao_enabled ?? c.ssao_enabled ?? false) {
+                        this.sliderRow(p, 'AO Intensity', c.post_ao_intensity ?? c.ssao_intensity ?? 1.0, 0, 4, 0.1, v => {
+                                c.post_ao_intensity = v;
+                                c.ssao_intensity = v;
+                                commit();
+                        });
+                        this.sliderRow(p, 'AO Radius', c.post_ao_radius ?? c.ssao_radius ?? 1.0, 0, 10, 0.1, v => {
+                                c.post_ao_radius = v;
+                                c.ssao_radius = v;
+                                commit();
+                        });
+                }
+
+                this.checkboxRow(p, 'Color Grading', c.color_grading_enabled ?? false, v => { c.color_grading_enabled = v; commit(); });
+                if (c.color_grading_enabled ?? false) {
+                        this.sliderRow(p, 'Temperature', c.color_grading_temperature ?? 0.0, -1, 1, 0.01, v => { c.color_grading_temperature = v; commit(); });
+                        this.sliderRow(p, 'Contrast', c.color_grading_contrast ?? 1.0, 0.2, 2, 0.01, v => { c.color_grading_contrast = v; commit(); });
+                        this.sliderRow(p, 'Saturation', c.color_grading_saturation ?? 1.0, 0, 2, 0.01, v => { c.color_grading_saturation = v; commit(); });
+                }
+
+                // Pipeline control
+                this.sectionHeader(p, 'Render Pipeline');
+                this.dropdownRow(
+                        p,
+                        'Shadow Profile',
+                        c.shadow_profile ?? 'high',
+                        ['low', 'med', 'high', 'ultra'],
+                        v => { c.shadow_profile = v; commit(); }
+                );
+                this.dropdownRow(
+                        p,
+                        'Debug Pass',
+                        c.render_debug_view ?? 'final',
+                        ['final', 'albedo', 'normal', 'depth', 'lighting'],
+                        v => { c.render_debug_view = v; commit(); }
+                );
         }
 
         // Section header helper for organizing inspector
@@ -1191,6 +1474,7 @@ export class InspectorView extends Disposable {
         private sliderRow(parent: HTMLElement, lbl: string, val: number, min: number, max: number, step: number, cb: (v: number) => void): void {
                 const [l, v] = this.row(parent);
                 l.textContent = lbl;
+                l.title = `${lbl}. Range: ${min} - ${max}. Step: ${step}`;
 
                 const prec = step < 1 ? 2 : 0;
 
@@ -1201,6 +1485,7 @@ export class InspectorView extends Disposable {
                 num.min = String(min);
                 num.max = String(max);
                 num.step = String(step);
+                num.title = `${lbl}. Range: ${min} - ${max}. Step: ${step}`;
                 num.className = 'vi-drag-num';
                 num.style.cssText = `
                         width: 55px;
@@ -1234,6 +1519,7 @@ export class InspectorView extends Disposable {
                 sl.max = String(max);
                 sl.step = String(step);
                 sl.value = String(val);
+                sl.title = `${lbl}. Range: ${min} - ${max}. Step: ${step}`;
                 sl.className = 'vi-slider';
                 sl.style.cssText = `
                         flex: 1;

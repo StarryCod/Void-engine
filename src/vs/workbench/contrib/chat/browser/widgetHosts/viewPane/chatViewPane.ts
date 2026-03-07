@@ -25,6 +25,7 @@ import { IWorkspaceContextService } from '../../../../../../platform/workspace/c
 import { ITerminalService } from '../../../../terminal/browser/terminal.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IExplorerService } from '../../../../files/browser/files.js';
+import { IVoidRuntimeService } from '../../../../voidRuntime/common/voidRuntimeService.js';
 import { QwenChatService } from './qwenChatService.js';
 import { IChatHistoryItemUI, IChatHistoryPanelState, IChatHistoryUiStore, LocalChatHistoryUiStore } from './chatHistoryUiStore.js';
 import { ChatLayoutController, ChatPaneLayoutMode } from './chatLayoutController.js';
@@ -122,6 +123,7 @@ export class ChatViewPane extends ViewPane {
 	private devProfileEnabled = false;
 	private longTaskObserverController: ChatLongTaskObserverController | undefined;
 	private tooltipController: ChatTooltipOverlayController | undefined;
+	private shouldAutoScroll = true;
 	private webSearchEnabled = false;
 	private connectorsEnabled = false;
 	private responseStyleMode: 'default' | 'precise' | 'concise' | 'detailed' = 'default';
@@ -130,11 +132,12 @@ export class ChatViewPane extends ViewPane {
 	private static readonly MAX_ATTACHED_FILES = 9;
 	private static readonly CHAT_HISTORY_STORAGE_KEY = 'void.chat.history.v1';
 	private static readonly CHAT_HISTORY_MAX_SESSIONS = 80;
-	private static readonly CHAT_HISTORY_MAX_MESSAGES_PER_SESSION = 400;
+	private static readonly CHAT_HISTORY_MAX_MESSAGES_PER_SESSION = 1200;
 	private static readonly CHAT_HISTORY_MAX_TEXT_CHARS = 16000;
 	private static readonly CHAT_HISTORY_MAX_PAYLOAD_STRING_CHARS = 8000;
 	private static readonly CHAT_HISTORY_MAX_ARRAY_ITEMS = 40;
 	private static readonly CHAT_HISTORY_MAX_OBJECT_KEYS = 48;
+	private static readonly AUTO_SCROLL_THRESHOLD_PX = 56;
 	private static readonly SUPPORTED_ATTACHMENT_EXTENSIONS = new Set([
 		'txt', 'md', 'json', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'log', 'xml', 'csv',
 		'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'rs', 'go', 'java', 'c', 'cc', 'cpp', 'h', 'hpp',
@@ -156,12 +159,13 @@ export class ChatViewPane extends ViewPane {
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@ITerminalService private readonly terminalService: ITerminalService,
 		@IFileService private readonly fileService: IFileService,
-		@IExplorerService private readonly explorerService: IExplorerService
+		@IExplorerService private readonly explorerService: IExplorerService,
+		@IVoidRuntimeService private readonly runtimeService: IVoidRuntimeService
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService, undefined);
 		
 		// Initialize Qwen service
-		this.qwenService = new QwenChatService();
+		this.qwenService = new QwenChatService(this.runtimeService);
 		this._register(this.qwenService);
 		
 		// Set workspace path for Qwen
@@ -169,6 +173,7 @@ export class ChatViewPane extends ViewPane {
 		if (workspace.folders.length > 0) {
 			const workspacePath = workspace.folders[0].uri.fsPath;
 			this.qwenService.setWorkspacePath(workspacePath);
+			this.runtimeService.transition('open', { workspacePath });
 		}
 
 		this.historyUiStore = new LocalChatHistoryUiStore(
@@ -205,6 +210,8 @@ export class ChatViewPane extends ViewPane {
 
 		const messagesContainer = append(container, $('.void-chat-messages'));
 		this.messagesContainer = messagesContainer;
+		messagesContainer.addEventListener('scroll', () => this.updateAutoScrollLock());
+		this.updateAutoScrollLock();
 		this.emptyState = append(messagesContainer, $('.void-chat-empty'));
 		const emptyBadge = append(this.emptyState, $('.void-chat-empty-badge'));
 		emptyBadge.textContent = 'Free plan · Upgrade';
@@ -525,7 +532,7 @@ export class ChatViewPane extends ViewPane {
 		const label = append(loadingDiv, $('.void-thinking-label'));
 		label.textContent = 'thinking';
 
-		this.scrollToBottom();
+		this.scrollToBottom(true);
 	}
 	
 	private removeLoadingIndicator(): void {
@@ -583,7 +590,7 @@ export class ChatViewPane extends ViewPane {
 		}
 		this.updateContextMeter();
 		this.updateEmptyStateVisibility();
-		this.scrollToBottom();
+		this.scrollToBottom(true);
 	}
 	
 	private handleQwenEvent(event: any): void {
@@ -1497,8 +1504,8 @@ export class ChatViewPane extends ViewPane {
 	
 	private createEditCard(container: HTMLElement, filePath: string, oldStr: string, newStr: string, diffPayload: string = ''): void {
 		const card = append(container, $('.void-tool-edit-card'));
-		const ext = filePath.split('.').pop() || '';
 		const name = filePath.split(/[/\\]/).pop() || filePath;
+		const ext = filePath.split('.').pop() || '';
 		let rows = this.buildEditPreviewRows(oldStr, newStr);
 		if (!rows.length && diffPayload) {
 			rows = this.buildRowsFromUnifiedDiff(diffPayload);
@@ -1508,9 +1515,6 @@ export class ChatViewPane extends ViewPane {
 
 		const header = append(card, $('.void-tool-edit-header'));
 		const left = append(header, $('.void-tool-edit-header-left'));
-		const icon = append(left, $('.void-tool-file-icon.codicon'));
-		icon.classList.add(this.getLanguageIcon(ext));
-
 		const fileName = append(left, $('.void-tool-file-name'));
 		fileName.textContent = name;
 		fileName.title = filePath;
@@ -1981,29 +1985,6 @@ export class ChatViewPane extends ViewPane {
 				this.createFileCard(filesContainer, path);
 			}
 		}
-
-		const oldPreview = ref.body.querySelector('.void-tool-read-preview');
-		oldPreview?.remove();
-
-		const previewEntry = entries.find(entry => entry.text.trim().length > 0);
-		if (!previewEntry) {
-			return;
-		}
-
-		const preview = previewEntry.text.trim();
-		if (!preview) {
-			return;
-		}
-
-		const maxChars = 2400;
-		const clipped = preview.length > maxChars ? `${preview.slice(0, maxChars)}\n...` : preview;
-
-		const card = append(ref.body, $('.void-tool-read-preview'));
-		const title = append(card, $('.void-tool-read-title'));
-		const baseName = previewEntry.path.split(/[/\\]/).pop() || 'Preview';
-		title.textContent = entries.length > 1 ? `${baseName} (+${entries.length - 1} more)` : baseName;
-		const body = append(card, $('pre.void-tool-read-body'));
-		body.textContent = clipped;
 	}
 
 	private extractReadResultEntries(content: unknown, fallbackPaths: string[] = []): Array<{ path: string; text: string }> {
@@ -2500,13 +2481,26 @@ export class ChatViewPane extends ViewPane {
 		this.setLayoutMode(hasMessages ? 'conversation' : 'home');
 	}
 
-	private scrollToBottom(): void {
+	private updateAutoScrollLock(): void {
+		if (!this.messagesContainer) {
+			this.shouldAutoScroll = true;
+			return;
+		}
+		const remaining = this.messagesContainer.scrollHeight - (this.messagesContainer.scrollTop + this.messagesContainer.clientHeight);
+		this.shouldAutoScroll = remaining <= ChatViewPane.AUTO_SCROLL_THRESHOLD_PX;
+	}
+
+	private scrollToBottom(force: boolean = false): void {
 		if (!this.messagesContainer || !this.scrollScheduler) {
+			return;
+		}
+		if (!force && !this.shouldAutoScroll) {
 			return;
 		}
 		this.scrollScheduler.schedule(() => {
 			if (this.messagesContainer) {
 				this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+				this.shouldAutoScroll = true;
 			}
 		});
 	}
@@ -2783,7 +2777,7 @@ export class ChatViewPane extends ViewPane {
 		}
 		this.updateContextMeter();
 		this.updateEmptyStateVisibility();
-		this.scrollToBottom();
+		this.scrollToBottom(true);
 		this.saveHistorySessions();
 		this.renderHistoryList();
 		if (closePanel) {
@@ -2859,6 +2853,7 @@ export class ChatViewPane extends ViewPane {
 		this.runSummaryRendered = false;
 		this.contextSummary = '';
 		this.contextSegments.length = 0;
+		this.shouldAutoScroll = true;
 		this.removeLoadingIndicator();
 		this.updateContextMeter();
 		this.updateEmptyStateVisibility();
@@ -3024,21 +3019,6 @@ export class ChatViewPane extends ViewPane {
 	}
 
 	private shouldRenderGenericResultFallback(ref: ToolCardRef): boolean {
-		if (this.isPlanTool(ref.name) || this.isFileReadTool(ref.name)) {
-			return false;
-		}
-		if (this.isCommandTool(ref.name)) {
-			return !ref.commandMeta;
-		}
-		if (this.isFileMutationTool(ref.name)) {
-			if (!ref.inputPaths?.length) {
-				return false;
-			}
-			return !Boolean(ref.body.querySelector('.void-tool-edit-card'));
-		}
-		if (this.isWebTool(ref.name) || this.isSearchTool(ref.name)) {
-			return !Boolean(ref.body.querySelector('.void-tool-sources'));
-		}
 		return false;
 	}
 

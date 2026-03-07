@@ -460,6 +460,18 @@ export class VecnParser {
                                 lines.push(`${pad}    glow_enabled: ${c.glow_enabled ?? false},`);
                                 lines.push(`${pad}    glow_intensity: ${c.glow_intensity ?? 0.8},`);
                                 lines.push(`${pad}    glow_threshold: ${c.glow_threshold ?? 0.9},`);
+                                lines.push(`${pad}    post_bloom_enabled: ${c.post_bloom_enabled ?? c.glow_enabled ?? false},`);
+                                lines.push(`${pad}    post_bloom_intensity: ${c.post_bloom_intensity ?? c.glow_intensity ?? 0.8},`);
+                                lines.push(`${pad}    post_bloom_threshold: ${c.post_bloom_threshold ?? c.glow_threshold ?? 0.9},`);
+                                lines.push(`${pad}    post_ao_enabled: ${c.post_ao_enabled ?? c.ssao_enabled ?? false},`);
+                                lines.push(`${pad}    post_ao_intensity: ${c.post_ao_intensity ?? c.ssao_intensity ?? 1.0},`);
+                                lines.push(`${pad}    post_ao_radius: ${c.post_ao_radius ?? c.ssao_radius ?? 1.0},`);
+                                lines.push(`${pad}    color_grading_enabled: ${c.color_grading_enabled ?? false},`);
+                                lines.push(`${pad}    color_grading_temperature: ${c.color_grading_temperature ?? 0.0},`);
+                                lines.push(`${pad}    color_grading_contrast: ${c.color_grading_contrast ?? 1.0},`);
+                                lines.push(`${pad}    color_grading_saturation: ${c.color_grading_saturation ?? 1.0},`);
+                                lines.push(`${pad}    shadow_profile: "${c.shadow_profile ?? 'high'}",`);
+                                lines.push(`${pad}    render_debug_view: "${c.render_debug_view ?? 'final'}",`);
                                 lines.push(`${pad}    sky_material: "${c.sky_material ?? 'ProceduralSky'}",`);
                                 lines.push(`${pad}    radiance_size: "${c.radiance_size ?? 'Size1024'}",`);
                                 lines.push(`${pad}    sky_top_color: (${(c.sky_top_color ?? [0.35, 0.55, 0.85, 1]).join(', ')}),`);
@@ -484,6 +496,9 @@ export class VecnParser {
                                 lines.push(`${pad}    clouds_height: ${c.clouds_height ?? 500.0},`);
                                 lines.push(`${pad}    clouds_coverage: ${c.clouds_coverage ?? 0.5},`);
                                 lines.push(`${pad}    clouds_thickness: ${c.clouds_thickness ?? 100.0},`);
+                                lines.push(`${pad}    clouds_layer1_speed: ${c.clouds_layer1_speed ?? 1.0},`);
+                                lines.push(`${pad}    clouds_layer2_speed: ${c.clouds_layer2_speed ?? 0.62},`);
+                                lines.push(`${pad}    clouds_detail_strength: ${c.clouds_detail_strength ?? 1.0},`);
                                 lines.push(`${pad}    fog_enabled: ${c.fog_enabled ?? false},`);
                                 lines.push(`${pad}    fog_density: ${c.fog_density ?? 0.001},`);
                                 lines.push(`${pad}    fog_depth_begin: ${c.fog_depth_begin ?? 10.0},`);
@@ -732,6 +747,9 @@ export class VecnParser {
                                 lines.push(`${pad}    clouds_height: ${c.clouds_height ?? 500},`);
                                 lines.push(`${pad}    clouds_coverage: ${c.clouds_coverage ?? 0.5},`);
                                 lines.push(`${pad}    clouds_thickness: ${c.clouds_thickness ?? 100},`);
+                                lines.push(`${pad}    clouds_layer1_speed: ${c.clouds_layer1_speed ?? 1.0},`);
+                                lines.push(`${pad}    clouds_layer2_speed: ${c.clouds_layer2_speed ?? 0.62},`);
+                                lines.push(`${pad}    clouds_detail_strength: ${c.clouds_detail_strength ?? 1.0},`);
                                 // Fog
                                 lines.push(`${pad}    fog_enabled: ${c.fog_enabled ?? false},`);
                                 const fogCol = c.fog_color ?? [0.7, 0.75, 0.80, 1];
@@ -1158,6 +1176,43 @@ export class VecnParser {
                                         glow_enabled: this.parseBool(we, 'glow_enabled', false),
                                         glow_intensity: this.parseFloat(we, 'glow_intensity', 0.8),
                                         glow_threshold: this.parseFloat(we, 'glow_threshold', 0.9),
+                                        // Unified post stack (fallback to legacy glow/ssao)
+                                        post_bloom_enabled: this.parseBool(
+                                                we,
+                                                'post_bloom_enabled',
+                                                this.parseBool(we, 'glow_enabled', false)
+                                        ),
+                                        post_bloom_intensity: this.parseFloat(
+                                                we,
+                                                'post_bloom_intensity',
+                                                this.parseFloat(we, 'glow_intensity', 0.8)
+                                        ),
+                                        post_bloom_threshold: this.parseFloat(
+                                                we,
+                                                'post_bloom_threshold',
+                                                this.parseFloat(we, 'glow_threshold', 0.9)
+                                        ),
+                                        post_ao_enabled: this.parseBool(
+                                                we,
+                                                'post_ao_enabled',
+                                                this.parseBool(we, 'ssao_enabled', false)
+                                        ),
+                                        post_ao_intensity: this.parseFloat(
+                                                we,
+                                                'post_ao_intensity',
+                                                this.parseFloat(we, 'ssao_intensity', 1.0)
+                                        ),
+                                        post_ao_radius: this.parseFloat(
+                                                we,
+                                                'post_ao_radius',
+                                                this.parseFloat(we, 'ssao_radius', 1.0)
+                                        ),
+                                        color_grading_enabled: this.parseBool(we, 'color_grading_enabled', false),
+                                        color_grading_temperature: this.parseFloat(we, 'color_grading_temperature', 0.0),
+                                        color_grading_contrast: this.parseFloat(we, 'color_grading_contrast', 1.0),
+                                        color_grading_saturation: this.parseFloat(we, 'color_grading_saturation', 1.0),
+                                        shadow_profile: this.parseString(we, 'shadow_profile', 'high') as 'low' | 'med' | 'high' | 'ultra',
+                                        render_debug_view: this.parseString(we, 'render_debug_view', 'final') as 'final' | 'albedo' | 'normal' | 'depth' | 'lighting',
                                         // Sky (merged in WorldEnvironment)
                                         sky_material: this.parseString(we, 'sky_material', 'ProceduralSky') as 'ProceduralSky' | 'PanoramaSky' | 'PhysicalSky',
                                         radiance_size: this.parseString(we, 'radiance_size', 'Size1024') as 'Size256' | 'Size512' | 'Size1024' | 'Size2048',
@@ -1183,6 +1238,9 @@ export class VecnParser {
                                         clouds_height: this.parseFloat(we, 'clouds_height', 500.0),
                                         clouds_coverage: this.parseFloat(we, 'clouds_coverage', 0.5),
                                         clouds_thickness: this.parseFloat(we, 'clouds_thickness', 100.0),
+                                        clouds_layer1_speed: this.parseFloat(we, 'clouds_layer1_speed', 1.0),
+                                        clouds_layer2_speed: this.parseFloat(we, 'clouds_layer2_speed', 0.62),
+                                        clouds_detail_strength: this.parseFloat(we, 'clouds_detail_strength', 1.0),
                                         fog_enabled: this.parseBool(we, 'fog_enabled', false),
                                         fog_density: this.parseFloat(we, 'fog_density', 0.001),
                                         fog_depth_begin: this.parseFloat(we, 'fog_depth_begin', 10.0),
@@ -1456,6 +1514,18 @@ export class VecnParser {
                                                 glow_enabled: false,
                                                 glow_intensity: 0.8,
                                                 glow_threshold: 0.9,
+                                                post_bloom_enabled: false,
+                                                post_bloom_intensity: 0.8,
+                                                post_bloom_threshold: 0.9,
+                                                post_ao_enabled: false,
+                                                post_ao_intensity: 1.0,
+                                                post_ao_radius: 1.0,
+                                                color_grading_enabled: false,
+                                                color_grading_temperature: 0.0,
+                                                color_grading_contrast: 1.0,
+                                                color_grading_saturation: 1.0,
+                                                shadow_profile: 'high',
+                                                render_debug_view: 'final',
                                         };
                                         entity.components.push(world);
                                 }
@@ -1486,6 +1556,9 @@ export class VecnParser {
                                 world.clouds_height = this.parseFloat(sky, 'clouds_height', 500.0);
                                 world.clouds_coverage = this.parseFloat(sky, 'clouds_coverage', 0.5);
                                 world.clouds_thickness = this.parseFloat(sky, 'clouds_thickness', 100.0);
+                                world.clouds_layer1_speed = this.parseFloat(sky, 'clouds_layer1_speed', 1.0);
+                                world.clouds_layer2_speed = this.parseFloat(sky, 'clouds_layer2_speed', 0.62);
+                                world.clouds_detail_strength = this.parseFloat(sky, 'clouds_detail_strength', 1.0);
                                 world.fog_enabled = this.parseBool(sky, 'fog_enabled', false);
                                 world.fog_density = this.parseFloat(sky, 'fog_density', 0.001);
                                 world.fog_depth_begin = this.parseFloat(sky, 'fog_depth_begin', 10.0);

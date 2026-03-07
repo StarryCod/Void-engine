@@ -185,9 +185,6 @@ registerSingleton(IAllowedMcpServersService, AllowedMcpServersService, Instantia
 
 //#region --- workbench contributions
 
-// Default Account
-import './services/accounts/common/defaultAccount.js';
-
 // Telemetry
 import './contrib/telemetry/browser/telemetry.contribution.js';
 
@@ -199,9 +196,6 @@ import './contrib/preferences/browser/preferencesSearch.js';
 // Performance
 import './contrib/performance/browser/performance.contribution.js';
 
-// Notebook
-import './contrib/notebook/browser/notebook.contribution.js';
-
 // Speech
 import './contrib/speech/browser/speech.contribution.js';
 
@@ -211,15 +205,6 @@ import './contrib/inlineChat/browser/inlineChat.contribution.js';
 import './contrib/mcp/browser/mcp.contribution.js';
 import './contrib/chat/browser/chatSessions/chatSessions.contribution.js';
 import './contrib/chat/browser/contextContrib/chatContext.contribution.js';
-
-// Interactive
-import './contrib/interactive/browser/interactive.contribution.js';
-
-// repl
-import './contrib/replNotebook/browser/repl.contribution.js';
-
-// Testing
-import './contrib/testing/browser/testing.contribution.js';
 
 // Logs
 import './contrib/logs/common/logs.contribution.js';
@@ -236,29 +221,11 @@ import './contrib/files/browser/files.contribution.js';
 import './contrib/bulkEdit/browser/bulkEditService.js';
 import './contrib/bulkEdit/browser/preview/bulkEdit.contribution.js';
 
-// Search
-import './contrib/search/browser/search.contribution.js';
-import './contrib/search/browser/searchView.js';
-
-// Search Editor
-import './contrib/searchEditor/browser/searchEditor.contribution.js';
-
 // Sash
 import './contrib/sash/browser/sash.contribution.js';
 
 // SCM
 import './contrib/scm/browser/scm.contribution.js';
-
-// Debug
-import './contrib/debug/browser/debug.contribution.js';
-import './contrib/debug/browser/debugEditorContribution.js';
-import './contrib/debug/browser/breakpointEditorContribution.js';
-import './contrib/debug/browser/callStackEditorContribution.js';
-import './contrib/debug/browser/repl.js';
-import './contrib/debug/browser/debugViewlet.js';
-
-// Markers
-import './contrib/markers/browser/markers.contribution.js';
 
 // Process Explorer
 import './contrib/processExplorer/browser/processExplorer.contribution.js';
@@ -272,9 +239,6 @@ import './contrib/multiDiffEditor/browser/multiDiffEditor.contribution.js';
 // Commands
 import './contrib/commands/common/commands.contribution.js';
 
-// Comments
-import './contrib/comments/browser/comments.contribution.js';
-
 // URL Support
 import './contrib/url/browser/url.contribution.js';
 
@@ -286,10 +250,6 @@ import './contrib/customEditor/browser/customEditor.contribution.js';
 
 // External Uri Opener
 import './contrib/externalUriOpener/common/externalUriOpener.contribution.js';
-
-// Extensions Management
-import './contrib/extensions/browser/extensions.contribution.js';
-import './contrib/extensions/browser/extensionsViewlet.js';
 
 // Output View
 import './contrib/output/browser/output.contribution.js';
@@ -348,17 +308,15 @@ import './contrib/update/browser/update.contribution.js';
 import './contrib/surveys/browser/nps.contribution.js';
 import './contrib/surveys/browser/languageSurveys.contribution.js';
 
-// Welcome
-import './contrib/welcomeGettingStarted/browser/gettingStarted.contribution.js';
-import './contrib/welcomeWalkthrough/browser/walkThrough.contribution.js';
-import './contrib/welcomeViews/common/viewsWelcome.contribution.js';
-import './contrib/welcomeViews/common/newFile.contribution.js';
-
 // Void Welcome Screen
 import './contrib/voidWelcome/browser/voidWelcome.contribution.js';
 
 // Void Product Shell Cleanup
 import './contrib/voidShell/browser/voidShell.contribution.js';
+
+// Void Runtime Core
+import './contrib/voidRuntime/browser/voidRuntime.contribution.js';
+import './contrib/voidRuntime/browser/voidRuntimeOutput.contribution.js';
 
 // Void Game Runner
 import './contrib/voidGameRunner/browser/voidGameRunner.contribution.js';
@@ -382,29 +340,8 @@ import './contrib/languageDetection/browser/languageDetection.contribution.js';
 // Language Status
 import './contrib/languageStatus/browser/languageStatus.contribution.js';
 
-// Authentication
-import './contrib/authentication/browser/authentication.contribution.js';
-
-// User Data Sync
-import './contrib/userDataSync/browser/userDataSync.contribution.js';
-
-// User Data Profiles
-import './contrib/userDataProfile/browser/userDataProfile.contribution.js';
-
-// Continue Edit Session
-import './contrib/editSessions/browser/editSessions.contribution.js';
-
-// Remote Coding Agents
-import './contrib/remoteCodingAgents/browser/remoteCodingAgents.contribution.js';
-
 // Code Actions
 import './contrib/codeActions/browser/codeActions.contribution.js';
-
-// Timeline
-import './contrib/timeline/browser/timeline.contribution.js';
-
-// Local History
-import './contrib/localHistory/browser/localHistory.contribution.js';
 
 // Workspace
 import './contrib/workspace/browser/workspace.contribution.js';

@@ -131,9 +131,9 @@ export class AddObjectDialog extends Disposable {
 		this.overlay = DOM.append(this.parent, DOM.$('.godot-dialog-overlay'));
 		this.overlay.style.cssText = `
 			position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-			background: rgba(0, 0, 0, 0.6); z-index: 9999;
+			background: rgba(0, 0, 0, 0.58); z-index: var(--ve-layer-dialog, 3300);
 			display: flex; align-items: center; justify-content: center;
-			backdrop-filter: blur(3px);
+			backdrop-filter: blur(10px);
 		`;
 
 		this._register(DOM.addDisposableListener(this.overlay, DOM.EventType.CLICK, (e) => {
@@ -144,21 +144,23 @@ export class AddObjectDialog extends Disposable {
 		const window = DOM.append(this.overlay, DOM.$('.godot-dialog-window'));
 		window.style.cssText = `
 			width: 700px; height: 520px;
-			background: var(--vscode-editor-background);
-			border: 1px solid var(--vscode-panel-border);
-			box-shadow: 0 12px 40px rgba(0,0,0,0.6);
-			border-radius: 6px; display: flex; flex-direction: column;
+			background: #1f1f1f;
+			border: 1px solid #343434;
+			box-shadow: 0 28px 72px rgba(0, 0, 0, 0.5);
+			border-radius: 24px; display: flex; flex-direction: column;
 			color: var(--vscode-foreground);
 			font-family: var(--vscode-font-family);
+			overflow: hidden;
 		`;
 
 		// Header
 		const header = DOM.append(window, DOM.$('.godot-dialog-header'));
 		header.style.cssText = `
-			padding: 12px 16px; font-weight: 600; 
-			border-bottom: 1px solid var(--vscode-panel-border); 
-			font-size: 13px; color: var(--vscode-foreground);
+			padding: 14px 18px; font-weight: 600; 
+			border-bottom: 1px solid #303030; 
+			font-size: 13px; color: #ececec;
 			display: flex; align-items: center; gap: 8px;
+			background: #191919;
 		`;
 		
 		const headerIcon = DOM.append(header, DOM.$('.codicon.codicon-add'));
@@ -189,10 +191,10 @@ export class AddObjectDialog extends Disposable {
 		this.searchInput.placeholder = 'Search nodes...';
 		this.searchInput.style.cssText = `
 			width: 100%; box-sizing: border-box;
-			background: var(--vscode-input-background);
-			border: 1px solid var(--vscode-input-border);
-			color: var(--vscode-input-foreground);
-			padding: 6px 10px; border-radius: 3px; outline: none;
+			background: #262626;
+			border: 1px solid #343434;
+			color: #e7e7e7;
+			padding: 9px 12px; border-radius: 14px; outline: none;
 			font-size: 12px; transition: border-color 0.15s ease;
 		`;
 		

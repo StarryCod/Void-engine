@@ -17,6 +17,18 @@ export interface IBuildProgress {
 	completedCrates?: number;
 }
 
+export interface ICargoPreflightResult {
+	cargoAvailable: boolean;
+	rustcAvailable: boolean;
+	cargoWatchAvailable: boolean;
+	workspaceExists: boolean;
+	cargoTomlExists: boolean;
+	hasVoidSceneLoaderDependency: boolean;
+	voidSceneLoaderUsesPathDependency: boolean;
+	recommendedVoidSceneLoaderPath?: string;
+	diagnostics: string[];
+}
+
 export interface ICargoService {
 	readonly _serviceBrand: undefined;
 
@@ -36,6 +48,11 @@ export interface ICargoService {
 	 * @param workspacePath Path to workspace
 	 */
 	buildProject(workspacePath: string): Promise<boolean>;
+
+	/**
+	 * Validate local toolchain and project before running build/run commands.
+	 */
+	preflight(workspacePath: string): Promise<ICargoPreflightResult>;
 
 	/**
 	 * Legacy alias for old command wiring.

@@ -23,7 +23,388 @@ pub struct VoidSceneLoaderPlugin;
 
 impl Plugin for VoidSceneLoaderPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, load_main_scene);
+        app.add_systems(Startup, load_main_scene)
+            .add_systems(Update, (
+                runtime_character_controller_system,
+                physics_debug_overlay_system,
+            ));
+    }
+}
+
+const DEFAULT_COLLISION_MASK: u32 = u32::MAX;
+
+#[derive(Component, Debug, Clone, Copy)]
+struct RuntimeCharacterController3D {
+    walk_speed: f32,
+    run_speed: f32,
+    jump_impulse: f32,
+    gravity: f32,
+    crouch_scale: f32,
+    base_scale: Vec3,
+    ground_y: f32,
+    vertical_velocity: f32,
+    grounded: bool,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct PhysicsLayerMask(u32);
+
+#[derive(Component, Debug, Clone, Copy)]
+struct PhysicsVelocityHint {
+    vector: Vec3,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct PhysicsDebugShape {
+    primitive: PhysicsPrimitive,
+    color: Color,
+    is_trigger: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PhysicsPrimitive {
+    Box { half_extents: Vec3 },
+    Circle2D { radius: f32 },
+    Rect2D { half_extents: Vec2 },
+}
+
+fn runtime_character_controller_system(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    mut query: Query<(
+        &mut Transform,
+        &mut RuntimeCharacterController3D,
+        Option<&mut PhysicsVelocityHint>,
+    )>,
+) {
+    let dt = time.delta_secs().clamp(0.0, 0.05);
+    if dt <= 0.0 {
+        return;
+    }
+
+    for (mut transform, mut controller, velocity_hint) in &mut query {
+        let mut wish = Vec3::ZERO;
+        if keyboard.pressed(KeyCode::KeyW) {
+            wish.z -= 1.0;
+        }
+        if keyboard.pressed(KeyCode::KeyS) {
+            wish.z += 1.0;
+        }
+        if keyboard.pressed(KeyCode::KeyA) {
+            wish.x -= 1.0;
+        }
+        if keyboard.pressed(KeyCode::KeyD) {
+            wish.x += 1.0;
+        }
+
+        let speed = if keyboard.pressed(KeyCode::ShiftLeft) {
+            controller.run_speed
+        } else {
+            controller.walk_speed
+        };
+        let horizontal = wish.normalize_or_zero() * speed;
+        transform.translation.x += horizontal.x * dt;
+        transform.translation.z += horizontal.z * dt;
+
+        if controller.grounded && keyboard.just_pressed(KeyCode::Space) {
+            controller.vertical_velocity = controller.jump_impulse.max(0.0);
+            controller.grounded = false;
+        }
+
+        if !controller.grounded {
+            controller.vertical_velocity -= controller.gravity.max(0.0) * dt;
+            transform.translation.y += controller.vertical_velocity * dt;
+            if transform.translation.y <= controller.ground_y {
+                transform.translation.y = controller.ground_y;
+                controller.vertical_velocity = 0.0;
+                controller.grounded = true;
+            }
+        } else {
+            transform.translation.y = controller.ground_y;
+        }
+
+        let crouching = keyboard.pressed(KeyCode::ControlLeft);
+        let y_scale = if crouching {
+            (controller.base_scale.y * controller.crouch_scale).max(0.1)
+        } else {
+            controller.base_scale.y
+        };
+        transform.scale = Vec3::new(controller.base_scale.x, y_scale, controller.base_scale.z);
+
+        if let Some(mut vel) = velocity_hint {
+            vel.vector = Vec3::new(horizontal.x, controller.vertical_velocity, horizontal.z);
+        }
+    }
+}
+
+fn physics_debug_overlay_system(
+    mut gizmos: Gizmos,
+    query: Query<(
+        &GlobalTransform,
+        &PhysicsDebugShape,
+        Option<&PhysicsVelocityHint>,
+        Option<&PhysicsLayerMask>,
+    )>,
+) {
+    for (global, debug_shape, velocity_hint, layer_mask) in &query {
+        let mut color = debug_shape.color;
+        if debug_shape.is_trigger {
+            let c = color.to_srgba();
+            color = Color::srgba(
+                (c.red + 0.2).min(1.0),
+                (c.green + 0.05).min(1.0),
+                (c.blue + 0.05).min(1.0),
+                1.0,
+            );
+        }
+
+        draw_debug_shape(&mut gizmos, global, debug_shape.primitive, color);
+
+        if let Some(mask) = layer_mask {
+            if mask.0 != DEFAULT_COLLISION_MASK {
+                // Tiny axis marker to indicate custom collision layers are active.
+                let center = global.translation();
+                gizmos.line(
+                    center + Vec3::Y * 0.02,
+                    center + Vec3::Y * 0.22,
+                    Color::srgba(0.95, 0.85, 0.22, 0.9),
+                );
+            }
+        }
+
+        if let Some(velocity) = velocity_hint {
+            let len = velocity.vector.length();
+            if len > 0.001 {
+                let start = global.translation();
+                let end = start + velocity.vector.normalize() * (len.min(20.0) * 0.20);
+                gizmos.line(start, end, Color::srgba(0.30, 0.86, 1.0, 0.95));
+            }
+        }
+    }
+}
+
+fn draw_debug_shape(
+    gizmos: &mut Gizmos,
+    global: &GlobalTransform,
+    primitive: PhysicsPrimitive,
+    color: Color,
+) {
+    match primitive {
+        PhysicsPrimitive::Box { half_extents } => {
+            draw_box_wire(gizmos, global, half_extents, color);
+        }
+        PhysicsPrimitive::Circle2D { radius } => {
+            draw_circle2d_wire(gizmos, global, radius.max(0.01), color);
+        }
+        PhysicsPrimitive::Rect2D { half_extents } => {
+            draw_rect2d_wire(gizmos, global, half_extents, color);
+        }
+    }
+}
+
+fn draw_box_wire(
+    gizmos: &mut Gizmos,
+    global: &GlobalTransform,
+    half_extents: Vec3,
+    color: Color,
+) {
+    let hx = half_extents.x.max(0.01);
+    let hy = half_extents.y.max(0.01);
+    let hz = half_extents.z.max(0.01);
+    let corners_local = [
+        Vec3::new(-hx, -hy, -hz),
+        Vec3::new(hx, -hy, -hz),
+        Vec3::new(hx, hy, -hz),
+        Vec3::new(-hx, hy, -hz),
+        Vec3::new(-hx, -hy, hz),
+        Vec3::new(hx, -hy, hz),
+        Vec3::new(hx, hy, hz),
+        Vec3::new(-hx, hy, hz),
+    ];
+    let mut corners_world = [Vec3::ZERO; 8];
+    for (i, corner) in corners_local.iter().enumerate() {
+        corners_world[i] = global.transform_point(*corner);
+    }
+    let edges: [(usize, usize); 12] = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+    ];
+    for (a, b) in edges {
+        gizmos.line(corners_world[a], corners_world[b], color);
+    }
+}
+
+fn draw_rect2d_wire(
+    gizmos: &mut Gizmos,
+    global: &GlobalTransform,
+    half_extents: Vec2,
+    color: Color,
+) {
+    let hx = half_extents.x.max(0.01);
+    let hz = half_extents.y.max(0.01);
+    let points_local = [
+        Vec3::new(-hx, 0.0, -hz),
+        Vec3::new(hx, 0.0, -hz),
+        Vec3::new(hx, 0.0, hz),
+        Vec3::new(-hx, 0.0, hz),
+    ];
+    let mut points_world = [Vec3::ZERO; 4];
+    for (i, point) in points_local.iter().enumerate() {
+        points_world[i] = global.transform_point(*point);
+    }
+    gizmos.line(points_world[0], points_world[1], color);
+    gizmos.line(points_world[1], points_world[2], color);
+    gizmos.line(points_world[2], points_world[3], color);
+    gizmos.line(points_world[3], points_world[0], color);
+}
+
+fn draw_circle2d_wire(
+    gizmos: &mut Gizmos,
+    global: &GlobalTransform,
+    radius: f32,
+    color: Color,
+) {
+    let segments = 32usize;
+    let mut prev = global.transform_point(Vec3::new(radius, 0.0, 0.0));
+    for i in 1..=segments {
+        let t = i as f32 / segments as f32;
+        let angle = t * std::f32::consts::TAU;
+        let p = global.transform_point(Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius));
+        gizmos.line(prev, p, color);
+        prev = p;
+    }
+}
+
+fn collision_shape_to_primitive_3d(shape: &CollisionShape) -> PhysicsPrimitive {
+    match shape {
+        CollisionShape::Box { size } => PhysicsPrimitive::Box {
+            half_extents: Vec3::splat(size.max(0.02) * 0.5),
+        },
+        CollisionShape::Sphere { radius } => PhysicsPrimitive::Box {
+            half_extents: Vec3::splat(radius.max(0.01)),
+        },
+        CollisionShape::Capsule { radius, height } => PhysicsPrimitive::Box {
+            half_extents: Vec3::new(
+                radius.max(0.01),
+                (height.max(0.02) * 0.5) + radius.max(0.01),
+                radius.max(0.01),
+            ),
+        },
+        CollisionShape::Cylinder { radius, height } => PhysicsPrimitive::Box {
+            half_extents: Vec3::new(
+                radius.max(0.01),
+                height.max(0.02) * 0.5,
+                radius.max(0.01),
+            ),
+        },
+    }
+}
+
+fn collision_shape_component_to_primitive_3d(shape: &components::CollisionShape) -> PhysicsPrimitive {
+    match shape {
+        components::CollisionShape::Box { size } => PhysicsPrimitive::Box {
+            half_extents: Vec3::splat(size.max(0.02) * 0.5),
+        },
+        components::CollisionShape::Sphere { radius } => PhysicsPrimitive::Box {
+            half_extents: Vec3::splat(radius.max(0.01)),
+        },
+        components::CollisionShape::Capsule { radius, height } => PhysicsPrimitive::Box {
+            half_extents: Vec3::new(
+                radius.max(0.01),
+                (height.max(0.02) * 0.5) + radius.max(0.01),
+                radius.max(0.01),
+            ),
+        },
+        components::CollisionShape::Cylinder { radius, height } => PhysicsPrimitive::Box {
+            half_extents: Vec3::new(
+                radius.max(0.01),
+                height.max(0.02) * 0.5,
+                radius.max(0.01),
+            ),
+        },
+    }
+}
+
+fn create_collision_mesh_3d(
+    meshes: &mut ResMut<Assets<Mesh>>,
+    shape: &CollisionShape,
+) -> Handle<Mesh> {
+    match shape {
+        CollisionShape::Box { size } => meshes.add(Cuboid::new(*size, *size, *size)),
+        CollisionShape::Sphere { radius } => meshes.add(Sphere::new(*radius).mesh().ico(5).unwrap()),
+        CollisionShape::Capsule { radius, height } => meshes.add(Capsule3d::new(*radius, *height)),
+        CollisionShape::Cylinder { radius, height } => meshes.add(Cylinder::new(*radius, *height)),
+    }
+}
+
+fn create_collision_mesh_3d_from_component(
+    meshes: &mut ResMut<Assets<Mesh>>,
+    shape: &components::CollisionShape,
+) -> Handle<Mesh> {
+    match shape {
+        components::CollisionShape::Box { size } => meshes.add(Cuboid::new(*size, *size, *size)),
+        components::CollisionShape::Sphere { radius } => {
+            meshes.add(Sphere::new(*radius).mesh().ico(4).unwrap())
+        }
+        components::CollisionShape::Capsule { radius, height } => {
+            meshes.add(Capsule3d::new(*radius, *height))
+        }
+        components::CollisionShape::Cylinder { radius, height } => {
+            meshes.add(Cylinder::new(*radius, *height))
+        }
+    }
+}
+
+fn collision_shape_2d_to_primitive(shape: &CollisionShape2D) -> PhysicsPrimitive {
+    match shape {
+        CollisionShape2D::Rectangle { size } => {
+            let hx = (size.0.abs().max(1.0) * 0.02) * 0.5;
+            let hy = (size.1.abs().max(1.0) * 0.02) * 0.5;
+            PhysicsPrimitive::Rect2D {
+                half_extents: Vec2::new(hx, hy),
+            }
+        }
+        CollisionShape2D::Circle { radius } => PhysicsPrimitive::Circle2D {
+            radius: radius.abs().max(1.0) * 0.02,
+        },
+        CollisionShape2D::Capsule { radius, height } => PhysicsPrimitive::Rect2D {
+            half_extents: Vec2::new(
+                radius.abs().max(1.0) * 0.02,
+                ((height.abs().max(1.0) * 0.02) * 0.5) + radius.abs().max(1.0) * 0.02,
+            ),
+        },
+    }
+}
+
+fn create_collision_mesh_2d(
+    meshes: &mut ResMut<Assets<Mesh>>,
+    shape: &CollisionShape2D,
+) -> Handle<Mesh> {
+    match shape {
+        CollisionShape2D::Rectangle { size } => {
+            let w = size.0.abs().max(1.0) * 0.02;
+            let h = size.1.abs().max(1.0) * 0.02;
+            meshes.add(Cuboid::new(w, 0.05, h))
+        }
+        CollisionShape2D::Circle { radius } => {
+            let r = radius.abs().max(1.0) * 0.02;
+            meshes.add(Cylinder::new(r, 0.05))
+        }
+        CollisionShape2D::Capsule { radius, height } => {
+            let r = radius.abs().max(1.0) * 0.02;
+            let h = height.abs().max(1.0) * 0.02;
+            meshes.add(Capsule3d::new(r, h))
+        }
     }
 }
 
@@ -47,6 +428,7 @@ pub fn load_scene_file(
     println!("[Void Scene Loader] Root entities: {}", scene.entities.len());
     let ray_target_count = count_ray_targets(&scene.entities);
     println!("[Scene Test] ray_target_nodes={}", ray_target_count);
+    validate_scene_physics_links(&scene.entities, ray_target_count);
 
     // Spawn entities
     for entity in scene.entities {
@@ -288,6 +670,108 @@ fn count_ray_targets(entities: &[VecnEntity]) -> usize {
     count
 }
 
+fn validate_scene_physics_links(entities: &[VecnEntity], ray_target_count: usize) {
+    fn walk(entities: &[VecnEntity], ray_target_count: usize, totals: &mut (usize, usize, usize, usize, usize)) {
+        for entity in entities {
+            for component in &entity.components {
+                match component {
+                    VecnComponent::RayCast(data) => {
+                        totals.0 += 1;
+                        let target = Vec3::new(data.target_position.0, data.target_position.1, data.target_position.2);
+                        let target_ok = target.length_squared() > 0.0001;
+                        let mask_ok = data.collision_mask != 0;
+                        let has_targets = ray_target_count > 0;
+                        let work = data.enabled && target_ok && mask_ok && has_targets;
+                        println!(
+                            "[Scene Validate] raycast3d entity={} enabled={} target_len={:.3} mask=0x{:X} targets={} => {}",
+                            entity.name,
+                            data.enabled,
+                            target.length(),
+                            data.collision_mask,
+                            ray_target_count,
+                            if work { "work" } else { "warn" }
+                        );
+                    }
+                    VecnComponent::ShapeCast(data) => {
+                        totals.1 += 1;
+                        let target = Vec3::new(data.target_position.0, data.target_position.1, data.target_position.2);
+                        let target_ok = target.length_squared() > 0.0001;
+                        let mask_ok = data.collision_mask != 0;
+                        let results_ok = data.max_results > 0;
+                        let has_targets = ray_target_count > 0;
+                        let work = data.enabled && target_ok && mask_ok && results_ok && has_targets;
+                        println!(
+                            "[Scene Validate] shapecast3d entity={} enabled={} target_len={:.3} mask=0x{:X} max_results={} targets={} => {}",
+                            entity.name,
+                            data.enabled,
+                            target.length(),
+                            data.collision_mask,
+                            data.max_results,
+                            ray_target_count,
+                            if work { "work" } else { "warn" }
+                        );
+                    }
+                    VecnComponent::Area(data) => {
+                        totals.2 += 1;
+                        let work = (data.monitoring || data.monitorable) && ray_target_count > 0;
+                        println!(
+                            "[Scene Validate] area3d entity={} monitoring={} monitorable={} priority={} targets={} => {}",
+                            entity.name,
+                            data.monitoring,
+                            data.monitorable,
+                            data.priority,
+                            ray_target_count,
+                            if work { "work" } else { "warn" }
+                        );
+                    }
+                    VecnComponent::RayCast2D(data) => {
+                        totals.3 += 1;
+                        let target = Vec2::new(data.target_position.0, data.target_position.1);
+                        let target_ok = target.length_squared() > 0.0001;
+                        let mask_ok = data.collision_mask != 0;
+                        let has_targets = ray_target_count > 0;
+                        let work = data.enabled && target_ok && mask_ok && has_targets;
+                        println!(
+                            "[Scene Validate] raycast2d entity={} enabled={} target_len={:.3} mask=0x{:X} targets={} => {}",
+                            entity.name,
+                            data.enabled,
+                            target.length(),
+                            data.collision_mask,
+                            ray_target_count,
+                            if work { "work" } else { "warn" }
+                        );
+                    }
+                    VecnComponent::Area2D(data) => {
+                        totals.4 += 1;
+                        let work = (data.monitoring || data.monitorable) && ray_target_count > 0;
+                        println!(
+                            "[Scene Validate] area2d entity={} monitoring={} monitorable={} priority={} targets={} => {}",
+                            entity.name,
+                            data.monitoring,
+                            data.monitorable,
+                            data.priority,
+                            ray_target_count,
+                            if work { "work" } else { "warn" }
+                        );
+                    }
+                    _ => {}
+                }
+            }
+
+            if !entity.children.is_empty() {
+                walk(&entity.children, ray_target_count, totals);
+            }
+        }
+    }
+
+    let mut totals = (0, 0, 0, 0, 0);
+    walk(entities, ray_target_count, &mut totals);
+    println!(
+        "[Scene Validate] summary raycast3d={} shapecast3d={} area3d={} raycast2d={} area2d={}",
+        totals.0, totals.1, totals.2, totals.3, totals.4
+    );
+}
+
 fn component_name(component: &VecnComponent) -> &'static str {
     match component {
         VecnComponent::Transform { .. } => "Transform",
@@ -366,9 +850,18 @@ fn component_is_implemented(component: &VecnComponent) -> bool {
             | VecnComponent::DirectionalLight { .. }
             | VecnComponent::SpotLight(_)
             | VecnComponent::CollisionShape { .. }
+            | VecnComponent::Area(_)
+            | VecnComponent::RayCast(_)
+            | VecnComponent::ShapeCast(_)
             | VecnComponent::CharacterBody(_)
             | VecnComponent::RigidBody(_)
             | VecnComponent::StaticBody(_)
+            | VecnComponent::CollisionShape2D(_)
+            | VecnComponent::Area2D(_)
+            | VecnComponent::RayCast2D(_)
+            | VecnComponent::CharacterBody2D(_)
+            | VecnComponent::RigidBody2D(_)
+            | VecnComponent::StaticBody2D(_)
             | VecnComponent::Timer(_)
             | VecnComponent::WorldEnvironment(_)
             | VecnComponent::Sky(_)
@@ -459,9 +952,12 @@ fn spawn_entity(
     let mut dir_light_data: Option<((f32, f32, f32), f32)> = None;
     let mut spot_light_data: Option<&SpotLightComponent> = None;
     let mut collision_shape: Option<&CollisionShape> = None;
+    let mut collision_shape_2d: Option<&CollisionShape2DComponent> = None;
     let mut ray_cast_data: Option<&RayCastComponent> = None;
     let mut shape_cast_data: Option<&ShapeCastComponent> = None;
     let mut ray_cast_2d_data: Option<&RayCast2DComponent> = None;
+    let mut area_data: Option<&AreaComponent> = None;
+    let mut area_2d_data: Option<&Area2DComponent> = None;
     let mut world_environment: Option<&WorldEnvironmentComponent> = None;
     let mut sky_data: Option<&SkyComponent> = None;
     let mut first_fallback_component: Option<&'static str> = None;
@@ -470,6 +966,9 @@ fn spawn_entity(
     let mut character_body: Option<&CharacterBodyComponent> = None;
     let mut rigid_body: Option<&RigidBodyComponent> = None;
     let mut static_body: Option<&StaticBodyComponent> = None;
+    let mut character_body_2d: Option<&CharacterBody2DComponent> = None;
+    let mut rigid_body_2d: Option<&RigidBody2DComponent> = None;
+    let mut static_body_2d: Option<&StaticBody2DComponent> = None;
     let mut timer: Option<&TimerComponent> = None;
 
     // Extract components
@@ -520,6 +1019,9 @@ fn spawn_entity(
             VecnComponent::CollisionShape { shape } => {
                 collision_shape = Some(shape);
             }
+            VecnComponent::CollisionShape2D(data) => {
+                collision_shape_2d = Some(data);
+            }
             VecnComponent::RayCast(data) => {
                 ray_cast_data = Some(data);
             }
@@ -529,6 +1031,12 @@ fn spawn_entity(
             VecnComponent::RayCast2D(data) => {
                 ray_cast_2d_data = Some(data);
             }
+            VecnComponent::Area(data) => {
+                area_data = Some(data);
+            }
+            VecnComponent::Area2D(data) => {
+                area_2d_data = Some(data);
+            }
             VecnComponent::CharacterBody(data) => {
                 character_body = Some(data);
             }
@@ -537,6 +1045,15 @@ fn spawn_entity(
             }
             VecnComponent::StaticBody(data) => {
                 static_body = Some(data);
+            }
+            VecnComponent::CharacterBody2D(data) => {
+                character_body_2d = Some(data);
+            }
+            VecnComponent::RigidBody2D(data) => {
+                rigid_body_2d = Some(data);
+            }
+            VecnComponent::StaticBody2D(data) => {
+                static_body_2d = Some(data);
             }
             VecnComponent::Timer(data) => {
                 timer = Some(data);
@@ -568,12 +1085,21 @@ fn spawn_entity(
             });
         }
         println!(
-            "[Scene Test] worldenvironment true work entity={} tonemap={:?} exposure={:?} sun={:?} clouds={:?}",
+            "[Scene Test] worldenvironment true work entity={} tonemap={:?} exposure={:?} bloom={:?}/{:?} ao={:?}/{:?} color_grading={:?} shadow_profile={:?} debug_view={:?} sun={:?} clouds={:?} layers=({:?},{:?})",
             entity.name,
             env.tonemap_mode,
             env.tonemap_exposure,
+            env.post_bloom_enabled,
+            env.post_bloom_intensity,
+            env.post_ao_enabled,
+            env.post_ao_intensity,
+            env.color_grading_enabled,
+            env.shadow_profile,
+            env.render_debug_view,
             env.sun_enabled,
-            env.clouds_enabled
+            env.clouds_enabled,
+            env.clouds_layer1_speed,
+            env.clouds_layer2_speed
         );
     }
 
@@ -581,7 +1107,7 @@ fn spawn_entity(
         // Procedural skybox texture generated at runtime:
         // gradient + soft sun disk + layered cloud noise.
         let sky_mesh = meshes.add(Sphere::new(1.0).mesh().uv(128, 64));
-        let sky_texture = images.add(create_procedural_sky_texture());
+        let sky_texture = images.add(create_procedural_sky_texture(world_environment));
         let sky_material = materials.add(StandardMaterial {
             base_color: Color::WHITE,
             base_color_texture: Some(sky_texture),
@@ -691,8 +1217,7 @@ fn spawn_entity(
         } else {
             materials.add(Color::srgb(0.6, 0.6, 0.6))
         };
-
-        let _entity_commands = commands.spawn((
+        let mut entity_commands = commands.spawn((
             Mesh3d(mesh_handle),
             MeshMaterial3d(material_handle),
             transform,
@@ -701,19 +1226,75 @@ fn spawn_entity(
         // Add physics components if present
         if let Some(rb_data) = rigid_body {
             println!("  [Spawn] Mesh + RigidBody: {} (mass: {})", entity.name, rb_data.mass);
-            // Note: Actual physics would require bevy_rapier3d
-            // For now just log it
+            entity_commands.insert((
+                PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+                PhysicsVelocityHint {
+                    vector: Vec3::new(0.0, -9.81 * rb_data.gravity_scale.max(0.0), 0.0),
+                },
+                PhysicsDebugShape {
+                    primitive: PhysicsPrimitive::Box {
+                        half_extents: Vec3::new(0.35, 0.35, 0.35),
+                    },
+                    color: Color::srgba(0.20, 0.88, 0.54, 0.95),
+                    is_trigger: false,
+                },
+            ));
         } else if let Some(cb_data) = character_body {
             println!("  [Spawn] Mesh + CharacterBody: {} (mass: {})", entity.name, cb_data.mass);
+            entity_commands.insert((
+                PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+                PhysicsVelocityHint {
+                    vector: Vec3::new(0.0, -9.81 * cb_data.gravity_scale.max(0.0), 0.0),
+                },
+                RuntimeCharacterController3D {
+                    walk_speed: 3.8,
+                    run_speed: 6.6,
+                    jump_impulse: 5.1,
+                    gravity: 9.81 * cb_data.gravity_scale.max(0.1),
+                    crouch_scale: 0.62,
+                    base_scale: transform.scale,
+                    ground_y: transform.translation.y,
+                    vertical_velocity: 0.0,
+                    grounded: true,
+                },
+                PhysicsDebugShape {
+                    primitive: PhysicsPrimitive::Box {
+                        half_extents: Vec3::new(0.32, 0.50, 0.32),
+                    },
+                    color: Color::srgba(0.46, 0.86, 0.98, 0.95),
+                    is_trigger: false,
+                },
+            ));
         } else if let Some(sb_data) = static_body {
             println!("  [Spawn] Mesh + StaticBody: {} (friction: {})", entity.name, sb_data.friction);
+            entity_commands.insert((
+                PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+                PhysicsDebugShape {
+                    primitive: PhysicsPrimitive::Box {
+                        half_extents: Vec3::new(0.42, 0.12, 0.42),
+                    },
+                    color: Color::srgba(0.92, 0.84, 0.70, 0.95),
+                    is_trigger: false,
+                },
+            ));
+        } else if area_data.is_some() {
+            entity_commands.insert((
+                PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+                PhysicsDebugShape {
+                    primitive: PhysicsPrimitive::Box {
+                        half_extents: Vec3::new(0.55, 0.55, 0.55),
+                    },
+                    color: Color::srgba(1.0, 0.62, 0.20, 0.95),
+                    is_trigger: true,
+                },
+            ));
         } else {
             println!("  [Spawn] Mesh: {} ({:?})", entity.name, shape);
         }
         spawned_visual = true;
-    } else if let Some(_coll_shape) = collision_shape {
+    } else if let Some(coll_shape) = collision_shape {
         // Collision shape debug visual (no physics backend yet).
-        let mesh_handle = meshes.add(Cuboid::new(0.7, 0.7, 0.7));
+        let mesh_handle = create_collision_mesh_3d(meshes, coll_shape);
         let material_handle = materials.add(StandardMaterial {
             base_color: Color::srgba(0.95, 0.55, 0.30, 0.55),
             emissive: LinearRgba::from(Color::srgb(0.18, 0.07, 0.03)),
@@ -721,7 +1302,17 @@ fn spawn_entity(
             cull_mode: None,
             ..default()
         });
-        commands.spawn((Mesh3d(mesh_handle), MeshMaterial3d(material_handle), transform));
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            transform,
+            PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+            PhysicsDebugShape {
+                primitive: collision_shape_to_primitive_3d(coll_shape),
+                color: Color::srgba(0.95, 0.55, 0.30, 0.95),
+                is_trigger: false,
+            },
+        ));
         println!("  [Spawn] CollisionShape: {}", entity.name);
         spawned_visual = true;
     } else if character_body.is_some() {
@@ -731,7 +1322,34 @@ fn spawn_entity(
             emissive: LinearRgba::from(Color::srgb(0.08, 0.12, 0.15)),
             ..default()
         });
-        commands.spawn((Mesh3d(mesh_handle), MeshMaterial3d(material_handle), transform));
+        let cb_data = character_body.unwrap();
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            transform,
+            PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+            PhysicsVelocityHint {
+                vector: Vec3::new(0.0, -9.81 * cb_data.gravity_scale.max(0.0), 0.0),
+            },
+            RuntimeCharacterController3D {
+                walk_speed: 3.8,
+                run_speed: 6.6,
+                jump_impulse: 5.1,
+                gravity: 9.81 * cb_data.gravity_scale.max(0.1),
+                crouch_scale: 0.62,
+                base_scale: transform.scale,
+                ground_y: transform.translation.y,
+                vertical_velocity: 0.0,
+                grounded: true,
+            },
+            PhysicsDebugShape {
+                primitive: PhysicsPrimitive::Box {
+                    half_extents: Vec3::new(0.30, 0.55, 0.30),
+                },
+                color: Color::srgba(0.46, 0.86, 0.98, 0.95),
+                is_trigger: false,
+            },
+        ));
         println!("  [Spawn] CharacterBody visual: {}", entity.name);
         spawned_visual = true;
     } else if rigid_body.is_some() {
@@ -741,7 +1359,23 @@ fn spawn_entity(
             emissive: LinearRgba::from(Color::srgb(0.06, 0.11, 0.08)),
             ..default()
         });
-        commands.spawn((Mesh3d(mesh_handle), MeshMaterial3d(material_handle), transform));
+        let rb_data = rigid_body.unwrap();
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            transform,
+            PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+            PhysicsVelocityHint {
+                vector: Vec3::new(0.0, -9.81 * rb_data.gravity_scale.max(0.0), 0.0),
+            },
+            PhysicsDebugShape {
+                primitive: PhysicsPrimitive::Box {
+                    half_extents: Vec3::new(0.32, 0.32, 0.32),
+                },
+                color: Color::srgba(0.22, 0.84, 0.58, 0.95),
+                is_trigger: false,
+            },
+        ));
         println!("  [Spawn] RigidBody visual: {}", entity.name);
         spawned_visual = true;
     } else if static_body.is_some() {
@@ -751,8 +1385,44 @@ fn spawn_entity(
             perceptual_roughness: 0.95,
             ..default()
         });
-        commands.spawn((Mesh3d(mesh_handle), MeshMaterial3d(material_handle), transform));
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            transform,
+            PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+            PhysicsDebugShape {
+                primitive: PhysicsPrimitive::Box {
+                    half_extents: Vec3::new(0.45, 0.12, 0.45),
+                },
+                color: Color::srgba(0.92, 0.84, 0.70, 0.95),
+                is_trigger: false,
+            },
+        ));
         println!("  [Spawn] StaticBody visual: {}", entity.name);
+        spawned_visual = true;
+    } else if let Some(area) = area_data {
+        let mesh_handle = meshes.add(Cuboid::new(1.4, 1.4, 1.4));
+        let material_handle = materials.add(StandardMaterial {
+            base_color: Color::srgba(1.0, 0.62, 0.20, 0.28),
+            emissive: LinearRgba::from(Color::srgb(0.2, 0.09, 0.04)),
+            alpha_mode: AlphaMode::Blend,
+            cull_mode: None,
+            ..default()
+        });
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            transform,
+            PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+            PhysicsDebugShape {
+                primitive: PhysicsPrimitive::Box {
+                    half_extents: Vec3::new(0.7, 0.7, 0.7),
+                },
+                color: Color::srgba(1.0, 0.62, 0.20, 0.95),
+                is_trigger: true,
+            },
+        ));
+        println!("  [Spawn] Area3D visual: {} (priority={})", entity.name, area.priority);
         spawned_visual = true;
     } else if let Some(ray) = ray_cast_data {
         let target = Vec3::new(ray.target_position.0, ray.target_position.1, ray.target_position.2);
@@ -770,7 +1440,15 @@ fn spawn_entity(
             rotation: transform.rotation * Quat::from_rotation_arc(Vec3::Z, dir),
             scale: Vec3::ONE,
         };
-        commands.spawn((Mesh3d(mesh_handle), MeshMaterial3d(material_handle), local));
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            local,
+            PhysicsLayerMask(ray.collision_mask),
+            PhysicsVelocityHint {
+                vector: transform.rotation * (dir * length),
+            },
+        ));
         println!("  [Spawn] RayCast visual: {}", entity.name);
         spawned_visual = true;
     } else if let Some(ray) = ray_cast_2d_data {
@@ -790,18 +1468,164 @@ fn spawn_entity(
             rotation: Quat::from_rotation_arc(Vec3::Z, dir),
             scale: Vec3::ONE,
         };
-        commands.spawn((Mesh3d(mesh_handle), MeshMaterial3d(material_handle), local));
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            local,
+            PhysicsLayerMask(ray.collision_mask),
+            PhysicsVelocityHint { vector: dir * length },
+        ));
         println!("  [Spawn] RayCast2D visual: {}", entity.name);
         spawned_visual = true;
-    } else if shape_cast_data.is_some() {
-        let mesh_handle = meshes.add(Sphere::new(0.28).mesh().ico(3).unwrap());
+    } else if let Some(shape_cast) = shape_cast_data {
+        let mesh_handle = create_collision_mesh_3d_from_component(meshes, &shape_cast.shape);
         let material_handle = materials.add(StandardMaterial {
             base_color: Color::srgb(0.95, 0.62, 0.25),
             emissive: LinearRgba::from(Color::srgb(0.2, 0.09, 0.03)),
             ..default()
         });
-        commands.spawn((Mesh3d(mesh_handle), MeshMaterial3d(material_handle), transform));
-        println!("  [Spawn] ShapeCast visual: {}", entity.name);
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            transform,
+            PhysicsLayerMask(shape_cast.collision_mask),
+            PhysicsVelocityHint {
+                vector: Vec3::new(
+                    shape_cast.target_position.0,
+                    shape_cast.target_position.1,
+                    shape_cast.target_position.2,
+                ),
+            },
+            PhysicsDebugShape {
+                primitive: collision_shape_component_to_primitive_3d(&shape_cast.shape),
+                color: Color::srgba(0.95, 0.62, 0.25, 0.95),
+                is_trigger: false,
+            },
+        ));
+        println!("  [Spawn] ShapeCast visual: {} (max_results={})", entity.name, shape_cast.max_results);
+        spawned_visual = true;
+    } else if let Some(shape_2d) = collision_shape_2d {
+        let mesh_handle = create_collision_mesh_2d(meshes, &shape_2d.shape);
+        let material_handle = materials.add(StandardMaterial {
+            base_color: Color::srgba(0.35, 0.78, 1.0, 0.60),
+            emissive: LinearRgba::from(Color::srgb(0.07, 0.17, 0.22)),
+            alpha_mode: AlphaMode::Blend,
+            cull_mode: None,
+            ..default()
+        });
+        let tf = transform_2d.unwrap_or(transform);
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            tf,
+            PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+            PhysicsDebugShape {
+                primitive: collision_shape_2d_to_primitive(&shape_2d.shape),
+                color: Color::srgba(0.35, 0.78, 1.0, 0.95),
+                is_trigger: false,
+            },
+        ));
+        println!("  [Spawn] CollisionShape2D visual: {}", entity.name);
+        spawned_visual = true;
+    } else if let Some(area2d) = area_2d_data {
+        let tf = transform_2d.unwrap_or(transform);
+        let mesh_handle = meshes.add(Cuboid::new(1.0, 0.08, 1.0));
+        let material_handle = materials.add(StandardMaterial {
+            base_color: Color::srgba(1.0, 0.58, 0.28, 0.30),
+            emissive: LinearRgba::from(Color::srgb(0.18, 0.08, 0.04)),
+            alpha_mode: AlphaMode::Blend,
+            cull_mode: None,
+            ..default()
+        });
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            tf,
+            PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+            PhysicsDebugShape {
+                primitive: PhysicsPrimitive::Rect2D {
+                    half_extents: Vec2::new(0.5, 0.5),
+                },
+                color: Color::srgba(1.0, 0.58, 0.28, 0.95),
+                is_trigger: true,
+            },
+        ));
+        println!("  [Spawn] Area2D visual: {} (priority={})", entity.name, area2d.priority);
+        spawned_visual = true;
+    } else if let Some(cb2d) = character_body_2d {
+        let tf = transform_2d.unwrap_or(transform);
+        let mesh_handle = meshes.add(Capsule3d::new(0.22, 0.45));
+        let material_handle = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.62, 0.88, 1.0),
+            emissive: LinearRgba::from(Color::srgb(0.08, 0.14, 0.18)),
+            ..default()
+        });
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            tf,
+            PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+            PhysicsVelocityHint {
+                vector: Vec3::new(cb2d.velocity.0 * 0.02, 0.0, cb2d.velocity.1 * 0.02),
+            },
+            PhysicsDebugShape {
+                primitive: PhysicsPrimitive::Rect2D {
+                    half_extents: Vec2::new(0.25, 0.25),
+                },
+                color: Color::srgba(0.62, 0.88, 1.0, 0.95),
+                is_trigger: false,
+            },
+        ));
+        println!("  [Spawn] CharacterBody2D visual: {}", entity.name);
+        spawned_visual = true;
+    } else if let Some(rb2d) = rigid_body_2d {
+        let tf = transform_2d.unwrap_or(transform);
+        let mesh_handle = meshes.add(Cuboid::new(0.5, 0.12, 0.5));
+        let material_handle = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.54, 0.86, 0.64),
+            emissive: LinearRgba::from(Color::srgb(0.08, 0.13, 0.09)),
+            ..default()
+        });
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            tf,
+            PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+            PhysicsVelocityHint {
+                vector: Vec3::new(0.0, -9.81 * rb2d.gravity_scale.max(0.0), 0.0),
+            },
+            PhysicsDebugShape {
+                primitive: PhysicsPrimitive::Rect2D {
+                    half_extents: Vec2::new(0.28, 0.28),
+                },
+                color: Color::srgba(0.54, 0.86, 0.64, 0.95),
+                is_trigger: false,
+            },
+        ));
+        println!("  [Spawn] RigidBody2D visual: {}", entity.name);
+        spawned_visual = true;
+    } else if static_body_2d.is_some() {
+        let tf = transform_2d.unwrap_or(transform);
+        let mesh_handle = meshes.add(Cuboid::new(0.8, 0.08, 0.8));
+        let material_handle = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.90, 0.84, 0.73),
+            perceptual_roughness: 0.92,
+            ..default()
+        });
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            tf,
+            PhysicsLayerMask(DEFAULT_COLLISION_MASK),
+            PhysicsDebugShape {
+                primitive: PhysicsPrimitive::Rect2D {
+                    half_extents: Vec2::new(0.4, 0.4),
+                },
+                color: Color::srgba(0.90, 0.84, 0.73, 0.95),
+                is_trigger: false,
+            },
+        ));
+        println!("  [Spawn] StaticBody2D visual: {}", entity.name);
         spawned_visual = true;
     }
 
@@ -832,7 +1656,7 @@ fn spawn_entity(
     }
 }
 
-fn create_procedural_sky_texture() -> Image {
+fn create_procedural_sky_texture(world_environment: Option<&WorldEnvironmentComponent>) -> Image {
     const WIDTH: u32 = 1024;
     const HEIGHT: u32 = 512;
 
@@ -841,9 +1665,57 @@ fn create_procedural_sky_texture() -> Image {
     let sky_top = Vec3::new(0.15, 0.31, 0.57);
     let sky_horizon = Vec3::new(0.70, 0.80, 0.92);
     let cloud_shadow = Vec3::new(0.54, 0.62, 0.73);
-    let cloud_lit = Vec3::new(0.98, 0.98, 0.98);
-    let sun_color = Vec3::new(1.0, 0.94, 0.84);
-    let sun_dir = Vec3::new(0.35, 0.62, -0.70).normalize();
+    let cloud_lit = world_environment
+        .and_then(|env| env.clouds_color)
+        .map(|c| Vec3::new(c.0, c.1, c.2))
+        .unwrap_or(Vec3::new(0.98, 0.98, 0.98));
+    let sun_color = world_environment
+        .and_then(|env| env.sun_color)
+        .map(|c| Vec3::new(c.0, c.1, c.2))
+        .unwrap_or(Vec3::new(1.0, 0.94, 0.84));
+    let sun_dir = world_environment
+        .and_then(|env| env.sun_position)
+        .map(|d| Vec3::new(d.0, d.1, d.2))
+        .unwrap_or(Vec3::new(0.35, 0.62, -0.70))
+        .normalize_or_zero();
+    let sun_energy = world_environment
+        .and_then(|env| env.sun_energy)
+        .unwrap_or(3.6)
+        .clamp(0.0, 24.0);
+    let sun_energy_scale = (sun_energy / 6.0).clamp(0.20, 3.0);
+
+    let clouds_enabled = world_environment
+        .and_then(|env| env.clouds_enabled)
+        .unwrap_or(true);
+    let cloud_density = world_environment
+        .and_then(|env| env.clouds_density)
+        .unwrap_or(0.52)
+        .clamp(0.0, 1.2);
+    let cloud_coverage = world_environment
+        .and_then(|env| env.clouds_coverage)
+        .unwrap_or(0.58)
+        .clamp(0.05, 0.95);
+    let cloud_thickness = world_environment
+        .and_then(|env| env.clouds_thickness)
+        .unwrap_or(260.0)
+        .clamp(20.0, 1500.0);
+    let cloud_thickness_factor = ((cloud_thickness - 20.0) / (1500.0 - 20.0)).clamp(0.0, 1.0);
+    let cloud_detail_strength = world_environment
+        .and_then(|env| env.clouds_detail_strength)
+        .unwrap_or(1.0)
+        .clamp(0.0, 3.0);
+    let layer1_speed = world_environment
+        .and_then(|env| env.clouds_layer1_speed)
+        .unwrap_or(1.0)
+        .clamp(0.0, 4.0);
+    let layer2_speed = world_environment
+        .and_then(|env| env.clouds_layer2_speed)
+        .unwrap_or(0.62)
+        .clamp(0.0, 4.0);
+    let cloud_flow_seed = world_environment
+        .and_then(|env| env.clouds_speed)
+        .unwrap_or(0.015)
+        .clamp(0.0, 1.0) * 37.0;
 
     for y in 0..HEIGHT {
         let v = y as f32 / (HEIGHT - 1) as f32;
@@ -868,21 +1740,39 @@ fn create_procedural_sky_texture() -> Image {
             let sun_dot = dir.dot(sun_dir).max(0.0);
             let sun_disk = smoothstep(0.9985, 0.9998, sun_dot);
             let sun_glow = sun_dot.powf(18.0) * 0.60 + sun_dot.powf(4.5) * 0.09;
-            color += sun_color * (sun_disk * 0.85 + sun_glow);
+            color += sun_color * (sun_disk * 0.85 + sun_glow) * sun_energy_scale;
 
             // Layered cloud noise in sky dome space.
             let nx = dir.x * 2.1;
             let nz = dir.z * 2.1;
-            let shape = fbm(nx * 0.9 + 2.1, nz * 0.9 - 1.4, 5);
-            let detail = fbm(nx * 3.4 - 9.7, nz * 3.4 + 7.3, 4);
+            let shape = fbm(
+                nx * (0.85 + layer1_speed * 0.16) + 2.1 + cloud_flow_seed,
+                nz * (0.85 + layer1_speed * 0.16) - 1.4 - cloud_flow_seed * 0.5,
+                5,
+            );
+            let detail = fbm(
+                nx * (3.0 + layer2_speed * 0.35) - 9.7 - cloud_flow_seed * 1.2,
+                nz * (3.0 + layer2_speed * 0.35) + 7.3 + cloud_flow_seed * 0.7,
+                4,
+            );
             let erosion = fbm(nx * 6.1 + 3.2, nz * 6.1 - 2.6, 3);
-            let base_cloud = (shape - detail * 0.32 - erosion * 0.18 + 0.08).clamp(0.0, 1.0);
-            let cloud_mask = smoothstep(0.36, 0.64, base_cloud);
+            let detail_mix = (0.22 + cloud_detail_strength * 0.13).clamp(0.10, 0.65);
+            let erosion_mix = (0.10 + cloud_detail_strength * 0.07).clamp(0.05, 0.45);
+            let density_offset = (cloud_density - 0.5) * 0.34;
+            let base_cloud = (shape - detail * detail_mix - erosion * erosion_mix + density_offset + 0.08).clamp(0.0, 1.0);
+            let cloud_edge0 = (0.58 - cloud_coverage * 0.38).clamp(0.05, 0.85);
+            let cloud_edge1 = (0.86 - cloud_coverage * 0.22).clamp(cloud_edge0 + 0.03, 0.96);
+            let cloud_mask = smoothstep(cloud_edge0, cloud_edge1, base_cloud);
 
             // Keep clouds mostly in upper hemisphere but visible enough from default camera.
             let low_fade = smoothstep(0.18, 0.48, altitude);
             let high_fade = 1.0 - smoothstep(0.98, 1.0, altitude);
-            let cloud_alpha = (cloud_mask * low_fade * high_fade * 0.95).clamp(0.0, 1.0);
+            let cloud_alpha_strength = if clouds_enabled {
+                (0.45 + cloud_density * 0.55) * (0.65 + cloud_thickness_factor * 0.35)
+            } else {
+                0.0
+            };
+            let cloud_alpha = (cloud_mask * low_fade * high_fade * cloud_alpha_strength).clamp(0.0, 1.0);
 
             let sun_cloud_light = sun_dot.powf(5.0).clamp(0.0, 1.0);
             let cloud_col = cloud_shadow.lerp(cloud_lit, 0.45 + sun_cloud_light * 0.55);

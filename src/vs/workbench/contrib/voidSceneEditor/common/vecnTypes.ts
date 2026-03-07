@@ -510,6 +510,20 @@ export interface WorldEnvironmentComponent {
         glow_enabled: boolean;
         glow_intensity: number;
         glow_threshold: number;
+        // Unified post stack (editor/runtime parity)
+        post_bloom_enabled?: boolean;
+        post_bloom_intensity?: number;
+        post_bloom_threshold?: number;
+        post_ao_enabled?: boolean;
+        post_ao_intensity?: number;
+        post_ao_radius?: number;
+        color_grading_enabled?: boolean;
+        color_grading_temperature?: number;
+        color_grading_contrast?: number;
+        color_grading_saturation?: number;
+        // Render pipeline controls
+        shadow_profile?: 'low' | 'med' | 'high' | 'ultra';
+        render_debug_view?: 'final' | 'albedo' | 'normal' | 'depth' | 'lighting';
         // Sky settings (merged from Sky node for single-node workflow)
         sky_material?: 'ProceduralSky' | 'PanoramaSky' | 'PhysicalSky';
         radiance_size?: 'Size256' | 'Size512' | 'Size1024' | 'Size2048';
@@ -535,6 +549,9 @@ export interface WorldEnvironmentComponent {
         clouds_height?: number;
         clouds_coverage?: number;
         clouds_thickness?: number;
+        clouds_layer1_speed?: number;
+        clouds_layer2_speed?: number;
+        clouds_detail_strength?: number;
         fog_enabled?: boolean;
         fog_density?: number;
         fog_depth_begin?: number;

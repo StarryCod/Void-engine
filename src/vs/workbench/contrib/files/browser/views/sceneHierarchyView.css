@@ -243,41 +243,46 @@
 /* ═══ CONTEXT MENU ═══ */
 .scene-context-menu {
         position: fixed;
-        background: var(--vscode-menu-background);
-        border: 1px solid var(--vscode-menu-border);
-        border-radius: 4px;
-        padding: 4px 0;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        z-index: 10000;
-        min-width: 160px;
+        background: #1f1f1f;
+        border: 1px solid #343434;
+        border-radius: 16px;
+        padding: 6px;
+        box-shadow: 0 22px 56px rgba(0, 0, 0, 0.48);
+        z-index: var(--ve-layer-context-menu, 3220);
+        min-width: 190px;
+        backdrop-filter: blur(14px);
 }
 
 .scene-context-menu-item {
-        padding: 6px 24px 6px 12px;
+        min-height: 36px;
+        padding: 0 14px;
         cursor: pointer;
-        font-size: 12px;
+        font-size: 13px;
         display: flex;
         align-items: center;
         gap: 8px;
+        border-radius: 10px;
+        color: #e7e7e7;
 }
 
 .scene-context-menu-item:hover {
-        background: var(--vscode-menu-selectionBackground);
-        color: var(--vscode-menu-selectionForeground);
+        background: #2a2a2a;
+        color: #f4f4f4;
 }
 
 .scene-context-menu-item.danger {
-        color: var(--vscode-errorForeground);
+        color: #f0b0a8;
 }
 
 .scene-context-menu-item.danger:hover {
-        background: rgba(248, 113, 113, 0.15);
+        background: rgba(217, 117, 109, 0.18);
+        color: #ffd7d1;
 }
 
 .scene-context-menu-separator {
         height: 1px;
-        background: var(--vscode-menu-separatorBackground);
-        margin: 4px 8px;
+        background: #313131;
+        margin: 6px 4px;
 }
 
 /* ═══ RESPONSIVE ═══ */

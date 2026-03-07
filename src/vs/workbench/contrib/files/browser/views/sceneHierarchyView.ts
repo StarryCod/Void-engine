@@ -15,6 +15,7 @@ import { IOpenerService } from '../../../../../platform/opener/common/opener.js'
 import { IViewDescriptorService } from '../../../../common/views.js';
 import { ViewPane, IViewPaneOptions } from '../../../../browser/parts/views/viewPane.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { sceneBridge } from '../../../voidSceneEditor/common/voidSceneBridge.js';
 import { Entity, Component } from '../../../voidSceneEditor/common/vecnTypes.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
@@ -124,7 +125,8 @@ export class SceneHierarchyView extends ViewPane {
                 @IOpenerService openerService: IOpenerService,
                 @IThemeService themeService: IThemeService,
                 @IHoverService hoverService: IHoverService,
-                @IDialogService private readonly dialogService: IDialogService
+                @IDialogService private readonly dialogService: IDialogService,
+                @ICommandService private readonly commandService: ICommandService
         ) {
                 super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
         }
@@ -153,6 +155,18 @@ export class SceneHierarchyView extends ViewPane {
                 addButton.title = 'Add Entity';
                 this._register(DOM.addDisposableListener(addButton, DOM.EventType.CLICK, () => {
                         this.showAddEntityMenu();
+                }));
+
+                const addScriptButton = DOM.append(this.treeHeaderContainer, DOM.$('.tree-action-btn.codicon.codicon-new-file'));
+                addScriptButton.title = 'Create Script';
+                this._register(DOM.addDisposableListener(addScriptButton, DOM.EventType.CLICK, () => {
+                        void this.commandService.executeCommand('voidSceneEditor.createScriptForSelection');
+                }));
+
+                const attachScriptButton = DOM.append(this.treeHeaderContainer, DOM.$('.tree-action-btn.codicon.codicon-link'));
+                attachScriptButton.title = 'Attach Selected Script';
+                this._register(DOM.addDisposableListener(attachScriptButton, DOM.EventType.CLICK, () => {
+                        void this.commandService.executeCommand('voidSceneEditor.attachScriptToSelection');
                 }));
 
                 // ═══ Tree container ═══
@@ -478,11 +492,13 @@ export class SceneHierarchyView extends ViewPane {
                         width: ${rect.width + 50}px;
                         height: ${rect.height}px;
                         font: inherit;
-                        background: #1e1e1e;
+                        background: #232323;
                         border: 1px solid #d47a4a;
+                        border-radius: 10px;
+                        box-shadow: 0 14px 32px rgba(0, 0, 0, 0.38);
                         color: #fff;
-                        padding: 0 4px;
-                        z-index: 10000;
+                        padding: 0 10px;
+                        z-index: var(--ve-layer-dialog, 3300);
                 `;
                 
                 document.body.appendChild(input);

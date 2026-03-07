@@ -5,7 +5,7 @@
 
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { ICargoService, IBuildProgress } from '../common/cargoService.js';
+import { ICargoService, IBuildProgress, ICargoPreflightResult } from '../common/cargoService.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { ipcRenderer } from '../../../../base/parts/sandbox/electron-browser/globals.js';
@@ -121,6 +121,25 @@ export class CargoService extends Disposable implements ICargoService {
 				progress: 0
 			});
 			return false;
+		}
+	}
+
+	async preflight(workspacePath: string): Promise<ICargoPreflightResult> {
+		try {
+			const result = await ipcRenderer.invoke('vscode:cargo-preflight', { workspacePath }) as ICargoPreflightResult;
+			return result;
+		} catch (error) {
+			this.logService.error('[Cargo Service] Preflight failed:', error);
+			return {
+				cargoAvailable: false,
+				rustcAvailable: false,
+				cargoWatchAvailable: false,
+				workspaceExists: false,
+				cargoTomlExists: false,
+				hasVoidSceneLoaderDependency: false,
+				voidSceneLoaderUsesPathDependency: false,
+				diagnostics: [`Preflight invocation failed: ${error instanceof Error ? error.message : String(error)}`]
+			};
 		}
 	}
 

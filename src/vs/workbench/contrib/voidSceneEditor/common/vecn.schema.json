@@ -1,0 +1,57 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://void-engine.dev/schema/vecn/v2.json",
+	"title": "Void Engine Scene Format (.vecn)",
+	"description": "Declarative scene DSL contract for Void Engine. Canonical runtime version: 2.0.",
+	"type": "object",
+	"required": ["version", "mode", "entities", "resources"],
+	"properties": {
+		"version": {
+			"type": "string",
+			"enum": ["1.0", "2.0"],
+			"default": "2.0"
+		},
+		"mode": {
+			"type": "string",
+			"enum": ["Scene3D", "Scene2D"],
+			"default": "Scene3D"
+		},
+		"entities": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/entity"
+			}
+		},
+		"resources": {
+			"type": "array"
+		}
+	},
+	"$defs": {
+		"entity": {
+			"type": "object",
+			"required": ["id", "name", "visible", "components", "children"],
+			"properties": {
+				"id": { "type": "string", "minLength": 1 },
+				"name": { "type": "string", "minLength": 1 },
+				"visible": { "type": "boolean" },
+				"components": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["type"],
+						"properties": {
+							"type": { "type": "string" }
+						}
+					}
+				},
+				"children": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/entity"
+					}
+				}
+			}
+		}
+	}
+}
+

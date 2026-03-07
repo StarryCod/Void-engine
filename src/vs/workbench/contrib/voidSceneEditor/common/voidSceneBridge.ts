@@ -13,11 +13,13 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { Entity } from './vecnTypes.js';
 import { VecnParser, VecnScene } from './vecnParser.js';
+import { validateVecnScene, VecnValidationResult } from './vecnValidation.js';
+import { diffVecnScenes, mergeVecnScenes, VecnMergeStrategy, VecnSceneDiff } from './vecnDiff.js';
 
 export interface BridgeUpdate {
         readonly entities: Entity[];
         readonly raw: string;
-        readonly source: 'viewport' | 'inspector' | 'editor' | 'disk' | 'init';
+        readonly source: 'viewport' | 'inspector' | 'editor' | 'disk' | 'init' | 'history';
         readonly timestamp: number;
 }
 
@@ -35,6 +37,28 @@ export interface Transform2DPatch {
         scale?: [number, number];
 }
 
+interface BridgeHistorySnapshot {
+        readonly raw: string;
+        readonly selectedEntityId: string | null;
+}
+
+export interface BridgeHistoryState {
+        readonly canUndo: boolean;
+        readonly canRedo: boolean;
+        readonly undoDepth: number;
+        readonly redoDepth: number;
+}
+
+const EMPTY_VALIDATION: VecnValidationResult = {
+        ok: true,
+        normalizedContent: '',
+        originalVersion: '1.0',
+        effectiveVersion: '1.0',
+        migrated: false,
+        migrationNotes: [],
+        issues: [],
+};
+
 class SceneBridge extends Disposable {
 
         // ── Master State ──
@@ -42,6 +66,13 @@ class SceneBridge extends Disposable {
         private _scene: VecnScene | null = null;
         private _raw: string = '';
         private _hash: number = 0;
+        private _validation: VecnValidationResult = EMPTY_VALIDATION;
+        private _selectedEntityId: string | null = null;
+        private readonly _undoStack: BridgeHistorySnapshot[] = [];
+        private readonly _redoStack: BridgeHistorySnapshot[] = [];
+        private _transformHistoryTimer: any = null;
+        private _transformHistoryArmed = true;
+        private readonly historyLimit = 200;
 
         // ── Events ──
         private readonly _onSceneUpdated = new Emitter<BridgeUpdate>();
@@ -53,6 +84,12 @@ class SceneBridge extends Disposable {
         private readonly _onEntitySelected = new Emitter<string | null>();
         public readonly onEntitySelected: Event<string | null> = this._onEntitySelected.event;
 
+        private readonly _onValidationChanged = new Emitter<VecnValidationResult>();
+        public readonly onValidationChanged: Event<VecnValidationResult> = this._onValidationChanged.event;
+
+        private readonly _onHistoryChanged = new Emitter<BridgeHistoryState>();
+        public readonly onHistoryChanged: Event<BridgeHistoryState> = this._onHistoryChanged.event;
+
         private _saveTimer: any = null;
 
         // ── Getters ──
@@ -60,7 +97,54 @@ class SceneBridge extends Disposable {
         public setUri(uri: URI): void { this._uri = uri; }
         public getEntities(): Entity[] { return this._scene?.entities ?? []; }
         public getRaw(): string { return this._raw; }
+        public getSelectedEntityId(): string | null { return this._selectedEntityId; }
         public hasScene(): boolean { return this._scene !== null && this._scene.entities.length > 0; }
+        public getValidation(): VecnValidationResult { return this._validation; }
+        public canUndo(): boolean { return this._undoStack.length > 0; }
+        public canRedo(): boolean { return this._redoStack.length > 0; }
+        public getHistoryState(): BridgeHistoryState {
+                return {
+                        canUndo: this.canUndo(),
+                        canRedo: this.canRedo(),
+                        undoDepth: this._undoStack.length,
+                        redoDepth: this._redoStack.length,
+                };
+        }
+        public diffWithContent(content: string): VecnSceneDiff | null {
+                if (!this._scene || !content.trim()) {
+                        return null;
+                }
+                const parsed = VecnParser.parse(content);
+                if (!parsed) {
+                        return null;
+                }
+                return diffVecnScenes(this._scene, parsed);
+        }
+
+        public mergeFromContent(content: string, strategy: VecnMergeStrategy = 'smart'): boolean {
+                if (!this._scene || !content.trim()) {
+                        return false;
+                }
+                const parsed = VecnParser.parse(content);
+                if (!parsed) {
+                        return false;
+                }
+
+                this.pushUndoSnapshot();
+                this._scene = mergeVecnScenes(this._scene, parsed, strategy);
+                this._raw = VecnParser.serialize(this._scene);
+                this._hash = this.hash(this._raw);
+
+                this._onSceneUpdated.fire({
+                        entities: this._scene.entities,
+                        raw: this._raw,
+                        source: 'inspector',
+                        timestamp: Date.now(),
+                });
+
+                this.scheduleSave();
+                return true;
+        }
 
         // ================================================================
         // 1. Load from text (disk / editor typing / initial load)
@@ -68,22 +152,33 @@ class SceneBridge extends Disposable {
         public loadFromText(content: string, source: BridgeUpdate['source'] = 'disk'): boolean {
                 if (!content || !content.trim()) return false;
 
-                const hash = this.hash(content);
+                const validation = validateVecnScene(content);
+                this._validation = validation;
+                this._onValidationChanged.fire(validation);
+                if (!validation.ok) return false;
+
+                const normalizedContent = validation.normalizedContent;
+                const hash = this.hash(normalizedContent);
                 if (hash === this._hash && this._scene) return false; // Identical content, skip
 
-                const parsed = VecnParser.parse(content);
+                const parsed = VecnParser.parse(normalizedContent);
                 if (!parsed) return false; // Syntax error — keep old state
 
                 this._scene = parsed;
-                this._raw = content;
+                this._raw = normalizedContent;
                 this._hash = hash;
+                this.resetHistoryToCurrentScene();
 
                 this._onSceneUpdated.fire({
                         entities: parsed.entities,
-                        raw: content,
+                        raw: this._raw,
                         source,
                         timestamp: Date.now(),
                 });
+
+                if (validation.migrated && (source === 'init' || source === 'disk')) {
+                        this.scheduleSave();
+                }
                 return true;
         }
 
@@ -95,14 +190,17 @@ class SceneBridge extends Disposable {
 
                 // 2a. Update in-memory entity (so Inspector sees fresh values)
                 const entity = this.findEntity(this._scene.entities, patch.entityId);
-                if (entity) {
-                        const tr = entity.components.find(c => c.type === 'Transform');
-                        if (tr && tr.type === 'Transform') {
-                                tr.translation = [patch.translation[0], patch.translation[1], patch.translation[2]];
-                                tr.rotation = [patch.rotation[0], patch.rotation[1], patch.rotation[2], patch.rotation[3]];
-                                tr.scale = [patch.scale[0], patch.scale[1], patch.scale[2]];
-                        }
+                if (!entity) {
+                        return;
                 }
+                const tr = entity.components.find(c => c.type === 'Transform');
+                if (!tr || tr.type !== 'Transform') {
+                        return;
+                }
+                this.pushTransformUndoSnapshotOnce();
+                tr.translation = [patch.translation[0], patch.translation[1], patch.translation[2]];
+                tr.rotation = [patch.rotation[0], patch.rotation[1], patch.rotation[2], patch.rotation[3]];
+                tr.scale = [patch.scale[0], patch.scale[1], patch.scale[2]];
 
                 // 2b. Patch raw text (fast regex, preserves comments/formatting)
                 this._raw = this.patchRawTRS(this._raw, patch);
@@ -131,6 +229,7 @@ class SceneBridge extends Disposable {
 
                 const tr2d = entity.components.find(c => c.type === 'Transform2D');
                 if (!tr2d || tr2d.type !== 'Transform2D') return;
+                this.pushTransformUndoSnapshotOnce();
 
                 tr2d.position = [patch.position[0], patch.position[1]];
                 if (typeof patch.rotation === 'number') {
@@ -158,6 +257,7 @@ class SceneBridge extends Disposable {
         // ================================================================
         public commitInspectorEdit(): void {
                 if (!this._scene) return;
+                this.pushUndoSnapshot();
 
                 // Full serialize (inspector edits can be anything: color, shape params, etc.)
                 this._raw = VecnParser.serialize(this._scene);
@@ -174,9 +274,58 @@ class SceneBridge extends Disposable {
         }
 
         // ================================================================
+        // 3b. Mass-apply component template to all entities with same component type
+        // ================================================================
+        public applyComponentTemplateToAll(componentType: string, componentTemplate: any): number {
+                if (!this._scene) {
+                        return 0;
+                }
+
+                let changed = 0;
+
+                const walk = (entities: Entity[]) => {
+                        for (const entity of entities) {
+                                for (let i = 0; i < entity.components.length; i++) {
+                                        if (entity.components[i].type !== componentType) {
+                                                continue;
+                                        }
+                                        if (changed === 0) {
+                                                this.pushUndoSnapshot();
+                                        }
+                                        entity.components[i] = this.deepClone(componentTemplate);
+                                        changed++;
+                                }
+                                if (entity.children.length > 0) {
+                                        walk(entity.children);
+                                }
+                        }
+                };
+
+                walk(this._scene.entities);
+
+                if (changed === 0) {
+                        return 0;
+                }
+
+                this._raw = VecnParser.serialize(this._scene);
+                this._hash = this.hash(this._raw);
+
+                this._onSceneUpdated.fire({
+                        entities: this._scene.entities,
+                        raw: this._raw,
+                        source: 'inspector',
+                        timestamp: Date.now(),
+                });
+
+                this.scheduleSave();
+                return changed;
+        }
+
+        // ================================================================
         // 4. Entity selection
         // ================================================================
         public selectEntity(id: string | null): void {
+                this._selectedEntityId = id;
                 this._onEntitySelected.fire(id);
         }
 
@@ -185,6 +334,7 @@ class SceneBridge extends Disposable {
         // ================================================================
         public createEntity(type: string, parentId?: string): Entity | null {
                 if (!this._scene) return null;
+                this.pushUndoSnapshot();
 
                 // Generate new entity
                 const newEntity: Entity = {
@@ -703,6 +853,18 @@ class SceneBridge extends Disposable {
                                         glow_enabled: false,
                                         glow_intensity: 0.15,
                                         glow_threshold: 1.25,
+                                        post_bloom_enabled: false,
+                                        post_bloom_intensity: 0.15,
+                                        post_bloom_threshold: 1.25,
+                                        post_ao_enabled: false,
+                                        post_ao_intensity: 1.0,
+                                        post_ao_radius: 1.0,
+                                        color_grading_enabled: false,
+                                        color_grading_temperature: 0.0,
+                                        color_grading_contrast: 1.0,
+                                        color_grading_saturation: 1.0,
+                                        shadow_profile: 'high',
+                                        render_debug_view: 'final',
                                         sky_material: 'ProceduralSky',
                                         radiance_size: 'Size1024',
                                         sky_top_color: [0.20, 0.33, 0.56, 1],
@@ -727,6 +889,9 @@ class SceneBridge extends Disposable {
                                         clouds_height: 1300,
                                         clouds_coverage: 0.58,
                                         clouds_thickness: 260,
+                                        clouds_layer1_speed: 1.0,
+                                        clouds_layer2_speed: 0.62,
+                                        clouds_detail_strength: 1.0,
                                         fog_enabled: true,
                                         fog_density: 0.00035,
                                         fog_depth_begin: 80,
@@ -757,6 +922,18 @@ class SceneBridge extends Disposable {
                                         glow_enabled: false,
                                         glow_intensity: 0.15,
                                         glow_threshold: 1.25,
+                                        post_bloom_enabled: false,
+                                        post_bloom_intensity: 0.15,
+                                        post_bloom_threshold: 1.25,
+                                        post_ao_enabled: false,
+                                        post_ao_intensity: 1.0,
+                                        post_ao_radius: 1.0,
+                                        color_grading_enabled: false,
+                                        color_grading_temperature: 0.0,
+                                        color_grading_contrast: 1.0,
+                                        color_grading_saturation: 1.0,
+                                        shadow_profile: 'high',
+                                        render_debug_view: 'final',
                                         sky_material: 'ProceduralSky',
                                         radiance_size: 'Size1024',
                                         sky_top_color: [0.20, 0.33, 0.56, 1],
@@ -781,6 +958,9 @@ class SceneBridge extends Disposable {
                                         clouds_height: 1300,
                                         clouds_coverage: 0.58,
                                         clouds_thickness: 260,
+                                        clouds_layer1_speed: 1.0,
+                                        clouds_layer2_speed: 0.62,
+                                        clouds_detail_strength: 1.0,
                                         fog_enabled: true,
                                         fog_density: 0.00035,
                                         fog_depth_begin: 80,
@@ -980,6 +1160,8 @@ class SceneBridge extends Disposable {
         // ================================================================
         public deleteEntity(entityId: string): boolean {
                 if (!this._scene) return false;
+                if (!this.findEntity(this._scene.entities, entityId)) return false;
+                this.pushUndoSnapshot();
 
                 const removed = this.removeEntityFromTree(this._scene.entities, entityId);
                 if (!removed) return false;
@@ -1008,6 +1190,7 @@ class SceneBridge extends Disposable {
                 // Find and remove from current parent
                 const entity = this.findEntity(this._scene.entities, entityId);
                 if (!entity) return false;
+                this.pushUndoSnapshot();
 
                 const removed = this.removeEntityFromTree(this._scene.entities, entityId);
                 if (!removed) return false;
@@ -1043,6 +1226,7 @@ class SceneBridge extends Disposable {
 
                 const entity = this.findEntity(this._scene.entities, entityId);
                 if (!entity) return null;
+                this.pushUndoSnapshot();
 
                 // Deep clone the entity
                 const clone = JSON.parse(JSON.stringify(entity)) as Entity;
@@ -1103,6 +1287,7 @@ class SceneBridge extends Disposable {
 
                 const entity = this.findEntity(this._scene.entities, entityId);
                 if (!entity) return false;
+                this.pushUndoSnapshot();
 
                 entity.visible = !entity.visible;
 
@@ -1129,6 +1314,7 @@ class SceneBridge extends Disposable {
 
                 const entity = this.findEntity(this._scene.entities, entityId);
                 if (!entity) return false;
+                this.pushUndoSnapshot();
 
                 entity.name = newName;
 
@@ -1145,6 +1331,41 @@ class SceneBridge extends Disposable {
 
                 this.scheduleSave();
                 return true;
+        }
+
+        // ================================================================
+        // 10. Undo / Redo
+        // ================================================================
+        public undo(): boolean {
+                if (!this._scene || this._undoStack.length === 0) {
+                        return false;
+                }
+
+                const previous = this._undoStack.pop()!;
+                this._redoStack.push({
+                        raw: this._raw,
+                        selectedEntityId: this._selectedEntityId,
+                });
+
+                const restored = this.restoreSnapshot(previous);
+                this.emitHistoryState();
+                return restored;
+        }
+
+        public redo(): boolean {
+                if (!this._scene || this._redoStack.length === 0) {
+                        return false;
+                }
+
+                const next = this._redoStack.pop()!;
+                this._undoStack.push({
+                        raw: this._raw,
+                        selectedEntityId: this._selectedEntityId,
+                });
+
+                const restored = this.restoreSnapshot(next);
+                this.emitHistoryState();
+                return restored;
         }
 
         // ================================================================
@@ -1182,6 +1403,10 @@ class SceneBridge extends Disposable {
                 return `entity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         }
 
+        private deepClone<T>(value: T): T {
+                return JSON.parse(JSON.stringify(value)) as T;
+        }
+
         // ================================================================
         // Private: Debounced save
         // ================================================================
@@ -1192,6 +1417,83 @@ class SceneBridge extends Disposable {
                                 this._onNeedsSave.fire({ uri: this._uri, content: this._raw });
                         }
                 }, 200);
+        }
+
+        private resetHistoryToCurrentScene(): void {
+                this._undoStack.length = 0;
+                this._redoStack.length = 0;
+                this._transformHistoryArmed = true;
+                if (this._transformHistoryTimer) {
+                        clearTimeout(this._transformHistoryTimer);
+                        this._transformHistoryTimer = null;
+                }
+                this.emitHistoryState();
+        }
+
+        private pushTransformUndoSnapshotOnce(): void {
+                if (this._transformHistoryArmed) {
+                        this.pushUndoSnapshot();
+                        this._transformHistoryArmed = false;
+                }
+
+                if (this._transformHistoryTimer) {
+                        clearTimeout(this._transformHistoryTimer);
+                }
+                this._transformHistoryTimer = setTimeout(() => {
+                        this._transformHistoryArmed = true;
+                        this._transformHistoryTimer = null;
+                }, 280);
+        }
+
+        private pushUndoSnapshot(): void {
+                if (!this._scene || !this._raw.trim()) {
+                        return;
+                }
+
+                const top = this._undoStack[this._undoStack.length - 1];
+                if (top && top.raw === this._raw) {
+                        return;
+                }
+
+                this._undoStack.push({
+                        raw: this._raw,
+                        selectedEntityId: this._selectedEntityId,
+                });
+                if (this._undoStack.length > this.historyLimit) {
+                        this._undoStack.shift();
+                }
+                this._redoStack.length = 0;
+                this.emitHistoryState();
+        }
+
+        private restoreSnapshot(snapshot: BridgeHistorySnapshot): boolean {
+                const parsed = VecnParser.parse(snapshot.raw);
+                if (!parsed) {
+                        return false;
+                }
+
+                this._scene = parsed;
+                this._raw = snapshot.raw;
+                this._hash = this.hash(snapshot.raw);
+
+                this._validation = validateVecnScene(snapshot.raw);
+                this._onValidationChanged.fire(this._validation);
+
+                this._selectedEntityId = snapshot.selectedEntityId;
+
+                this._onSceneUpdated.fire({
+                        entities: this._scene.entities,
+                        raw: this._raw,
+                        source: 'history',
+                        timestamp: Date.now(),
+                });
+                this._onEntitySelected.fire(this._selectedEntityId);
+                this.scheduleSave();
+                return true;
+        }
+
+        private emitHistoryState(): void {
+                this._onHistoryChanged.fire(this.getHistoryState());
         }
 
         // ================================================================
@@ -1242,9 +1544,12 @@ class SceneBridge extends Disposable {
 
         override dispose(): void {
                 if (this._saveTimer) clearTimeout(this._saveTimer);
+                if (this._transformHistoryTimer) clearTimeout(this._transformHistoryTimer);
                 this._onSceneUpdated.dispose();
                 this._onNeedsSave.dispose();
                 this._onEntitySelected.dispose();
+                this._onValidationChanged.dispose();
+                this._onHistoryChanged.dispose();
                 super.dispose();
         }
 }

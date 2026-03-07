@@ -97,6 +97,7 @@ class VoidShellContribution extends Disposable {
 		this.pruneTitlebarActions();
 		this.pruneStatusbarActions();
 		this.pruneLegacyViews();
+		this.pruneLegacyViewPanes();
 	}
 
 	private pruneActivityBar(): void {
@@ -147,6 +148,18 @@ class VoidShellContribution extends Disposable {
 			for (const node of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
 				this.hideNode(node);
 			}
+		}
+	}
+
+	private pruneLegacyViewPanes(): void {
+		const paneHeaders = Array.from(document.querySelectorAll<HTMLElement>('.monaco-workbench .pane-header'));
+		for (const header of paneHeaders) {
+			const label = `${header.getAttribute('aria-label') ?? ''} ${header.getAttribute('title') ?? ''} ${header.textContent ?? ''}`.trim();
+			if (!label || !this.shouldHideByPatterns(label)) {
+				continue;
+			}
+			const pane = header.closest<HTMLElement>('.split-view-view, .pane, .pane-composite-part');
+			this.hideNode(pane ?? header);
 		}
 	}
 
