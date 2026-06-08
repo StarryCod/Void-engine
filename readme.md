@@ -2,6 +2,7 @@
 
 > ⚠️ This repository contains an outdated version of the project.  
 > It was published as a public reference for educational and demonstration purposes.
+> This is the earliest and very old version of the project, and it's not even worth considering as part of the current project.
 
 ---
 
